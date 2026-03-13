@@ -1,0 +1,16 @@
+{
+  "name": "@jobautomation/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run --root ../.. --config vitest.config.ts --project api"
+  },
+  "dependencies": {
+    "@jobautomation/config": "workspace:*",
+    "@jobautomation/core": "workspace:*",
+    "@jobautomation/db": "workspace:*",
+    "fastify": "^5.6.0",
+    "fastify-plugin": "^5.0.1"
+  }
+}

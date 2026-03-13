@@ -1,0 +1,52 @@
+[
+  {
+    "sourceKind": "greenhouse",
+    "sourceId": "gh-123",
+    "sourceUrl": "https://boards.greenhouse.io/example/jobs/123",
+    "companyName": "Example Corp",
+    "title": "Platform Engineer",
+    "location": "Toronto, ON",
+    "remoteType": "hybrid",
+    "employmentType": "full-time",
+    "compensationText": null,
+    "descriptionText": "Initial version",
+    "rawPayload": {
+      "id": "gh-123",
+      "version": 1
+    },
+    "updatedAt": "2026-03-13T10:00:00.000Z"
+  },
+  {
+    "sourceKind": "greenhouse",
+    "sourceId": "gh-123",
+    "sourceUrl": "https://boards.greenhouse.io/example/jobs/123",
+    "companyName": "Example Corp",
+    "title": "Senior Platform Engineer",
+    "location": "Toronto, ON",
+    "remoteType": "remote",
+    "employmentType": "full-time",
+    "compensationText": null,
+    "descriptionText": "Updated version",
+    "rawPayload": {
+      "id": "gh-123",
+      "version": 2
+    },
+    "updatedAt": "2026-03-13T12:00:00.000Z"
+  },
+  {
+    "sourceKind": "lever",
+    "sourceId": "lv-900",
+    "sourceUrl": "https://jobs.lever.co/example/900",
+    "companyName": "Another Co",
+    "title": "Automation Engineer",
+    "location": "Remote",
+    "remoteType": "remote",
+    "employmentType": "full-time",
+    "compensationText": null,
+    "descriptionText": "Unique record",
+    "rawPayload": {
+      "id": "lv-900"
+    },
+    "updatedAt": "2026-03-13T11:00:00.000Z"
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "name": "@jobautomation/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --config vitest.config.ts --project db",
+    "drizzle-kit": "drizzle-kit --config drizzle.config.ts"
+  },
+  "dependencies": {
+    "@jobautomation/config": "workspace:*",
+    "@jobautomation/core": "workspace:*",
+    "drizzle-orm": "^0.44.7",
+    "@libsql/client": "^0.15.15"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.4"
+  }
+}

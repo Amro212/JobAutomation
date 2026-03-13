@@ -1,0 +1,33 @@
+{
+  "name": "jobautomation",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.6.2",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test",
+    "dev:api": "pnpm --filter @jobautomation/api dev",
+    "dev:dashboard": "pnpm --filter @jobautomation/dashboard dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@playwright/test": "^1.52.0",
+    "@tailwindcss/postcss": "^4.1.12",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "eslint": "^9.22.0",
+    "globals": "^16.0.0",
+    "playwright": "^1.52.0",
+    "postcss": "^8.5.6",
+    "prettier": "^3.5.3",
+    "tailwindcss": "^4.1.12",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.26.1",
+    "vitest": "^3.2.4",
+    "drizzle-orm": "^0.44.7",
+    "@libsql/client": "^0.15.15"
+  }
+}

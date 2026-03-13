@@ -1,0 +1,14 @@
+{
+  "name": "@jobautomation/dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "test:e2e": "playwright test --config ../../playwright.config.ts"
+  },
+  "dependencies": {
+    "next": "^15.5.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}

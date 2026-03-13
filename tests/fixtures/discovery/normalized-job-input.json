@@ -1,0 +1,15 @@
+{
+  "sourceId": "gh-123",
+  "sourceUrl": "https://boards.greenhouse.io/example/jobs/123",
+  "companyName": "Example Corp",
+  "title": "Platform Engineer",
+  "location": "Toronto, ON",
+  "remoteType": "hybrid",
+  "employmentType": "full-time",
+  "compensationText": "$150k-$170k",
+  "descriptionText": "Build discovery pipelines.",
+  "rawPayload": {
+    "id": "gh-123",
+    "absolute_url": "https://boards.greenhouse.io/example/jobs/123"
+  }
+}

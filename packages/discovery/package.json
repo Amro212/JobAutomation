@@ -1,0 +1,16 @@
+{
+  "name": "@jobautomation/discovery",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --config vitest.config.ts --project discovery"
+  },
+  "dependencies": {
+    "@jobautomation/core": "workspace:*",
+    "@jobautomation/db": "workspace:*",
+    "zod": "^4.1.5"
+  }
+}

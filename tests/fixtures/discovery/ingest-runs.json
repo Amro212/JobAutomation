@@ -1,0 +1,38 @@
+{
+  "firstRun": [
+    {
+      "sourceId": "gh-123",
+      "sourceUrl": "https://boards.greenhouse.io/example/jobs/123",
+      "companyName": "Example Corp",
+      "title": "Platform Engineer",
+      "location": "Toronto, ON",
+      "remoteType": "hybrid",
+      "employmentType": "full-time",
+      "compensationText": "$150k-$170k",
+      "descriptionText": "Initial version",
+      "rawPayload": {
+        "id": "gh-123",
+        "version": 1
+      },
+      "updatedAt": "2026-03-13T10:00:00.000Z"
+    }
+  ],
+  "secondRun": [
+    {
+      "sourceId": "gh-123",
+      "sourceUrl": "https://boards.greenhouse.io/example/jobs/123",
+      "companyName": "Example Corp",
+      "title": "Senior Platform Engineer",
+      "location": "Toronto, ON",
+      "remoteType": "remote",
+      "employmentType": "full-time",
+      "compensationText": "$170k-$190k",
+      "descriptionText": "Updated version",
+      "rawPayload": {
+        "id": "gh-123",
+        "version": 2
+      },
+      "updatedAt": "2026-03-13T12:00:00.000Z"
+    }
+  ]
+}

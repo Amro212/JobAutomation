@@ -4,9 +4,25 @@
 .idea/
 .DS_Store
 
-
 ## Project Files
 
 AGENTS.md
 docs/
 .codex/
+
+## Generated Files
+
+node_modules/
+.next/
+playwright-report/
+test-results/
+coverage/
+dist/
+build/
+.turbo/
+.cache/
+.eslintcache
+*.tsbuildinfo
+pnpm-debug.log*
+*.log
+data/
