@@ -1,0 +1,12 @@
+## IDE Files
+
+.vscode/
+.idea/
+.DS_Store
+
+
+## Project Files
+
+AGENTS.md
+docs/
+.codex/
