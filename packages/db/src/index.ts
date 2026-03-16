@@ -3,5 +3,8 @@ export * from './migrate';
 export * from './repositories/applicant-profile-repository';
 export * from './repositories/artifacts-repository';
 export * from './repositories/discovery-runs-repository';
+export * from './repositories/discovery-schedules-repository';
+export * from './repositories/discovery-sources-repository';
 export * from './repositories/jobs-repository';
+export * from './repositories/log-events-repository';
 export * from './schema';

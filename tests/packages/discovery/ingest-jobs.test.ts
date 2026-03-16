@@ -60,6 +60,32 @@ const greenhouseAdapter: SourceAdapter<Record<string, unknown>> = {
   }
 };
 
+const leverAdapter: SourceAdapter<Record<string, unknown>> = {
+  sourceKind: 'lever',
+  normalizeJob(sourceJob, context) {
+    return normalizeJob(
+      {
+        sourceKind: 'lever',
+        ...sourceJob
+      },
+      context
+    );
+  }
+};
+
+const ashbyAdapter: SourceAdapter<Record<string, unknown>> = {
+  sourceKind: 'ashby',
+  normalizeJob(sourceJob, context) {
+    return normalizeJob(
+      {
+        sourceKind: 'ashby',
+        ...sourceJob
+      },
+      context
+    );
+  }
+};
+
 describe('ingestJobs', () => {
   test('records discovery runs and updates existing jobs instead of duplicating them', async () => {
     const dbPath = createTestDatabasePath();
@@ -106,5 +132,75 @@ describe('ingestJobs', () => {
     expect(storedJobs[0]?.title).toBe('Senior Platform Engineer');
     expect(storedRuns).toHaveLength(3);
     expect(storedRuns[0]?.status).toBe('completed');
+  });
+
+  test('keeps records from different source kinds even when source ids overlap', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const runsRepository = new DiscoveryRunsRepository(db);
+
+    await ingestJobs({
+      adapter: greenhouseAdapter,
+      jobs: [
+        {
+          sourceId: 'shared-id',
+          sourceUrl: 'https://boards.greenhouse.io/example/jobs/shared-id',
+          companyName: 'Greenhouse Example',
+          title: 'Platform Engineer',
+          location: 'Remote',
+          remoteType: 'remote'
+        }
+      ],
+      jobsRepository,
+      runsRepository,
+      capturedAt: new Date('2026-03-13T10:00:00.000Z')
+    });
+
+    await ingestJobs({
+      adapter: leverAdapter,
+      jobs: [
+        {
+          sourceId: 'shared-id',
+          sourceUrl: 'https://jobs.lever.co/example/shared-id',
+          companyName: 'Lever Example',
+          title: 'Platform Engineer',
+          location: 'Remote',
+          remoteType: 'remote'
+        }
+      ],
+      jobsRepository,
+      runsRepository,
+      capturedAt: new Date('2026-03-13T10:05:00.000Z')
+    });
+
+    await ingestJobs({
+      adapter: ashbyAdapter,
+      jobs: [
+        {
+          sourceId: 'shared-id',
+          sourceUrl: 'https://jobs.ashbyhq.com/example/shared-id',
+          companyName: 'Ashby Example',
+          title: 'Platform Engineer',
+          location: 'Remote',
+          remoteType: 'remote'
+        }
+      ],
+      jobsRepository,
+      runsRepository,
+      capturedAt: new Date('2026-03-13T10:10:00.000Z')
+    });
+
+    const storedJobs = await jobsRepository.list();
+
+    expect(storedJobs).toHaveLength(3);
+    expect(storedJobs.map((job) => job.sourceKind).sort()).toEqual([
+      'ashby',
+      'greenhouse',
+      'lever'
+    ]);
   });
 });

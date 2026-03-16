@@ -22,7 +22,7 @@ export function ApplicantProfileForm({
   action: (formData: FormData) => Promise<void>;
   profile: ApplicantProfile | null;
   saveState?: string;
-}): JSX.Element {
+}) {
   const current = profile ? { ...profile, updatedAt: undefined } : defaultProfile;
 
   return (

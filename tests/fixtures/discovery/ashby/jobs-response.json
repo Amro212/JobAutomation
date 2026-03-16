@@ -1,0 +1,53 @@
+{
+  "jobs": [
+    {
+      "id": "145ff46b-1441-4773-bcd3-c8c90baa598a",
+      "title": "Engineer Who Can Design, Americas",
+      "department": "Engineering",
+      "team": "Americas Engineering",
+      "employmentType": "FullTime",
+      "location": "Remote - North to South America",
+      "shouldDisplayCompensationOnJobPostings": true,
+      "secondaryLocations": [
+        {
+          "location": "Remote - US"
+        },
+        {
+          "location": "Remote - Canada"
+        }
+      ],
+      "publishedAt": "2025-11-14T00:46:58.989+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "jobUrl": "https://jobs.ashbyhq.com/ashby/145ff46b-1441-4773-bcd3-c8c90baa598a",
+      "applyUrl": "https://jobs.ashbyhq.com/ashby/145ff46b-1441-4773-bcd3-c8c90baa598a/application",
+      "descriptionHtml": "<p>Design systems and product engineering.</p>",
+      "descriptionPlain": "Design systems and product engineering.",
+      "compensation": {
+        "compensationTierSummary": "$190K – $255K • Offers Equity • Multiple Ranges",
+        "scrapeableCompensationSalarySummary": "$190K - $255K"
+      }
+    },
+    {
+      "id": "2d0109b8-f0a5-42d5-95cb-c9240481cc18",
+      "title": "Software Engineer, Growth",
+      "department": "Engineering",
+      "team": "Growth",
+      "employmentType": "FullTime",
+      "location": "San Francisco, California, United States",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2025-11-10T18:20:00.000+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "Hybrid",
+      "jobUrl": "https://jobs.ashbyhq.com/ashby/2d0109b8-f0a5-42d5-95cb-c9240481cc18",
+      "applyUrl": "https://jobs.ashbyhq.com/ashby/2d0109b8-f0a5-42d5-95cb-c9240481cc18/application",
+      "descriptionHtml": "<p>Build growth systems.</p>",
+      "descriptionPlain": "Build growth systems.",
+      "compensation": null
+    }
+  ],
+  "apiVersion": "0.1"
+}

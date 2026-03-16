@@ -1,0 +1,47 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/123456",
+      "content": "<p>Build the local-first discovery pipeline.</p>",
+      "departments": [
+        {
+          "id": 10,
+          "name": "Engineering"
+        }
+      ],
+      "id": 123456,
+      "internal_job_id": 654321,
+      "location": {
+        "name": "Remote - Canada"
+      },
+      "metadata": [
+        {
+          "name": "Employment Type",
+          "value": "Full-time",
+          "value_type": "string"
+        }
+      ],
+      "offices": [
+        {
+          "id": 11,
+          "location": {
+            "name": "Toronto"
+          },
+          "name": "Toronto"
+        }
+      ],
+      "pay_input_ranges": [
+        {
+          "blurb": "plus bonus",
+          "currency_type": "CAD",
+          "max_cents": 19500000,
+          "min_cents": 17000000,
+          "title": "CAD Base Salary"
+        }
+      ],
+      "requisition_id": "REQ-123",
+      "title": "Senior Platform Engineer",
+      "updated_at": "2026-03-13T09:30:00-04:00"
+    }
+  ]
+}

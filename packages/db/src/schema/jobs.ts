@@ -21,6 +21,12 @@ export const jobsTable = sqliteTable(
       onDelete: 'set null'
     }),
     status: text('status').notNull().default('discovered'),
+    reviewNotes: text('review_notes').notNull().default(''),
+    reviewSummary: text('review_summary'),
+    reviewScore: integer('review_score'),
+    reviewScoreReasoning: text('review_score_reasoning'),
+    reviewUpdatedAt: integer('review_updated_at', { mode: 'timestamp_ms' }),
+    reviewScoreUpdatedAt: integer('review_score_updated_at', { mode: 'timestamp_ms' }),
     discoveredAt: integer('discovered_at', { mode: 'timestamp_ms' }).notNull(),
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
   },
@@ -29,6 +35,7 @@ export const jobsTable = sqliteTable(
       table.sourceKind,
       table.sourceId
     ),
+    jobsStatusIdx: index('jobs_status_idx').on(table.status),
     jobsUpdatedAtIdx: index('jobs_updated_at_idx').on(table.updatedAt)
   })
 );

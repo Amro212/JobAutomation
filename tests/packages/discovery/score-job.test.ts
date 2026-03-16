@@ -1,0 +1,193 @@
+import { mkdirSync, rmSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { afterEach, describe, expect, test } from 'vitest';
+
+import { createDatabaseClient, JobsRepository } from '../../../packages/db/src';
+import { JobScoreError, scoreJob } from '../../../packages/discovery/src/services/score-job';
+
+const migrationsFolder = fileURLToPath(
+  new URL('../../../packages/db/drizzle', import.meta.url)
+);
+const createdPaths: string[] = [];
+const trackedClients: Array<{ close: () => Promise<void> | void }> = [];
+
+function createTestDatabasePath(): string {
+  const path = fileURLToPath(
+    new URL(`../../../data/test/${randomUUID()}.sqlite`, import.meta.url)
+  );
+  mkdirSync(dirname(path), { recursive: true });
+  createdPaths.push(path);
+  return path;
+}
+
+afterEach(async () => {
+  for (const client of trackedClients.splice(0)) {
+    await client.close();
+  }
+
+  for (const path of createdPaths.splice(0)) {
+    try {
+      rmSync(path, { force: true });
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'EBUSY') {
+        throw error;
+      }
+    }
+  }
+});
+
+describe('scoreJob', () => {
+  test('stores a validated review summary and score', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-123',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/123',
+      companyName: 'Example Corp',
+      title: 'Senior Platform Engineer',
+      location: 'Remote - Canada',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: '$170k-$190k CAD',
+      descriptionText: 'Build the local-first discovery pipeline.',
+      rawPayload: '{"id":"job-123"}',
+      discoveryRunId: null,
+      status: 'reviewing',
+      reviewNotes: 'Strong fit for TypeScript control-plane work.',
+      reviewSummary: null,
+      reviewScore: null,
+      reviewScoreReasoning: null,
+      reviewUpdatedAt: new Date('2026-03-15T10:00:00.000Z'),
+      reviewScoreUpdatedAt: null,
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    const scored = await scoreJob({
+      jobId: job.id,
+      jobsRepository,
+      openRouter: {
+        apiKey: 'test-key',
+        baseUrl: 'https://openrouter.example/api/v1',
+        model: 'openrouter/test-model',
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      summary:
+                        'Strong local-first infrastructure fit with relevant TypeScript platform experience.',
+                      score: 86,
+                      reasoning:
+                        'The role aligns with prior discovery and control-plane work called out in the description.'
+                    })
+                  }
+                }
+              ]
+            }),
+            {
+              status: 200,
+              headers: {
+                'content-type': 'application/json'
+              }
+            }
+          )
+      }
+    });
+
+    const stored = await jobsRepository.findById(job.id);
+
+    expect(scored.reviewSummary).toContain('local-first infrastructure fit');
+    expect(scored.reviewScore).toBe(86);
+    expect(scored.reviewScoreReasoning).toContain('control-plane work');
+    expect(scored.reviewScoreUpdatedAt).toBeInstanceOf(Date);
+    expect(stored?.reviewSummary).toBe(scored.reviewSummary);
+    expect(stored?.reviewScore).toBe(86);
+  });
+
+  test('rejects invalid model output without corrupting persisted review state', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const job = await jobsRepository.upsert({
+      sourceKind: 'lever',
+      sourceId: 'job-456',
+      sourceUrl: 'https://jobs.lever.co/example/job-456',
+      companyName: 'Example Corp',
+      title: 'Senior Software Engineer',
+      location: 'Remote - United States',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: '$180k-$210k USD',
+      descriptionText: 'Build the next generation of platform tooling.',
+      rawPayload: '{"id":"job-456"}',
+      discoveryRunId: null,
+      status: 'reviewing',
+      reviewNotes: 'Need stronger signal on platform scale, but worth holding.',
+      reviewSummary: null,
+      reviewScore: null,
+      reviewScoreReasoning: null,
+      reviewUpdatedAt: new Date('2026-03-15T11:00:00.000Z'),
+      reviewScoreUpdatedAt: null,
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    await expect(
+      scoreJob({
+        jobId: job.id,
+        jobsRepository,
+        openRouter: {
+          apiKey: 'test-key',
+          baseUrl: 'https://openrouter.example/api/v1',
+          model: 'openrouter/test-model',
+          fetchImpl: async () =>
+            new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        summary: 'Looks promising.',
+                        score: 'high'
+                      })
+                    }
+                  }
+                ]
+              }),
+              {
+                status: 200,
+                headers: {
+                  'content-type': 'application/json'
+                }
+              }
+            )
+        }
+      })
+    ).rejects.toMatchObject({
+      code: 'invalid_output'
+    } satisfies Pick<JobScoreError, 'code'>);
+
+    const stored = await jobsRepository.findById(job.id);
+
+    expect(stored?.reviewNotes).toBe('Need stronger signal on platform scale, but worth holding.');
+    expect(stored?.reviewSummary).toBeNull();
+    expect(stored?.reviewScore).toBeNull();
+    expect(stored?.reviewScoreReasoning).toBeNull();
+    expect(stored?.status).toBe('reviewing');
+  });
+});
