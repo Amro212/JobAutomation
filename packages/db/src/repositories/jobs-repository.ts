@@ -1,15 +1,49 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, like } from 'drizzle-orm';
 
-import { jobRecordSchema, type JobRecord } from '@jobautomation/core';
+import {
+  jobRecordSchema,
+  type JobListFilters,
+  type JobRecord,
+  type JobReviewPatch,
+  type JobStatus
+} from '@jobautomation/core';
 
 import type { JobAutomationDatabase } from '../client';
 import { jobsTable } from '../schema';
 
-export type UpsertJobInput = Omit<JobRecord, 'id'> & {
+export type UpsertJobInput = Omit<
+  JobRecord,
+  | 'id'
+  | 'reviewNotes'
+  | 'reviewSummary'
+  | 'reviewScore'
+  | 'reviewScoreReasoning'
+  | 'reviewUpdatedAt'
+  | 'reviewScoreUpdatedAt'
+> &
+  Partial<
+    Pick<
+      JobRecord,
+      | 'reviewNotes'
+      | 'reviewSummary'
+      | 'reviewScore'
+      | 'reviewScoreReasoning'
+      | 'reviewUpdatedAt'
+      | 'reviewScoreUpdatedAt'
+    >
+  > & {
   id?: string;
 };
+
+export type UpdateJobReviewInput = JobReviewPatch &
+  Partial<
+    Pick<
+      JobRecord,
+      'reviewSummary' | 'reviewScore' | 'reviewScoreReasoning' | 'reviewUpdatedAt' | 'reviewScoreUpdatedAt'
+    >
+  >;
 
 function mapJobRecord(record: typeof jobsTable.$inferSelect): JobRecord {
   return jobRecordSchema.parse(record);
@@ -18,8 +52,33 @@ function mapJobRecord(record: typeof jobsTable.$inferSelect): JobRecord {
 export class JobsRepository {
   constructor(private readonly db: JobAutomationDatabase) {}
 
-  async list(): Promise<JobRecord[]> {
-    const records = await this.db.select().from(jobsTable).orderBy(desc(jobsTable.updatedAt));
+  async list(filters: JobListFilters = {}): Promise<JobRecord[]> {
+    const conditions = [];
+
+    if (filters.sourceKind) {
+      conditions.push(eq(jobsTable.sourceKind, filters.sourceKind));
+    }
+
+    if (filters.status) {
+      conditions.push(eq(jobsTable.status, filters.status));
+    }
+
+    if (filters.remoteType) {
+      conditions.push(eq(jobsTable.remoteType, filters.remoteType));
+    }
+
+    if (filters.title) {
+      conditions.push(like(jobsTable.title, `%${filters.title}%`));
+    }
+
+    if (filters.location) {
+      conditions.push(like(jobsTable.location, `%${filters.location}%`));
+    }
+
+    const query = this.db.select().from(jobsTable);
+    const records = await (conditions.length > 0 ? query.where(and(...conditions)) : query).orderBy(
+      desc(jobsTable.updatedAt)
+    );
     return records.map(mapJobRecord);
   }
 
@@ -42,30 +101,78 @@ export class JobsRepository {
   async upsert(input: UpsertJobInput): Promise<JobRecord> {
     const existing = await this.findBySource(input.sourceKind, input.sourceId);
     const recordId = existing?.id ?? input.id ?? randomUUID();
+    const nextStatus: JobStatus = input.status;
+    const reviewNotes = input.reviewNotes ?? existing?.reviewNotes ?? '';
+    const reviewSummary =
+      input.reviewSummary === undefined ? existing?.reviewSummary ?? null : input.reviewSummary;
+    const reviewScore =
+      input.reviewScore === undefined ? existing?.reviewScore ?? null : input.reviewScore;
+    const reviewScoreReasoning =
+      input.reviewScoreReasoning === undefined
+        ? existing?.reviewScoreReasoning ?? null
+        : input.reviewScoreReasoning;
+    const reviewUpdatedAt =
+      input.reviewUpdatedAt === undefined ? existing?.reviewUpdatedAt ?? null : input.reviewUpdatedAt;
+    const reviewScoreUpdatedAt =
+      input.reviewScoreUpdatedAt === undefined
+        ? existing?.reviewScoreUpdatedAt ?? null
+        : input.reviewScoreUpdatedAt;
+
+    const updateSet: Record<string, unknown> = {
+      sourceUrl: input.sourceUrl,
+      companyName: input.companyName,
+      title: input.title,
+      location: input.location,
+      remoteType: input.remoteType,
+      employmentType: input.employmentType,
+      compensationText: input.compensationText,
+      descriptionText: input.descriptionText,
+      rawPayload: input.rawPayload,
+      discoveryRunId: input.discoveryRunId,
+      status: nextStatus,
+      discoveredAt: input.discoveredAt,
+      updatedAt: input.updatedAt
+    };
+
+    if ('reviewNotes' in input) {
+      updateSet.reviewNotes = reviewNotes;
+    }
+
+    if ('reviewSummary' in input) {
+      updateSet.reviewSummary = reviewSummary;
+    }
+
+    if ('reviewScore' in input) {
+      updateSet.reviewScore = reviewScore;
+    }
+
+    if ('reviewScoreReasoning' in input) {
+      updateSet.reviewScoreReasoning = reviewScoreReasoning;
+    }
+
+    if ('reviewUpdatedAt' in input) {
+      updateSet.reviewUpdatedAt = reviewUpdatedAt;
+    }
+
+    if ('reviewScoreUpdatedAt' in input) {
+      updateSet.reviewScoreUpdatedAt = reviewScoreUpdatedAt;
+    }
 
     await this.db
       .insert(jobsTable)
       .values({
         ...input,
-        id: recordId
+        id: recordId,
+        reviewNotes,
+        reviewSummary,
+        reviewScore,
+        reviewScoreReasoning,
+        reviewUpdatedAt,
+        reviewScoreUpdatedAt
       })
       .onConflictDoUpdate({
         target: [jobsTable.sourceKind, jobsTable.sourceId],
-        set: {
-          sourceUrl: input.sourceUrl,
-          companyName: input.companyName,
-          title: input.title,
-          location: input.location,
-          remoteType: input.remoteType,
-          employmentType: input.employmentType,
-          compensationText: input.compensationText,
-          descriptionText: input.descriptionText,
-          rawPayload: input.rawPayload,
-          discoveryRunId: input.discoveryRunId,
-          status: input.status,
-          discoveredAt: input.discoveredAt,
-          updatedAt: input.updatedAt
-        }
+        set: updateSet
       });
 
     const persisted = await this.findById(recordId);
@@ -74,5 +181,56 @@ export class JobsRepository {
     }
 
     return persisted;
+  }
+
+  async updateReview(id: string, input: UpdateJobReviewInput): Promise<JobRecord | null> {
+    const existing = await this.findById(id);
+
+    if (!existing) {
+      return null;
+    }
+
+    const updateSet: Record<string, unknown> = {};
+
+    if (input.status !== undefined) {
+      updateSet.status = input.status;
+    }
+
+    if (input.reviewNotes !== undefined) {
+      updateSet.reviewNotes = input.reviewNotes;
+    }
+
+    if (input.reviewSummary !== undefined) {
+      updateSet.reviewSummary = input.reviewSummary;
+    }
+
+    if (input.reviewScore !== undefined) {
+      updateSet.reviewScore = input.reviewScore;
+    }
+
+    if (input.reviewScoreReasoning !== undefined) {
+      updateSet.reviewScoreReasoning = input.reviewScoreReasoning;
+    }
+
+    if (input.status !== undefined || input.reviewNotes !== undefined || input.reviewUpdatedAt !== undefined) {
+      updateSet.reviewUpdatedAt = input.reviewUpdatedAt ?? new Date();
+    }
+
+    if (
+      input.reviewSummary !== undefined ||
+      input.reviewScore !== undefined ||
+      input.reviewScoreReasoning !== undefined ||
+      input.reviewScoreUpdatedAt !== undefined
+    ) {
+      updateSet.reviewScoreUpdatedAt = input.reviewScoreUpdatedAt ?? new Date();
+    }
+
+    if (Object.keys(updateSet).length === 0) {
+      return existing;
+    }
+
+    await this.db.update(jobsTable).set(updateSet).where(eq(jobsTable.id, id));
+
+    return this.findById(id);
   }
 }

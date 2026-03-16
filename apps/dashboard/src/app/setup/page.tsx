@@ -29,7 +29,7 @@ async function saveSetup(formData: FormData): Promise<void> {
   revalidatePath('/setup');
 }
 
-export default async function SetupPage(): Promise<JSX.Element> {
+export default async function SetupPage() {
   const profile = await getApplicantProfile();
 
   return (

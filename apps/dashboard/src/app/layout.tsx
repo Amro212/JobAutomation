@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 const navItems = [
   { href: '/', label: 'Overview' },
   { href: '/jobs', label: 'Jobs' },
+  { href: '/shortlist', label: 'Shortlist' },
   { href: '/runs', label: 'Runs' },
   { href: '/setup', label: 'Setup' }
 ];
@@ -20,7 +21,7 @@ export default function RootLayout({
   children
 }: Readonly<{
   children: ReactNode;
-}>): JSX.Element {
+}>) {
   return (
     <html lang="en">
       <body>

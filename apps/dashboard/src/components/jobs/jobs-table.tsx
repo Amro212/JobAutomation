@@ -2,11 +2,17 @@ import Link from 'next/link';
 
 import type { JobRecord } from '@jobautomation/core';
 
-export function JobsTable({ jobs }: { jobs: JobRecord[] }): JSX.Element {
+export function JobsTable({
+  jobs,
+  emptyMessage = 'No jobs have been discovered yet.'
+}: {
+  jobs: JobRecord[];
+  emptyMessage?: string;
+}) {
   if (jobs.length === 0) {
     return (
       <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600 shadow-sm">
-        No jobs have been discovered yet.
+        {emptyMessage}
       </div>
     );
   }
@@ -18,7 +24,9 @@ export function JobsTable({ jobs }: { jobs: JobRecord[] }): JSX.Element {
           <tr>
             <th className="px-4 py-3 font-medium">Company</th>
             <th className="px-4 py-3 font-medium">Title</th>
+            <th className="px-4 py-3 font-medium">Source</th>
             <th className="px-4 py-3 font-medium">Location</th>
+            <th className="px-4 py-3 font-medium">Remote</th>
             <th className="px-4 py-3 font-medium">Status</th>
           </tr>
         </thead>
@@ -31,7 +39,9 @@ export function JobsTable({ jobs }: { jobs: JobRecord[] }): JSX.Element {
                   {job.title}
                 </Link>
               </td>
+              <td className="px-4 py-3 capitalize">{job.sourceKind}</td>
               <td className="px-4 py-3">{job.location || 'Unspecified'}</td>
+              <td className="px-4 py-3 capitalize">{job.remoteType}</td>
               <td className="px-4 py-3 capitalize">{job.status}</td>
             </tr>
           ))}

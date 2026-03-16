@@ -1,0 +1,36 @@
+[
+  {
+    "id": "6590549e-d893-4e0e-8934-dda77ef05223",
+    "text": "Account Executive II, SLED (R-18831)",
+    "hostedUrl": "https://jobs.lever.co/dnb/6590549e-d893-4e0e-8934-dda77ef05223",
+    "createdAt": 1770325149676,
+    "categories": {
+      "commitment": "Employee: Full Time",
+      "location": "Remote - United States",
+      "team": "Government Relations",
+      "allLocations": [
+        "Remote - United States"
+      ]
+    },
+    "descriptionPlain": "Shape the Future with Dun & Bradstreet.",
+    "salaryDescription": "This role is eligible for commission",
+    "workplaceType": "remote"
+  },
+  {
+    "id": "1f404a8a-5071-4fd3-a8f6-987654321abc",
+    "text": "Senior Software Engineer",
+    "hostedUrl": "https://jobs.lever.co/dnb/1f404a8a-5071-4fd3-a8f6-987654321abc",
+    "createdAt": 1772033342631,
+    "categories": {
+      "commitment": "Employee: Full Time",
+      "location": "New York, New York",
+      "team": "Engineering",
+      "allLocations": [
+        "New York, New York"
+      ]
+    },
+    "descriptionPlain": "Build the next generation of platform tooling.",
+    "salaryDescription": "$180,000 - $210,000 USD",
+    "workplaceType": "onsite"
+  }
+]

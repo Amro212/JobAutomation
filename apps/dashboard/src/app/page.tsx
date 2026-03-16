@@ -6,7 +6,7 @@ const sections = [
   { href: '/setup', title: 'Setup', description: 'Store the reusable applicant context and base LaTeX resume source.' }
 ];
 
-export default function HomePage(): JSX.Element {
+export default function HomePage() {
   return (
     <div className="space-y-8">
       <section className="rounded-3xl bg-slate-900 px-8 py-10 text-white shadow-lg">

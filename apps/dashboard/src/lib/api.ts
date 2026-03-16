@@ -1,7 +1,44 @@
-import type { ApplicantProfile, DiscoveryRunRecord, JobRecord } from '@jobautomation/core';
+import type {
+  ApplicantProfile,
+  DiscoveryRunRecord,
+  DiscoveryScheduleRecord,
+  DiscoverySourcePatch,
+  DiscoverySourceRecord,
+  JobListFilters,
+  JobReviewPatch,
+  JobRecord,
+  LogEventRecord
+} from '@jobautomation/core';
+
+export type DiscoveryRunDetail = {
+  run: DiscoveryRunRecord;
+  logs: LogEventRecord[];
+};
 
 function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
+}
+
+function buildQueryString(values: Record<string, string | undefined>): string {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(values)) {
+    if (value && value.trim().length > 0) {
+      searchParams.set(key, value);
+    }
+  }
+
+  const query = searchParams.toString();
+  return query.length > 0 ? `?${query}` : '';
+}
+
+async function readError(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { message?: string };
+    return payload.message ?? 'API request failed.';
+  } catch {
+    return 'API request failed.';
+  }
 }
 
 async function fetchFromApi<T>(path: string): Promise<T> {
@@ -16,8 +53,16 @@ async function fetchFromApi<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function getJobs(): Promise<JobRecord[]> {
-  const response = await fetchFromApi<{ jobs: JobRecord[] }>('/jobs');
+export async function getJobs(filters: JobListFilters = {}): Promise<JobRecord[]> {
+  const response = await fetchFromApi<{ jobs: JobRecord[] }>(
+    `/jobs${buildQueryString({
+      sourceKind: filters.sourceKind,
+      status: filters.status,
+      remoteType: filters.remoteType,
+      title: filters.title,
+      location: filters.location
+    })}`
+  );
   return response.jobs;
 }
 
@@ -37,9 +82,200 @@ export async function getJob(jobId: string): Promise<JobRecord | null> {
   return ((await response.json()) as { job: JobRecord }).job;
 }
 
+export async function getJobReviewCapabilities(): Promise<{ scoringEnabled: boolean }> {
+  return fetchFromApi<{ scoringEnabled: boolean }>('/job-reviews/capabilities');
+}
+
+export async function updateJobReview(
+  jobId: string,
+  payload: JobReviewPatch
+): Promise<JobRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/job-reviews/${jobId}`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
+export async function addJobToShortlist(jobId: string): Promise<JobRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/job-reviews/${jobId}/shortlist`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
+export async function removeJobFromShortlist(jobId: string): Promise<JobRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/job-reviews/${jobId}/shortlist`, {
+    method: 'DELETE',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
+export async function scoreJobReview(jobId: string): Promise<JobRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/job-reviews/${jobId}/score`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
 export async function getDiscoveryRuns(): Promise<DiscoveryRunRecord[]> {
   const response = await fetchFromApi<{ runs: DiscoveryRunRecord[] }>('/discovery-runs');
   return response.runs;
+}
+
+export async function getDiscoveryRun(runId: string): Promise<DiscoveryRunDetail | null> {
+  const response = await fetch(`${getApiBaseUrl()}/discovery-runs/${runId}`, {
+    cache: 'no-store'
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`API request failed: /discovery-runs/${runId}`);
+  }
+
+  return (await response.json()) as DiscoveryRunDetail;
+}
+
+export async function runDiscoverySources(payload: {
+  sourceIds: string[];
+}): Promise<DiscoveryRunRecord[]> {
+  const response = await fetch(`${getApiBaseUrl()}/discovery-runs`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { runs: DiscoveryRunRecord[] }).runs;
+}
+
+export async function retryDiscoveryRunStep(
+  runId: string,
+  payload: { sourceId: string }
+): Promise<DiscoveryRunRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/discovery-runs/${runId}/retry`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { run: DiscoveryRunRecord }).run;
+}
+
+export async function getDiscoverySchedule(): Promise<DiscoveryScheduleRecord> {
+  const response = await fetchFromApi<{ schedule: DiscoveryScheduleRecord }>('/discovery-schedules');
+  return response.schedule;
+}
+
+export async function updateDiscoverySchedule(payload: {
+  cronExpression?: string;
+  timezone?: string;
+  enabled?: boolean;
+}): Promise<DiscoveryScheduleRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/discovery-schedules`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { schedule: DiscoveryScheduleRecord }).schedule;
+}
+
+export async function getDiscoverySources(): Promise<DiscoverySourceRecord[]> {
+  const response = await fetchFromApi<{ sources: DiscoverySourceRecord[] }>('/discovery-sources');
+  return response.sources;
+}
+
+export async function createDiscoverySource(payload: {
+  sourceKind: 'greenhouse' | 'lever' | 'ashby';
+  sourceKey: string;
+  label: string;
+  enabled: boolean;
+}): Promise<DiscoverySourceRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/discovery-sources`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { source: DiscoverySourceRecord }).source;
+}
+
+export async function updateDiscoverySource(
+  sourceId: string,
+  payload: DiscoverySourcePatch
+): Promise<DiscoverySourceRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/discovery-sources/${sourceId}`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { source: DiscoverySourceRecord }).source;
 }
 
 export async function getApplicantProfile(): Promise<ApplicantProfile | null> {
@@ -60,7 +296,7 @@ export async function saveApplicantProfile(
   });
 
   if (!response.ok) {
-    throw new Error('Failed to save applicant profile.');
+    throw new Error(await readError(response));
   }
 
   return ((await response.json()) as { profile: ApplicantProfile }).profile;

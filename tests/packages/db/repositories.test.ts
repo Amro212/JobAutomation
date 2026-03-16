@@ -10,7 +10,9 @@ import {
   ApplicantProfileRepository,
   ArtifactsRepository,
   DiscoveryRunsRepository,
+  DiscoverySchedulesRepository,
   JobsRepository,
+  LogEventsRepository,
   createDatabaseClient
 } from '../../../packages/db/src';
 
@@ -187,5 +189,48 @@ describe('repositories', () => {
     expect(artifacts).toHaveLength(1);
     expect(runs[0]?.status).toBe('completed');
     expect(runs[0]?.newJobCount).toBe(1);
+  });
+
+  test('persists the singleton discovery schedule and run log events', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, {
+      migrationsFolder
+    });
+
+    const schedulesRepository = new DiscoverySchedulesRepository(db);
+    const runsRepository = new DiscoveryRunsRepository(db);
+    const logEventsRepository = new LogEventsRepository(db);
+
+    const schedule = await schedulesRepository.upsert({
+      cronExpression: '0 */4 * * *',
+      timezone: 'America/Toronto',
+      enabled: true
+    });
+
+    const run = await runsRepository.create({
+      sourceKind: 'structured',
+      runKind: 'structured',
+      triggerKind: 'scheduled',
+      scheduleId: schedule.id,
+      status: 'pending'
+    });
+
+    await logEventsRepository.create({
+      discoveryRunId: run.id,
+      level: 'info',
+      message: 'Queued structured discovery run.'
+    });
+
+    const storedSchedule = await schedulesRepository.get();
+    const storedRun = await runsRepository.findById(run.id);
+    const logs = await logEventsRepository.listByDiscoveryRun(run.id);
+
+    expect(storedSchedule?.enabled).toBe(true);
+    expect(storedRun?.scheduleId).toBe(schedule.id);
+    expect(storedRun?.status).toBe('pending');
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.message).toBe('Queued structured discovery run.');
   });
 });

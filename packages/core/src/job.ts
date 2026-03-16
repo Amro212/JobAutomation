@@ -2,6 +2,27 @@ import { z } from 'zod';
 
 import { jobStatusSchema } from './status';
 
+const filterTextSchema = z
+  .union([z.string(), z.undefined()])
+  .transform((value) => {
+    if (value == null) {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length === 0 ? undefined : normalized;
+  });
+
+const optionalStatusFilterSchema = z
+  .union([jobStatusSchema, z.literal(''), z.undefined()])
+  .transform((value) => {
+    if (value == null || value === '') {
+      return undefined;
+    }
+
+    return value;
+  });
+
 export const jobRecordSchema = z.object({
   id: z.string().min(1),
   sourceKind: z.string().min(1),
@@ -17,8 +38,33 @@ export const jobRecordSchema = z.object({
   rawPayload: z.string().nullable(),
   discoveryRunId: z.string().nullable(),
   status: jobStatusSchema,
+  reviewNotes: z.string().default(''),
+  reviewSummary: z.string().nullable(),
+  reviewScore: z.number().int().min(0).max(100).nullable(),
+  reviewScoreReasoning: z.string().nullable(),
+  reviewUpdatedAt: z.date().nullable(),
+  reviewScoreUpdatedAt: z.date().nullable(),
   discoveredAt: z.date(),
   updatedAt: z.date()
 });
 
+export const jobListFiltersSchema = z.object({
+  sourceKind: filterTextSchema,
+  status: optionalStatusFilterSchema,
+  remoteType: filterTextSchema,
+  title: filterTextSchema,
+  location: filterTextSchema
+});
+
+export const jobReviewPatchSchema = z
+  .object({
+    status: jobStatusSchema.optional(),
+    reviewNotes: z.string().max(4000).optional()
+  })
+  .refine((value) => value.status !== undefined || value.reviewNotes !== undefined, {
+    message: 'At least one review field must be provided.'
+  });
+
 export type JobRecord = z.infer<typeof jobRecordSchema>;
+export type JobListFilters = z.infer<typeof jobListFiltersSchema>;
+export type JobReviewPatch = z.infer<typeof jobReviewPatchSchema>;

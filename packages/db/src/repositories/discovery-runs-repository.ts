@@ -2,28 +2,60 @@ import { randomUUID } from 'node:crypto';
 
 import { desc, eq } from 'drizzle-orm';
 
-import type { DiscoveryRunStatus } from '@jobautomation/core';
+import {
+  discoveryRunRecordSchema,
+  type DiscoveryRunKind,
+  type DiscoveryRunRecord,
+  type DiscoveryRunStatus,
+  type DiscoveryRunTriggerKind
+} from '@jobautomation/core';
 
 import type { JobAutomationDatabase } from '../client';
 import { discoveryRunsTable } from '../schema';
 
-export type DiscoveryRunRecord = typeof discoveryRunsTable.$inferSelect;
+export type CreateDiscoveryRunInput = {
+  sourceKind: string;
+  runKind?: DiscoveryRunKind;
+  triggerKind?: DiscoveryRunTriggerKind;
+  discoverySourceId?: string | null;
+  scheduleId?: string | null;
+  status?: DiscoveryRunStatus;
+};
+
+function mapDiscoveryRun(record: typeof discoveryRunsTable.$inferSelect): DiscoveryRunRecord {
+  return discoveryRunRecordSchema.parse(record);
+}
 
 export class DiscoveryRunsRepository {
   constructor(private readonly db: JobAutomationDatabase) {}
 
   async list(): Promise<DiscoveryRunRecord[]> {
-    return this.db
+    const records = await this.db
       .select()
       .from(discoveryRunsTable)
       .orderBy(desc(discoveryRunsTable.startedAt));
+
+    return records.map(mapDiscoveryRun);
   }
 
-  async create(sourceKind: string): Promise<DiscoveryRunRecord> {
-    const record: DiscoveryRunRecord = {
+  async findById(id: string): Promise<DiscoveryRunRecord | null> {
+    const record = await this.db.query.discoveryRunsTable.findFirst({
+      where: eq(discoveryRunsTable.id, id)
+    });
+
+    return record ? mapDiscoveryRun(record) : null;
+  }
+
+  async create(input: string | CreateDiscoveryRunInput): Promise<DiscoveryRunRecord> {
+    const parsed = typeof input === 'string' ? { sourceKind: input } : input;
+    const record = {
       id: randomUUID(),
-      sourceKind,
-      status: 'running',
+      sourceKind: parsed.sourceKind,
+      runKind: parsed.runKind ?? 'single-source',
+      triggerKind: parsed.triggerKind ?? 'manual',
+      discoverySourceId: parsed.discoverySourceId ?? null,
+      scheduleId: parsed.scheduleId ?? null,
+      status: parsed.status ?? ('running' as const),
       startedAt: new Date(),
       completedAt: null,
       jobCount: 0,
@@ -33,6 +65,23 @@ export class DiscoveryRunsRepository {
     };
 
     await this.db.insert(discoveryRunsTable).values(record);
+    return discoveryRunRecordSchema.parse(record);
+  }
+
+  async markRunning(id: string): Promise<DiscoveryRunRecord> {
+    await this.db
+      .update(discoveryRunsTable)
+      .set({
+        status: 'running',
+        errorMessage: null
+      })
+      .where(eq(discoveryRunsTable.id, id));
+
+    const record = await this.findById(id);
+    if (!record) {
+      throw new Error(`Discovery run ${id} was not found.`);
+    }
+
     return record;
   }
 
@@ -56,9 +105,7 @@ export class DiscoveryRunsRepository {
       })
       .where(eq(discoveryRunsTable.id, args.id));
 
-    const record = await this.db.query.discoveryRunsTable.findFirst({
-      where: eq(discoveryRunsTable.id, args.id)
-    });
+    const record = await this.findById(args.id);
 
     if (!record) {
       throw new Error(`Discovery run ${args.id} was not found.`);

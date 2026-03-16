@@ -2,9 +2,16 @@ import { z } from 'zod';
 
 import { discoveryRunStatusSchema } from './status';
 
+export const discoveryRunKindSchema = z.enum(['single-source', 'structured']);
+export const discoveryRunTriggerKindSchema = z.enum(['manual', 'scheduled', 'retry']);
+
 export const discoveryRunRecordSchema = z.object({
   id: z.string().min(1),
   sourceKind: z.string().min(1),
+  runKind: discoveryRunKindSchema,
+  triggerKind: discoveryRunTriggerKindSchema,
+  discoverySourceId: z.string().nullable(),
+  scheduleId: z.string().nullable(),
   status: discoveryRunStatusSchema,
   startedAt: z.date(),
   completedAt: z.date().nullable(),
@@ -14,4 +21,6 @@ export const discoveryRunRecordSchema = z.object({
   errorMessage: z.string().nullable()
 });
 
+export type DiscoveryRunKind = z.infer<typeof discoveryRunKindSchema>;
+export type DiscoveryRunTriggerKind = z.infer<typeof discoveryRunTriggerKindSchema>;
 export type DiscoveryRunRecord = z.infer<typeof discoveryRunRecordSchema>;

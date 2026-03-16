@@ -4,7 +4,10 @@ import {
   ApplicantProfileRepository,
   ArtifactsRepository,
   DiscoveryRunsRepository,
+  DiscoverySchedulesRepository,
+  DiscoverySourcesRepository,
   JobsRepository,
+  LogEventsRepository,
   createDatabaseClient,
   migrateDatabase,
   type JobAutomationDatabase
@@ -14,7 +17,10 @@ export interface ApiRepositories {
   applicantProfile: ApplicantProfileRepository;
   artifacts: ArtifactsRepository;
   discoveryRuns: DiscoveryRunsRepository;
+  discoverySchedules: DiscoverySchedulesRepository;
+  discoverySources: DiscoverySourcesRepository;
   jobs: JobsRepository;
+  logEvents: LogEventsRepository;
 }
 
 declare module 'fastify' {
@@ -33,7 +39,10 @@ export const registerDatabasePlugin = fp(async (app) => {
     applicantProfile: new ApplicantProfileRepository(db),
     artifacts: new ArtifactsRepository(db),
     discoveryRuns: new DiscoveryRunsRepository(db),
-    jobs: new JobsRepository(db)
+    discoverySchedules: new DiscoverySchedulesRepository(db),
+    discoverySources: new DiscoverySourcesRepository(db),
+    jobs: new JobsRepository(db),
+    logEvents: new LogEventsRepository(db)
   });
 
   app.addHook('onClose', async () => {
