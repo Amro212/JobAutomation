@@ -1,4 +1,5 @@
 import fp from 'fastify-plugin';
+import { dirname, join } from 'node:path';
 
 import type { DiscoveryRunRecord, DiscoverySourceRecord } from '@jobautomation/core';
 import { logEventRecordSchema } from '@jobautomation/core';
@@ -15,6 +16,8 @@ declare module 'fastify' {
 
 export const registerDiscoveryExecutionPlugin = fp(async (app) => {
   const queue = new DiscoveryQueueService({
+    artifactsRepository: app.repositories.artifacts,
+    artifactsRootDir: join(dirname(app.config.JOB_AUTOMATION_DB_PATH), 'artifacts'),
     jobsRepository: app.repositories.jobs,
     runsRepository: app.repositories.discoveryRuns,
     logEventsRepository: app.repositories.logEvents,

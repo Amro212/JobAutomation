@@ -11,6 +11,14 @@ type RetryableSource = {
   sourceKind: string;
 };
 
+type ArtifactSummary = {
+  id: string;
+  kind: string;
+  format: string;
+  fileName: string;
+  storagePath: string;
+};
+
 function parseDetails(log: LogEventRecord): Record<string, unknown> | null {
   if (!log.detailsJson) {
     return null;
@@ -49,6 +57,22 @@ function getRetryableSources(logs: LogEventRecord[]): RetryableSource[] {
   return retryable;
 }
 
+function renderLogDetails(log: LogEventRecord): string {
+  const details = parseDetails(log);
+  if (!details) {
+    return 'No structured details';
+  }
+
+  const parts = [
+    typeof details.label === 'string' ? details.label : null,
+    typeof details.pageUrl === 'string' ? details.pageUrl : null,
+    typeof details.extractorId === 'string' ? `extractor ${details.extractorId}` : null,
+    typeof details.fallbackMode === 'string' ? `mode ${details.fallbackMode}` : null
+  ].filter((value): value is string => value !== null);
+
+  return parts.length > 0 ? parts.join(' • ') : 'Structured run metadata';
+}
+
 async function retrySourceAction(formData: FormData): Promise<void> {
   'use server';
 
@@ -80,6 +104,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
   }
 
   const retryableSources = getRetryableSources(detail.logs);
+  const artifacts = detail.artifacts as ArtifactSummary[];
 
   return (
     <section className="space-y-6">
@@ -133,6 +158,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
             <tr>
               <th className="px-4 py-3 font-medium">Level</th>
               <th className="px-4 py-3 font-medium">Message</th>
+              <th className="px-4 py-3 font-medium">Details</th>
               <th className="px-4 py-3 font-medium">Created</th>
             </tr>
           </thead>
@@ -141,11 +167,45 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
               <tr key={log.id}>
                 <td className="px-4 py-3 uppercase text-slate-600">{log.level}</td>
                 <td className="px-4 py-3 text-slate-900">{log.message}</td>
+                <td className="px-4 py-3 text-xs text-slate-600">{renderLogDetails(log)}</td>
                 <td className="px-4 py-3 text-slate-600">{log.createdAt.toLocaleString()}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </section>
+
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-4">
+          <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Artifacts</p>
+          <h3 className="mt-2 text-xl font-semibold text-slate-900">Fallback evidence</h3>
+        </div>
+        {artifacts.length === 0 ? (
+          <div className="px-6 py-5 text-sm text-slate-600">
+            No fallback evidence was captured for this run.
+          </div>
+        ) : (
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Kind</th>
+                <th className="px-4 py-3 font-medium">Format</th>
+                <th className="px-4 py-3 font-medium">File</th>
+                <th className="px-4 py-3 font-medium">Storage Path</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {artifacts.map((artifact) => (
+                <tr key={artifact.id}>
+                  <td className="px-4 py-3 text-slate-900">{artifact.kind}</td>
+                  <td className="px-4 py-3 uppercase text-slate-600">{artifact.format}</td>
+                  <td className="px-4 py-3 text-slate-900">{artifact.fileName}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{artifact.storagePath}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </section>
   );

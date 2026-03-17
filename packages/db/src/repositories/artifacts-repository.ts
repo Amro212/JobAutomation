@@ -38,4 +38,14 @@ export class ArtifactsRepository {
 
     return records.map(mapArtifactRecord);
   }
+
+  async listByDiscoveryRun(discoveryRunId: string): Promise<ArtifactRecord[]> {
+    const records = await this.db
+      .select()
+      .from(artifactsTable)
+      .where(eq(artifactsTable.discoveryRunId, discoveryRunId))
+      .orderBy(desc(artifactsTable.createdAt));
+
+    return records.map(mapArtifactRecord);
+  }
 }

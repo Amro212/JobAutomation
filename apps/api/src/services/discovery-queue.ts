@@ -1,7 +1,9 @@
 import PQueue from 'p-queue';
 
+import { runPlaywrightDiscovery } from '@jobautomation/automation';
 import type { DiscoveryRunRecord, DiscoverySourceRecord } from '@jobautomation/core';
 import type {
+  ArtifactsRepository,
   DiscoveryRunsRepository,
   JobsRepository,
   LogEventsRepository
@@ -14,6 +16,8 @@ export type QueueDiscoveryRunInput = {
 };
 
 export type DiscoveryQueueServiceInput = {
+  artifactsRepository: ArtifactsRepository;
+  artifactsRootDir: string;
   jobsRepository: JobsRepository;
   runsRepository: DiscoveryRunsRepository;
   logEventsRepository: LogEventsRepository;
@@ -36,16 +40,28 @@ export class DiscoveryQueueService {
     void this.queue
       .add(async () => {
         try {
-          await runStructuredDiscovery({
-            run: input.run,
-            sources: input.sources,
-            jobsRepository: this.input.jobsRepository,
-            runsRepository: this.input.runsRepository,
-            logEventsRepository: this.input.logEventsRepository,
-            greenhouseBaseUrl: this.input.greenhouseBaseUrl,
-            leverBaseUrl: this.input.leverBaseUrl,
-            ashbyBaseUrl: this.input.ashbyBaseUrl
-          });
+          if (input.sources.length === 1 && input.sources[0]?.sourceKind === 'playwright') {
+            await runPlaywrightDiscovery({
+              run: input.run,
+              source: input.sources[0],
+              jobsRepository: this.input.jobsRepository,
+              runsRepository: this.input.runsRepository,
+              logEventsRepository: this.input.logEventsRepository,
+              artifactsRepository: this.input.artifactsRepository,
+              artifactsRootDir: this.input.artifactsRootDir
+            });
+          } else {
+            await runStructuredDiscovery({
+              run: input.run,
+              sources: input.sources,
+              jobsRepository: this.input.jobsRepository,
+              runsRepository: this.input.runsRepository,
+              logEventsRepository: this.input.logEventsRepository,
+              greenhouseBaseUrl: this.input.greenhouseBaseUrl,
+              leverBaseUrl: this.input.leverBaseUrl,
+              ashbyBaseUrl: this.input.ashbyBaseUrl
+            });
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown discovery queue error.';
           await this.input.logEventsRepository.create({

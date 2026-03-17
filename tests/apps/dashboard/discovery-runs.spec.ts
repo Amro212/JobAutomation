@@ -56,6 +56,7 @@ test('shows scheduled discovery controls and run detail logs', async ({ page }) 
     await expect(page.getByRole('heading', { name: 'greenhouse discovery run' })).toBeVisible();
     await expect(page.getByText('Queued manual discovery run.')).toBeVisible();
     await expect(page.getByText('Completed greenhouse source Acme Corp.')).toBeVisible();
+    await expect(page.getByText('No fallback evidence was captured for this run.')).toBeVisible();
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {

@@ -1,5 +1,6 @@
 import type {
   ApplicantProfile,
+  ArtifactRecord,
   DiscoveryRunRecord,
   DiscoveryScheduleRecord,
   DiscoverySourcePatch,
@@ -13,6 +14,7 @@ import type {
 export type DiscoveryRunDetail = {
   run: DiscoveryRunRecord;
   logs: LogEventRecord[];
+  artifacts: ArtifactRecord[];
 };
 
 function getApiBaseUrl(): string {
@@ -237,7 +239,7 @@ export async function getDiscoverySources(): Promise<DiscoverySourceRecord[]> {
 }
 
 export async function createDiscoverySource(payload: {
-  sourceKind: 'greenhouse' | 'lever' | 'ashby';
+  sourceKind: 'greenhouse' | 'lever' | 'ashby' | 'playwright';
   sourceKey: string;
   label: string;
   enabled: boolean;

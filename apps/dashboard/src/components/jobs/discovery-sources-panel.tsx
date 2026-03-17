@@ -15,11 +15,11 @@ export function DiscoverySourcesPanel({
     <section className="space-y-4 rounded-3xl bg-white p-8 shadow-sm">
       <div>
         <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Discovery Sources</p>
-        <h3 className="mt-2 text-xl font-semibold text-slate-900">Structured source onboarding</h3>
+        <h3 className="mt-2 text-xl font-semibold text-slate-900">Structured and fallback source onboarding</h3>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          Add Greenhouse, Lever, or Ashby sources using either the raw handle or the full public
-          board URL, keep them enabled for repeat runs, and trigger a manual source run without
-          leaving the dashboard.
+          Add Greenhouse, Lever, Ashby, or a persisted Playwright fallback source. Playwright
+          sources use a canonical public jobs or listings URL and remain inspectable through the
+          same runs, logs, and artifact views.
         </p>
       </div>
 
@@ -35,6 +35,7 @@ export function DiscoverySourcesPanel({
             <option value="greenhouse">Greenhouse</option>
             <option value="lever">Lever</option>
             <option value="ashby">Ashby</option>
+            <option value="playwright">Playwright</option>
           </select>
         </label>
         <label className="space-y-2 text-sm text-slate-700">
@@ -79,7 +80,7 @@ export function DiscoverySourcesPanel({
               <tr>
                 <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Label</th>
-                <th className="px-4 py-3 font-medium">Token</th>
+                <th className="px-4 py-3 font-medium">Source Key</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Actions</th>
               </tr>

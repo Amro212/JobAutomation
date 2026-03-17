@@ -20,7 +20,8 @@ async function addDiscoverySource(formData: FormData): Promise<void> {
     sourceKind: String(formData.get('sourceKind') ?? 'greenhouse') as
       | 'greenhouse'
       | 'lever'
-      | 'ashby',
+      | 'ashby'
+      | 'playwright',
     label: String(formData.get('label') ?? ''),
     sourceKey: String(formData.get('sourceKey') ?? ''),
     enabled: formData.get('enabled') === 'on'
@@ -83,8 +84,8 @@ export default async function JobsPage({
           Discovery review and intake
         </h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          Structured discovery is live for Greenhouse, Lever, and Ashby. Run sources, then review,
-          filter, and shortlist the persisted jobs below.
+          Structured discovery is live for Greenhouse, Lever, and Ashby, and browser fallback can
+          now onboard persisted Playwright sources when a public jobs page has no supported feed.
         </p>
       </div>
       <DiscoverySourcesPanel

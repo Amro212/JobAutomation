@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const discoverySourceKindSchema = z.enum(['greenhouse', 'lever', 'ashby']);
+export const discoverySourceKindSchema = z.enum(['greenhouse', 'lever', 'ashby', 'playwright']);
 
 export const discoverySourceRecordSchema = z.object({
   id: z.string().min(1),
