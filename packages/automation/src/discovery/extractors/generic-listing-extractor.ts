@@ -39,6 +39,21 @@ function normalizeText(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function parseDocumentTitle(value: string | null | undefined): string | null {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const titleBeforeCompany = normalized.split(' @ ')[0]?.trim();
+  if (titleBeforeCompany) {
+    return titleBeforeCompany;
+  }
+
+  const titleBeforeSite = normalized.split(' | ')[0]?.trim();
+  return titleBeforeSite || normalized;
+}
+
 async function firstText(page: Page, selectors: string[]): Promise<string | null> {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
@@ -59,6 +74,7 @@ async function collectAnchorUrls(page: Page, selector: string, sourcePageUrl: st
   const anchors = page.locator(selector);
   const count = await anchors.count();
   const urls: string[] = [];
+  const sourceOrigin = new URL(sourcePageUrl).origin;
 
   for (let index = 0; index < count; index += 1) {
     const anchor = anchors.nth(index);
@@ -69,6 +85,10 @@ async function collectAnchorUrls(page: Page, selector: string, sourcePageUrl: st
 
     const absoluteUrl = new URL(href, sourcePageUrl);
     if (absoluteUrl.protocol !== 'http:' && absoluteUrl.protocol !== 'https:') {
+      continue;
+    }
+
+    if (absoluteUrl.origin !== sourceOrigin) {
       continue;
     }
 
@@ -87,10 +107,15 @@ export class GenericListingExtractor implements PlaywrightDiscoveryExtractor {
       '[data-job-detail]',
       '[data-job-listings] a[href]',
       '[data-job-card] a[href]',
+      'a[href*="/companies/"][href*="/jobs/"]',
       'main a[href*="/jobs/"]',
+      'a[href*="/jobs/"]',
       'main a[href*="/careers/"]',
+      'a[href*="/careers/"]',
       'main a[href*="/positions/"]',
-      'main a[href*="/roles/"]'
+      'a[href*="/positions/"]',
+      'main a[href*="/roles/"]',
+      'a[href*="/roles/"]'
     ];
     const currentUrl = canonicalizeUrl(sourcePageUrl);
     const discoveredUrls = new Set<string>();
@@ -113,12 +138,23 @@ export class GenericListingExtractor implements PlaywrightDiscoveryExtractor {
     context: PlaywrightExtractorContext
   ): Promise<ExtractedPlaywrightJob> {
     const sourceId = await firstText(page, ['[data-job-id]', '[data-posting-id]', '[data-job-id-value]']);
-    const title = await firstText(page, ['[data-job-title]', 'main h1', 'article h1', 'h1']);
+    const title =
+      parseDocumentTitle(await page.title()) ??
+      (await firstText(page, [
+        '[data-job-title]',
+        'main h1',
+        'article h1',
+        'h1',
+        'main h2',
+        'article h2',
+        'h2'
+      ]));
     const companyName = await firstText(page, [
       '[data-company-name]',
       '[data-job-company]',
       '[data-company]',
-      '.company'
+      '.company',
+      'a[href*="/companies/"]'
     ]);
     const location = normalizeText(
       await firstText(page, [
@@ -144,7 +180,8 @@ export class GenericListingExtractor implements PlaywrightDiscoveryExtractor {
         '[data-description]',
         'main article',
         'article',
-        'main'
+        'main',
+        'body'
       ])
     ) ?? '';
 

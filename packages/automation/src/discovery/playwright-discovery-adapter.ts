@@ -22,6 +22,9 @@ import {
 import type { ExtractedPlaywrightJob } from './extractors/base-extractor';
 import { StagehandExtractionError } from '../stagehand/stagehand-discovery-adapter';
 
+const DEFAULT_DISCOVERY_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
+
 type PersistedArtifact = {
   id: string;
   kind: string;
@@ -339,7 +342,13 @@ export async function runPlaywrightDiscovery(
   input: PlaywrightDiscoveryAdapterInput
 ): Promise<DiscoveryRunRecord> {
   const browser = await (input.createBrowser ?? createDiscoveryBrowser)();
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    locale: 'en-US',
+    userAgent: process.env.PLAYWRIGHT_DISCOVERY_USER_AGENT ?? DEFAULT_DISCOVERY_USER_AGENT,
+    extraHTTPHeaders: {
+      'accept-language': 'en-US,en;q=0.9'
+    }
+  });
   const artifactIds: string[] = [];
   const currentPageUrlRef = {
     value: input.source.sourceKey

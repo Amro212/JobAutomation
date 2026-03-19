@@ -277,4 +277,319 @@ describe('playwright fallback discovery', () => {
     expect(artifacts.some((artifact) => artifact.kind === 'fallback-page-html')).toBe(true);
     expect(artifacts.some((artifact) => artifact.kind === 'fallback-trace')).toBe(true);
   });
+
+  test('uses a desktop browser profile for source navigation so public boards that block headless defaults still load', async () => {
+    server?.removeAllListeners('request');
+    server?.on('request', (request, response) => {
+      const url = request.url ?? '/';
+      const userAgent = request.headers['user-agent'] ?? '';
+      const acceptLanguage = request.headers['accept-language'] ?? '';
+
+      if (url === '/jobs') {
+        const looksHeadless = userAgent.includes('HeadlessChrome');
+        const hasDesktopLanguage = acceptLanguage.includes('en-US');
+
+        if (looksHeadless || !hasDesktopLanguage) {
+          response.writeHead(403, { 'content-type': 'application/octet-stream' });
+          response.end('blocked');
+          return;
+        }
+
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <main data-job-listings>
+                <article data-job-card>
+                  <a href="/jobs/fingerprint-safe-role" data-job-detail>Fingerprint Safe Role</a>
+                </article>
+              </main>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      if (url === '/jobs/fingerprint-safe-role') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <article data-job-detail-page>
+                <h1 data-job-title>Fingerprint Safe Role</h1>
+                <div data-company-name>Example Corp</div>
+                <div data-job-location>Toronto, ON</div>
+                <div data-job-id>fingerprint-001</div>
+                <section data-job-description>Desktop profile navigation should pass.</section>
+              </article>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      response.writeHead(404, { 'content-type': 'text/html' });
+      response.end('<html><body>Not found</body></html>');
+    });
+
+    const source = await sourcesRepository.upsert({
+      sourceKind: 'playwright',
+      sourceKey: `${baseUrl}/jobs`,
+      label: 'Fingerprint Careers',
+      enabled: true
+    });
+    const run = await runsRepository.create({
+      sourceKind: 'playwright',
+      discoverySourceId: source.id,
+      status: 'pending'
+    });
+
+    const result = await runPlaywrightDiscovery({
+      run,
+      source,
+      jobsRepository,
+      runsRepository,
+      logEventsRepository,
+      artifactsRepository,
+      artifactsRootDir,
+      escalate: vi.fn().mockResolvedValue(null)
+    });
+
+    expect(result.status).toBe('completed');
+
+    const jobs = await jobsRepository.list({
+      sourceKind: 'playwright'
+    });
+    expect(jobs.some((job) => job.sourceId === 'fingerprint-001')).toBe(true);
+  });
+
+  test('collects company job links and h2-based detail pages from generic public boards', async () => {
+    server?.removeAllListeners('request');
+    server?.on('request', (request, response) => {
+      const url = request.url ?? '/';
+
+      if (url === '/jobs') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <div>
+                <a href="/companies/example/jobs/67955262-sales-representative#content">Sales Representative</a>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      if (url === '/companies/example/jobs/67955262-sales-representative') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <div>
+                <h2>Sales Representative</h2>
+                <a href="/companies/example#content">Example Corp</a>
+                <div>Canada · Remote</div>
+                <div>Sales & Business Development · Full-time</div>
+                <div>CAD 50k-60k / year</div>
+                <p>The opportunity</p>
+                <p>Join the team.</p>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      response.writeHead(404, { 'content-type': 'text/html' });
+      response.end('<html><body>Not found</body></html>');
+    });
+
+    const source = await sourcesRepository.upsert({
+      sourceKind: 'playwright',
+      sourceKey: `${baseUrl}/jobs`,
+      label: 'Generic Careers',
+      enabled: true
+    });
+    const run = await runsRepository.create({
+      sourceKind: 'playwright',
+      discoverySourceId: source.id,
+      status: 'pending'
+    });
+
+    const result = await runPlaywrightDiscovery({
+      run,
+      source,
+      jobsRepository,
+      runsRepository,
+      logEventsRepository,
+      artifactsRepository,
+      artifactsRootDir,
+      escalate: vi.fn().mockResolvedValue(null)
+    });
+
+    expect(result.status).toBe('completed');
+
+    const jobs = await jobsRepository.list({
+      sourceKind: 'playwright'
+    });
+    const matchedJob = jobs.find((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'));
+    expect(matchedJob?.title).toBe('Sales Representative');
+  });
+
+  test('ignores external apply links when same-origin detail pages are available on the source board', async () => {
+    server?.removeAllListeners('request');
+    server?.on('request', (request, response) => {
+      const url = request.url ?? '/';
+
+      if (url === '/jobs') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <div>
+                <a href="https://www.linkedin.com/jobs/view/123">External Apply Link</a>
+                <a href="/companies/example/jobs/67955262-sales-representative#content">Sales Representative</a>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      if (url === '/companies/example/jobs/67955262-sales-representative') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <div>
+                <h2>Sales Representative</h2>
+                <a href="/companies/example#content">Example Corp</a>
+                <div>Canada · Remote</div>
+                <p>Join the team.</p>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      response.writeHead(404, { 'content-type': 'text/html' });
+      response.end('<html><body>Not found</body></html>');
+    });
+
+    const source = await sourcesRepository.upsert({
+      sourceKind: 'playwright',
+      sourceKey: `${baseUrl}/jobs`,
+      label: 'Generic Careers',
+      enabled: true
+    });
+    const run = await runsRepository.create({
+      sourceKind: 'playwright',
+      discoverySourceId: source.id,
+      status: 'pending'
+    });
+
+    const result = await runPlaywrightDiscovery({
+      run,
+      source,
+      jobsRepository,
+      runsRepository,
+      logEventsRepository,
+      artifactsRepository,
+      artifactsRootDir,
+      escalate: vi.fn().mockResolvedValue(null)
+    });
+
+    expect(result.status).toBe('completed');
+
+    const jobs = await jobsRepository.list({
+      sourceKind: 'playwright'
+    });
+    expect(jobs.some((job) => job.sourceUrl.includes('linkedin.com'))).toBe(false);
+    expect(jobs.some((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'))).toBe(true);
+  });
+
+  test('prefers the document title when generic shell headings appear before the job heading', async () => {
+    server?.removeAllListeners('request');
+    server?.on('request', (request, response) => {
+      const url = request.url ?? '/';
+
+      if (url === '/jobs') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <div>
+                <a href="/companies/example/jobs/67955262-sales-representative#content">Sales Representative</a>
+              </div>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      if (url === '/companies/example/jobs/67955262-sales-representative') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <head>
+              <title>Sales Representative @ Example Corp | Work In Tech Job Board</title>
+            </head>
+            <body>
+              <main>
+                <section>
+                  <h2>Canada's Talent Marketplace</h2>
+                </section>
+                <section>
+                  <div>
+                    <a href="/companies/example#content">Example Corp</a>
+                    <h2>Sales Representative</h2>
+                    <div>Canada · Remote</div>
+                    <p>Join the team.</p>
+                  </div>
+                </section>
+              </main>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      response.writeHead(404, { 'content-type': 'text/html' });
+      response.end('<html><body>Not found</body></html>');
+    });
+
+    const source = await sourcesRepository.upsert({
+      sourceKind: 'playwright',
+      sourceKey: `${baseUrl}/jobs`,
+      label: 'Generic Careers',
+      enabled: true
+    });
+    const run = await runsRepository.create({
+      sourceKind: 'playwright',
+      discoverySourceId: source.id,
+      status: 'pending'
+    });
+
+    const result = await runPlaywrightDiscovery({
+      run,
+      source,
+      jobsRepository,
+      runsRepository,
+      logEventsRepository,
+      artifactsRepository,
+      artifactsRootDir,
+      escalate: vi.fn().mockResolvedValue(null)
+    });
+
+    expect(result.status).toBe('completed');
+
+    const jobs = await jobsRepository.list({
+      sourceKind: 'playwright'
+    });
+    const matchedJob = jobs.find((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'));
+    expect(matchedJob?.title).toBe('Sales Representative');
+  });
 });
