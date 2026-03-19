@@ -19,6 +19,13 @@ export const workspaceProjects = [
       environment: 'node',
       include: ['tests/packages/discovery/**/*.test.ts']
     }
+  },
+  {
+    test: {
+      name: 'automation',
+      environment: 'node',
+      include: ['tests/packages/automation/**/*.test.ts']
+    }
   }
 ];
 

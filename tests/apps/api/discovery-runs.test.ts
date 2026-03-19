@@ -1,5 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -88,6 +89,16 @@ describe('discovery run routes', () => {
 
     await app.discoveryQueue.onIdle();
 
+    const artifact = await app.repositories.artifacts.create({
+      jobId: null,
+      discoveryRunId: runResponse.json().runs[0].id,
+      kind: 'fallback-screenshot',
+      format: 'png',
+      fileName: 'evidence.png',
+      storagePath: 'artifacts/fallback/evidence.png',
+      createdAt: new Date()
+    });
+
     const jobsResponse = await app.inject({ method: 'GET', url: '/jobs' });
     const runDetailResponse = await app.inject({
       method: 'GET',
@@ -99,6 +110,14 @@ describe('discovery run routes', () => {
     expect(jobsResponse.json().jobs[0].title).toBe('Senior Platform Engineer');
     expect(runDetailResponse.statusCode).toBe(200);
     expect(runDetailResponse.json().run.status).toBe('completed');
+    expect(runDetailResponse.json().artifacts).toEqual([
+      expect.objectContaining({
+        id: artifact.id,
+        kind: 'fallback-screenshot',
+        format: 'png',
+        storagePath: 'artifacts/fallback/evidence.png'
+      })
+    ]);
     expect(runDetailResponse.json().logs.map((log: { message: string }) => log.message)).toEqual([
       'Queued manual discovery run.',
       'Started discovery run.',
@@ -340,5 +359,119 @@ describe('discovery run routes', () => {
 
     expect(secondRunDetailResponse.json().run.newJobCount).toBe(0);
     expect(secondRunDetailResponse.json().run.updatedJobCount).toBe(0);
+  });
+
+  test('queues a playwright fallback run and persists jobs, logs, and artifacts through the shared run detail route', async () => {
+    const server = createServer((request, response) => {
+      const url = request.url ?? '/';
+
+      if (url === '/jobs') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <main data-job-listings>
+                <article data-job-card>
+                  <a href="/jobs/fallback-platform-engineer" data-job-detail>Fallback Platform Engineer</a>
+                </article>
+              </main>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      if (url === '/jobs/fallback-platform-engineer') {
+        response.writeHead(200, { 'content-type': 'text/html' });
+        response.end(`
+          <html>
+            <body>
+              <article data-job-detail-page>
+                <h1 data-job-title>Fallback Platform Engineer</h1>
+                <div data-company-name>Fallback Corp</div>
+                <div data-job-location>Toronto, ON</div>
+                <div data-job-id>fallback-001</div>
+                <section data-job-description>Deterministic browser fallback extraction.</section>
+              </article>
+            </body>
+          </html>
+        `);
+        return;
+      }
+
+      response.writeHead(404, { 'content-type': 'text/html' });
+      response.end('<html><body>Not found</body></html>');
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, '127.0.0.1', (error?: Error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Test server address was not available.');
+      }
+
+      const sourceUrl = `http://127.0.0.1:${address.port}/jobs`;
+      const createSourceResponse = await app.inject({
+        method: 'POST',
+        url: '/discovery-sources',
+        payload: {
+          sourceKind: 'playwright',
+          sourceKey: sourceUrl,
+          label: 'Fallback Careers',
+          enabled: true
+        }
+      });
+
+      const runResponse = await app.inject({
+        method: 'POST',
+        url: '/discovery-runs',
+        payload: {
+          sourceIds: [createSourceResponse.json().source.id]
+        }
+      });
+
+      await app.discoveryQueue.onIdle();
+
+      const jobsResponse = await app.inject({ method: 'GET', url: '/jobs?sourceKind=playwright' });
+      const runDetailResponse = await app.inject({
+        method: 'GET',
+        url: `/discovery-runs/${runResponse.json().runs[0].id}`
+      });
+
+      expect(jobsResponse.statusCode).toBe(200);
+      expect(jobsResponse.json().jobs).toHaveLength(1);
+      expect(jobsResponse.json().jobs[0].sourceKind).toBe('playwright');
+      expect(JSON.parse(jobsResponse.json().jobs[0].rawPayload)).toMatchObject({
+        sourcePageUrl: sourceUrl,
+        detailPageUrl: `http://127.0.0.1:${address.port}/jobs/fallback-platform-engineer`,
+        extractorId: 'generic-listing',
+        fallbackMode: 'playwright',
+        stagehandUsed: false
+      });
+      expect(runDetailResponse.json().run.status).toBe('completed');
+      expect(runDetailResponse.json().artifacts.some((artifact: { kind: string }) => artifact.kind === 'fallback-trace')).toBe(true);
+      expect(runDetailResponse.json().logs.some((log: { message: string }) => log.message === 'Completed playwright source Fallback Careers.')).toBe(true);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    }
   });
 });

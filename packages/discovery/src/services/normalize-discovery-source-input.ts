@@ -75,6 +75,19 @@ function normalizeAshbySourceKey(value: string): string {
   return trimmed.toLowerCase();
 }
 
+function normalizePlaywrightSourceKey(value: string): string {
+  const trimmed = value.trim();
+  const parsed = new URL(trimmed);
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Playwright discovery sources must use an absolute http or https URL.');
+  }
+
+  parsed.hash = '';
+
+  return parsed.toString();
+}
+
 export function normalizeDiscoverySourceKey(
   sourceKind: DiscoverySourceKind,
   sourceKey: string
@@ -86,6 +99,8 @@ export function normalizeDiscoverySourceKey(
       return normalizeLeverSourceKey(sourceKey);
     case 'ashby':
       return normalizeAshbySourceKey(sourceKey);
+    case 'playwright':
+      return normalizePlaywrightSourceKey(sourceKey);
   }
 }
 

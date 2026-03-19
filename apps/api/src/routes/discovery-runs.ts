@@ -1,4 +1,5 @@
 import {
+  artifactRecordSchema,
   discoveryRunRecordSchema,
   logEventRecordSchema
 } from '@jobautomation/core';
@@ -50,9 +51,11 @@ export const registerDiscoveryRunRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const logs = await app.repositories.logEvents.listByDiscoveryRun(runId);
+    const artifacts = await app.repositories.artifacts.listByDiscoveryRun(runId);
     return {
       run: discoveryRunRecordSchema.parse(run),
-      logs: logs.map((entry) => logEventRecordSchema.parse(entry))
+      logs: logs.map((entry) => logEventRecordSchema.parse(entry)),
+      artifacts: artifacts.map((artifact) => artifactRecordSchema.parse(artifact))
     };
   });
 
