@@ -320,10 +320,15 @@ export async function getJobArtifacts(jobId: string): Promise<ArtifactRecord[]> 
   return response.artifacts;
 }
 
+export type GenerateArtifactsResult = {
+  artifacts: ArtifactRecord[];
+  warnings: string[] | undefined;
+};
+
 export async function generateJobArtifacts(
   jobId: string,
   payload: { mode?: 'both' | 'resume' | 'cover-letter' } = {}
-): Promise<ArtifactRecord[]> {
+): Promise<GenerateArtifactsResult> {
   const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/artifacts`, {
     method: 'POST',
     headers: {
@@ -337,5 +342,6 @@ export async function generateJobArtifacts(
     throw new Error(await readError(response));
   }
 
-  return ((await response.json()) as { artifacts: ArtifactRecord[] }).artifacts;
+  const body = (await response.json()) as { artifacts: ArtifactRecord[]; warnings?: string[] };
+  return { artifacts: body.artifacts, warnings: body.warnings };
 }

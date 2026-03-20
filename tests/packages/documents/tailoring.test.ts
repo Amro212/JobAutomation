@@ -145,7 +145,8 @@ describe('tailoring', () => {
       expect(persistedArtifacts).toHaveLength(4);
       expect(persistedArtifacts[0]?.version).toBe(1);
       expect(persistedArtifacts[0]?.applicantProfileId).toBe('default');
-      expect(readFileSync(resumeTexPath, 'utf8')).toContain('with emphasis on');
+      expect(readFileSync(resumeTexPath, 'utf8')).toContain('Built TypeScript automation systems');
+      expect(readFileSync(resumeTexPath, 'utf8')).toContain('\\documentclass{article}');
       expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('Reference resume: resume.tex');
       expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('reusable applicant context');
 

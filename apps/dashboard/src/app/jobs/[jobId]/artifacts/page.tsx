@@ -74,16 +74,20 @@ export default async function JobArtifactsPage({
       | 'resume'
       | 'cover-letter';
 
+    let warningText = '';
     try {
-      await generateJobArtifacts(jobId, { mode: payloadMode });
+      const result = await generateJobArtifacts(jobId, { mode: payloadMode });
       revalidatePath(`/jobs/${jobId}/artifacts`);
       revalidatePath(`/jobs/${jobId}`);
+      if (result.warnings?.length) {
+        warningText = ` (warnings: ${result.warnings.join('; ')})`;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate artifacts.';
       redirect(buildJobArtifactsHref(jobId, { error: message }));
     }
 
-    redirect(buildJobArtifactsHref(jobId, { message: getGenerateMessage(payloadMode) }));
+    redirect(buildJobArtifactsHref(jobId, { message: `${getGenerateMessage(payloadMode)}${warningText}` }));
   }
 
   const readiness = profileState.readiness;

@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 
 import type { ApplicantProfile, ArtifactRecord, JobRecord } from '@jobautomation/core';
 import type { ArtifactsRepository } from '@jobautomation/db';
-import { buildTailoringPrompt, tailoringOutputSchema, type TailoringOutput } from '@jobautomation/llm';
+import { buildTailoringPrompt, tailoringOutputJsonSchema, tailoringOutputSchema, type TailoringOutput } from '@jobautomation/llm';
 
 import { storeArtifact } from '../artifacts/store-artifact';
 import { compileLatexDocument } from '../compiler/tectonic';
@@ -43,12 +43,13 @@ async function loadOptionalCoverLetterDraft(
     descriptionText: input.job.descriptionText,
     applicantSummary: input.applicantProfile.summary,
     applicantContext: input.applicantContext,
-    baseResumeFileName: input.baseResumeFileName
+    baseResumeFileName: input.baseResumeFileName,
+    baseResumeTex: input.baseResumeTex
   });
 
   const raw = await openRouter.generateStructuredObject({
     schemaName: 'tailoring-output',
-    schema: tailoringOutputSchema,
+    schema: tailoringOutputJsonSchema as Record<string, unknown>,
     systemPrompt: prompt.systemPrompt,
     prompt: prompt.prompt
   });

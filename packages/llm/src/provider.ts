@@ -31,6 +31,9 @@ type OpenRouterErrorResponse = {
   };
 };
 
+const OPENROUTER_MAX_FETCH_ATTEMPTS = 3;
+const OPENROUTER_RETRY_DELAY_MS = 150;
+
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
@@ -52,40 +55,125 @@ function readMessageContent(response: OpenRouterResponse): string {
   throw new Error('OpenRouter returned an empty response.');
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readFetchErrorDetails(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return '';
+  }
+
+  const cause = error.cause as
+    | {
+        code?: string;
+        message?: string;
+      }
+    | undefined;
+  const details: string[] = [];
+
+  if (cause?.code) {
+    details.push(`code=${cause.code}`);
+  }
+
+  if (cause?.message) {
+    details.push(`cause=${cause.message}`);
+  }
+
+  if (details.length === 0) {
+    return '';
+  }
+
+  return ` (${details.join(', ')})`;
+}
+
+function isRetryableFetchError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  const cause = error.cause as
+    | {
+        code?: string;
+        message?: string;
+      }
+    | undefined;
+  const code = cause?.code?.toLowerCase() ?? '';
+  const causeMessage = cause?.message?.toLowerCase() ?? '';
+
+  return (
+    message.includes('fetch failed') ||
+    message.includes('timeout') ||
+    code.includes('timeout') ||
+    code.includes('econnreset') ||
+    code.includes('enetunreach') ||
+    code.includes('enotfound') ||
+    code.includes('eai_again') ||
+    causeMessage.includes('timeout')
+  );
+}
+
 export function createOpenRouterProvider(config: OpenRouterConfig) {
   const fetchImpl = config.fetchImpl ?? fetch;
   const endpoint = `${trimTrailingSlash(config.baseUrl)}/chat/completions`;
 
   return {
     async generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown> {
-      const response = await fetchImpl(endpoint, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${config.apiKey}`,
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: config.model,
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: input.schemaName,
-              strict: true,
-              schema: input.schema
-            }
-          },
-          messages: [
-            {
-              role: 'system',
-              content: input.systemPrompt
+      let response: Response | null = null;
+      let lastError: unknown;
+
+      for (let attempt = 1; attempt <= OPENROUTER_MAX_FETCH_ATTEMPTS; attempt += 1) {
+        try {
+          response = await fetchImpl(endpoint, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${config.apiKey}`,
+              'content-type': 'application/json'
             },
-            {
-              role: 'user',
-              content: input.prompt
-            }
-          ]
-        })
-      });
+            body: JSON.stringify({
+              model: config.model,
+              response_format: {
+                type: 'json_schema',
+                json_schema: {
+                  name: input.schemaName,
+                  strict: true,
+                  schema: input.schema
+                }
+              },
+              messages: [
+                {
+                  role: 'system',
+                  content: input.systemPrompt
+                },
+                {
+                  role: 'user',
+                  content: input.prompt
+                }
+              ]
+            })
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+
+          if (attempt === OPENROUTER_MAX_FETCH_ATTEMPTS || !isRetryableFetchError(error)) {
+            const message = error instanceof Error ? error.message : 'Unknown fetch error.';
+            const details = readFetchErrorDetails(error);
+            throw new Error(
+              `OpenRouter transport error after ${attempt} attempt(s): ${message}${details}`
+            );
+          }
+
+          await sleep(OPENROUTER_RETRY_DELAY_MS * attempt);
+        }
+      }
+
+      if (!response) {
+        const message = lastError instanceof Error ? lastError.message : 'Unknown fetch error.';
+        const details = readFetchErrorDetails(lastError);
+        throw new Error(`OpenRouter transport error: ${message}${details}`);
+      }
 
       if (!response.ok) {
         let details = '';

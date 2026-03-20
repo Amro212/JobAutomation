@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 
 import type { ApplicantProfile, ArtifactRecord, JobRecord } from '@jobautomation/core';
 import type { ArtifactsRepository } from '@jobautomation/db';
-import { buildTailoringPrompt, tailoringOutputSchema, type TailoringOutput } from '@jobautomation/llm';
+import { buildTailoringPrompt, tailoringOutputJsonSchema, tailoringOutputSchema, type TailoringOutput } from '@jobautomation/llm';
 
 import { storeArtifact } from '../artifacts/store-artifact';
 import { compileLatexDocument } from '../compiler/tectonic';
@@ -29,27 +29,18 @@ export type GenerateResumeVariantInput = {
 
 function applyTargetedResumeEdits(
   baseResumeTex: string,
-  jobKeywords: string[],
   editHints: TailoringOutput | null
 ): string {
-  let nextResume = baseResumeTex;
-  const keywords = (editHints?.resumeKeywords.length ? editHints.resumeKeywords : jobKeywords).slice(0, 3);
-
-  for (const edit of editHints?.resumeEdits ?? []) {
-    nextResume = nextResume.includes(edit.search)
-      ? nextResume.replace(edit.search, edit.replacement)
-      : nextResume;
+  if (!editHints || editHints.resumeEdits.length === 0) {
+    return baseResumeTex;
   }
 
-  if (keywords.length > 0) {
-    const keywordLine = keywords.join(', ');
-    nextResume = nextResume.replace(/(\\item\s+[^\n]+)/, (match) => {
-      if (match.includes(keywordLine)) {
-        return match;
-      }
+  let nextResume = baseResumeTex;
 
-      return `${match} with emphasis on ${keywordLine}`;
-    });
+  for (const edit of editHints.resumeEdits) {
+    if (nextResume.includes(edit.search)) {
+      nextResume = nextResume.replace(edit.search, edit.replacement);
+    }
   }
 
   return nextResume;
@@ -70,12 +61,13 @@ async function loadOptionalLLMEdits(
     descriptionText: input.job.descriptionText,
     applicantSummary: input.applicantProfile.summary,
     applicantContext: input.applicantContext,
-    baseResumeFileName: input.baseResumeFileName
+    baseResumeFileName: input.baseResumeFileName,
+    baseResumeTex: input.baseResumeTex
   });
 
   const raw = await openRouter.generateStructuredObject({
     schemaName: 'tailoring-output',
-    schema: tailoringOutputSchema,
+    schema: tailoringOutputJsonSchema as Record<string, unknown>,
     systemPrompt: prompt.systemPrompt,
     prompt: prompt.prompt
   });
@@ -110,7 +102,6 @@ export async function generateResumeVariant(
       applicant_summary: input.applicantProfile.summary,
       applicant_context: input.applicantProfile.reusableContext
     }),
-    tailoringInput.jobKeywords,
     llmOutput
   );
 

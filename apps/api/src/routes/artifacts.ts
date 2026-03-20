@@ -28,10 +28,6 @@ function parseGeneratePayload(body: unknown): { mode: GenerateArtifactsMode } {
 function buildOpenRouterClient(
   app: Pick<FastifyInstance, 'config'>
 ): ReturnType<typeof createOpenRouterProvider> | null {
-  if (process.env.JOB_AUTOMATION_TAILORING_LLM !== '1') {
-    return null;
-  }
-
   if (!app.config.OPENROUTER_API_KEY) {
     return null;
   }
@@ -122,31 +118,51 @@ export const registerArtifactsRoutes: FastifyPluginAsync = async (app) => {
       storagePath: string;
       version: number;
     }> = [];
+    const errors: string[] = [];
 
     if (mode === 'both' || mode === 'resume') {
-      generatedArtifacts.push(
-        ...(await generateResumeVariant({
-          job,
-          applicantProfile: profile,
-          artifactsRepository: app.repositories.artifacts,
-          openRouter
-        }))
-      );
+      try {
+        generatedArtifacts.push(
+          ...(await generateResumeVariant({
+            job,
+            applicantProfile: profile,
+            artifactsRepository: app.repositories.artifacts,
+            openRouter
+          }))
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Resume generation failed.';
+        app.log.error({ err: error, jobId }, 'Resume variant generation failed');
+        errors.push(`Resume: ${message}`);
+      }
     }
 
     if (mode === 'both' || mode === 'cover-letter') {
-      generatedArtifacts.push(
-        ...(await generateCoverLetterVariant({
-          job,
-          applicantProfile: profile,
-          artifactsRepository: app.repositories.artifacts,
-          openRouter
-        }))
-      );
+      try {
+        generatedArtifacts.push(
+          ...(await generateCoverLetterVariant({
+            job,
+            applicantProfile: profile,
+            artifactsRepository: app.repositories.artifacts,
+            openRouter
+          }))
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Cover letter generation failed.';
+        app.log.error({ err: error, jobId }, 'Cover letter variant generation failed');
+        errors.push(`Cover letter: ${message}`);
+      }
+    }
+
+    if (generatedArtifacts.length === 0 && errors.length > 0) {
+      return reply.code(500).send({
+        message: `Artifact generation failed: ${errors.join('; ')}`
+      });
     }
 
     return {
-      artifacts: generatedArtifacts.map((artifact) => artifactRecordSchema.parse(artifact))
+      artifacts: generatedArtifacts.map((artifact) => artifactRecordSchema.parse(artifact)),
+      warnings: errors.length > 0 ? errors : undefined
     };
   });
 };

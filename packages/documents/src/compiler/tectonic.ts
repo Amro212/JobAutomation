@@ -1,9 +1,28 @@
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 
 import { resolveTectonicCommand, type ResolvedTectonicCommand } from './resolve-tectonic';
+
+const TECTONIC_INCOMPATIBLE_LINES = [
+  /^\\input\{glyphtounicode\}\s*$/,
+  /^\\pdfgentounicode\s*=\s*\d+\s*$/
+];
+
+function sanitizeForTectonic(texContent: string): string {
+  return texContent
+    .split(/\r?\n/)
+    .map((line) => {
+      for (const pattern of TECTONIC_INCOMPATIBLE_LINES) {
+        if (pattern.test(line.trim())) {
+          return `% [tectonic-compat] ${line}`;
+        }
+      }
+      return line;
+    })
+    .join('\n');
+}
 
 export type TectonicCommand = ResolvedTectonicCommand;
 
@@ -68,6 +87,16 @@ export async function compileLatexDocument(
       ];
 
   await mkdir(input.outDir, { recursive: true });
+
+  try {
+    const rawTex = await readFile(input.texPath, 'utf8');
+    const sanitized = sanitizeForTectonic(rawTex);
+    if (sanitized !== rawTex) {
+      await writeFile(input.texPath, sanitized, 'utf8');
+    }
+  } catch {
+    // If we can't read/write the file, let Tectonic handle it and report errors.
+  }
 
   return await new Promise<TectonicCompileResult>((resolve) => {
     const child = spawn(tectonic.command, args, {

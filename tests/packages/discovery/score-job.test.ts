@@ -251,4 +251,81 @@ describe('scoreJob', () => {
       message: 'OpenRouter authentication failed. Check OPENROUTER_API_KEY and retry.'
     } satisfies Pick<JobScoreError, 'code' | 'message'>);
   });
+
+  test('retries transient OpenRouter transport failures', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-retry',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/retry',
+      companyName: 'Retry Corp',
+      title: 'Platform Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Build reliable job automation systems.',
+      rawPayload: '{"id":"job-retry"}',
+      discoveryRunId: null,
+      status: 'reviewing',
+      reviewNotes: '',
+      reviewSummary: null,
+      reviewScore: null,
+      reviewScoreReasoning: null,
+      reviewUpdatedAt: new Date('2026-03-15T13:00:00.000Z'),
+      reviewScoreUpdatedAt: null,
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    let attempts = 0;
+
+    const scored = await scoreJob({
+      jobId: job.id,
+      jobsRepository,
+      openRouter: {
+        apiKey: 'test-key',
+        baseUrl: 'https://openrouter.example/api/v1',
+        model: 'openrouter/test-model',
+        fetchImpl: async () => {
+          attempts += 1;
+
+          if (attempts === 1) {
+            throw new TypeError('fetch failed');
+          }
+
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      summary: 'Reliable platform role with strong alignment to automation work.',
+                      score: 81,
+                      reasoning: 'Role emphasizes reliability and systems ownership with remote fit.'
+                    })
+                  }
+                }
+              ]
+            }),
+            {
+              status: 200,
+              headers: {
+                'content-type': 'application/json'
+              }
+            }
+          );
+        }
+      }
+    });
+
+    expect(attempts).toBe(2);
+    expect(scored.reviewScore).toBe(81);
+    expect(scored.reviewSummary).toContain('Reliable platform role');
+  });
 });

@@ -3,6 +3,7 @@
 .vscode/
 .idea/
 .DS_Store
+.cursorignore
 
 ## Project Files
 
