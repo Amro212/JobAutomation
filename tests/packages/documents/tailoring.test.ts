@@ -147,8 +147,8 @@ describe('tailoring', () => {
       expect(persistedArtifacts[0]?.applicantProfileId).toBe('default');
       expect(readFileSync(resumeTexPath, 'utf8')).toContain('Built TypeScript automation systems');
       expect(readFileSync(resumeTexPath, 'utf8')).toContain('\\documentclass{article}');
-      expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('Reference resume: resume.tex');
-      expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('reusable applicant context');
+      expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('Dear Hiring Manager,');
+      expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('Example Corp');
 
       const resumePdfPath = join(outputRoot, 'artifacts', job.id, 'resume-variant', 'v1', 'resume.pdf');
       const coverLetterPdfPath = join(

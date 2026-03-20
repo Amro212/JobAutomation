@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 
 import type { ApplicantProfile, ArtifactRecord, JobRecord } from '@jobautomation/core';
 import type { ArtifactsRepository } from '@jobautomation/db';
-import { buildTailoringPrompt, tailoringOutputJsonSchema, tailoringOutputSchema, type TailoringOutput } from '@jobautomation/llm';
+import { buildResumeTailoringPrompt, tailoringOutputJsonSchema, tailoringOutputSchema, type TailoringOutput } from '@jobautomation/llm';
 
 import { storeArtifact } from '../artifacts/store-artifact';
 import { compileLatexDocument } from '../compiler/tectonic';
@@ -27,6 +27,10 @@ export type GenerateResumeVariantInput = {
   } | null;
 };
 
+function normalizeWhitespace(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 function applyTargetedResumeEdits(
   baseResumeTex: string,
   editHints: TailoringOutput | null
@@ -40,10 +44,36 @@ function applyTargetedResumeEdits(
   for (const edit of editHints.resumeEdits) {
     if (nextResume.includes(edit.search)) {
       nextResume = nextResume.replace(edit.search, edit.replacement);
+      continue;
+    }
+
+    const normalizedSearch = normalizeWhitespace(edit.search);
+    const lines = nextResume.split('\n');
+    let matched = false;
+    for (let i = 0; i < lines.length; i++) {
+      if (normalizeWhitespace(lines[i]!).includes(normalizedSearch)) {
+        const originalLine = lines[i]!;
+        const leadingWs = originalLine.match(/^(\s*)/)?.[1] ?? '';
+        lines[i] = leadingWs + edit.replacement;
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
+      nextResume = lines.join('\n');
     }
   }
 
   return nextResume;
+}
+
+function extractDocumentBody(tex: string): string {
+  const beginIdx = tex.indexOf('\\begin{document}');
+  const endIdx = tex.indexOf('\\end{document}');
+  if (beginIdx === -1 || endIdx === -1) {
+    return tex;
+  }
+  return tex.slice(beginIdx, endIdx + '\\end{document}'.length);
 }
 
 async function loadOptionalLLMEdits(
@@ -54,7 +84,9 @@ async function loadOptionalLLMEdits(
     return null;
   }
 
-  const prompt = buildTailoringPrompt({
+  const resumeBody = extractDocumentBody(input.baseResumeTex);
+
+  const prompt = buildResumeTailoringPrompt({
     jobTitle: input.job.title,
     companyName: input.job.companyName,
     location: input.job.location,
@@ -62,7 +94,7 @@ async function loadOptionalLLMEdits(
     applicantSummary: input.applicantProfile.summary,
     applicantContext: input.applicantContext,
     baseResumeFileName: input.baseResumeFileName,
-    baseResumeTex: input.baseResumeTex
+    baseResumeTex: resumeBody
   });
 
   const raw = await openRouter.generateStructuredObject({

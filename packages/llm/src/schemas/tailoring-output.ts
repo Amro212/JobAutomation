@@ -1,15 +1,20 @@
 import { z } from 'zod';
 
 export const tailoringResumeEditSchema = z.object({
-  search: z.string().trim().min(1).max(240),
-  replacement: z.string().trim().min(1).max(400),
-  rationale: z.string().trim().min(1).max(400)
+  search: z.string().trim().min(1).max(500),
+  replacement: z.string().trim().min(1).max(600),
+  rationale: z.string().trim().max(400).optional().default('')
 });
 
 export const tailoringOutputSchema = z.object({
-  resumeKeywords: z.array(z.string().trim().min(1).max(60)).max(12).default([]),
-  resumeEdits: z.array(tailoringResumeEditSchema).max(8).default([]),
-  coverLetterParagraphs: z.array(z.string().trim().min(1).max(1200)).min(2).max(4)
+  resumeKeywords: z
+    .array(z.string().trim().min(1).max(60))
+    .default([])
+    .transform((arr) => arr.slice(0, 15)),
+  resumeEdits: z
+    .array(tailoringResumeEditSchema)
+    .default([])
+    .transform((arr) => arr.slice(0, 12))
 });
 
 export type TailoringOutput = z.infer<typeof tailoringOutputSchema>;
@@ -17,7 +22,7 @@ export type TailoringOutput = z.infer<typeof tailoringOutputSchema>;
 export const tailoringOutputJsonSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['resumeKeywords', 'resumeEdits', 'coverLetterParagraphs'],
+  required: ['resumeKeywords', 'resumeEdits'],
   properties: {
     resumeKeywords: {
       type: 'array',
@@ -26,42 +31,53 @@ export const tailoringOutputJsonSchema = {
         minLength: 1,
         maxLength: 60
       },
-      maxItems: 12
     },
     resumeEdits: {
       type: 'array',
-      maxItems: 8,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['search', 'replacement', 'rationale'],
+        required: ['search', 'replacement'],
         properties: {
           search: {
             type: 'string',
             minLength: 1,
-            maxLength: 240
+            maxLength: 500
           },
           replacement: {
             type: 'string',
             minLength: 1,
-            maxLength: 400
+            maxLength: 600
           },
           rationale: {
             type: 'string',
-            minLength: 1,
             maxLength: 400
           }
         }
       }
-    },
+    }
+  }
+} as const;
+
+export const coverLetterOutputSchema = z.object({
+  coverLetterParagraphs: z.array(z.string().trim().min(1).max(2000)).min(2).max(8)
+});
+
+export type CoverLetterOutput = z.infer<typeof coverLetterOutputSchema>;
+
+export const coverLetterOutputJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['coverLetterParagraphs'],
+  properties: {
     coverLetterParagraphs: {
       type: 'array',
-      minItems: 2,
-      maxItems: 4,
+      minItems: 3,
+      maxItems: 5,
       items: {
         type: 'string',
         minLength: 1,
-        maxLength: 1200
+        maxLength: 2000
       }
     }
   }

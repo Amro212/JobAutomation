@@ -3,12 +3,16 @@ import { join, resolve } from 'node:path';
 
 import type { ApplicantProfile, ArtifactRecord, JobRecord } from '@jobautomation/core';
 import type { ArtifactsRepository } from '@jobautomation/db';
-import { buildTailoringPrompt, tailoringOutputJsonSchema, tailoringOutputSchema, type TailoringOutput } from '@jobautomation/llm';
+import {
+  buildCoverLetterPrompt,
+  coverLetterOutputJsonSchema,
+  coverLetterOutputSchema,
+  type CoverLetterOutput
+} from '@jobautomation/llm';
 
 import { storeArtifact } from '../artifacts/store-artifact';
 import { compileLatexDocument } from '../compiler/tectonic';
 import { escapeLatex } from '../tokens/escape-latex';
-import { renderTemplate } from '../tokens/render-template';
 import { buildTailoringInput } from './build-tailoring-input';
 import { loadApplicantContext } from './load-applicant-context';
 import { loadBaseResume } from './load-base-resume';
@@ -28,15 +32,15 @@ export type GenerateCoverLetterVariantInput = {
   } | null;
 };
 
-async function loadOptionalCoverLetterDraft(
+async function generateCoverLetterContent(
   input: ReturnType<typeof buildTailoringInput>,
   openRouter?: GenerateCoverLetterVariantInput['openRouter']
-): Promise<TailoringOutput | null> {
+): Promise<CoverLetterOutput | null> {
   if (!openRouter) {
     return null;
   }
 
-  const prompt = buildTailoringPrompt({
+  const prompt = buildCoverLetterPrompt({
     jobTitle: input.job.title,
     companyName: input.job.companyName,
     location: input.job.location,
@@ -48,53 +52,51 @@ async function loadOptionalCoverLetterDraft(
   });
 
   const raw = await openRouter.generateStructuredObject({
-    schemaName: 'tailoring-output',
-    schema: tailoringOutputJsonSchema as Record<string, unknown>,
+    schemaName: 'cover-letter-output',
+    schema: coverLetterOutputJsonSchema as Record<string, unknown>,
     systemPrompt: prompt.systemPrompt,
     prompt: prompt.prompt
   });
 
-  return tailoringOutputSchema.parse(raw);
+  return coverLetterOutputSchema.parse(raw);
 }
 
-function buildCoverLetterParagraphs(
+function buildCoverLetterBody(
   input: ReturnType<typeof buildTailoringInput>,
-  draft: TailoringOutput | null
-): string[] {
-  const resumeReference = input.applicantProfile.baseResumeFileName || 'the uploaded LaTeX resume';
-  const contextReference =
-    input.applicantProfile.reusableContext.trim().length > 0
-      ? input.applicantProfile.reusableContext
-      : 'the reusable applicant context';
-
-  const fallbackParagraphs = [
-    `I am applying for the ${input.job.title} role at ${input.job.companyName} using my canonical LaTeX resume (${resumeReference}) and my reusable applicant context so the application stays aligned with the profile I keep for job search work.`,
-    `The role stands out because it matches my experience with ${input.jobKeywords.slice(0, 3).join(', ') || 'local-first automation, TypeScript, and operational tooling'}. I keep the resume structure intact and only adapt the targeted details that matter for this job.`,
-    `The reusable applicant context I keep for applications emphasizes ${contextReference}. I would welcome a conversation about how that background fits your team and the problems this role needs to solve.`
-  ];
-
-  if (!draft) {
-    return fallbackParagraphs;
+  draft: CoverLetterOutput | null
+): string {
+  if (draft && draft.coverLetterParagraphs.length > 0) {
+    return draft.coverLetterParagraphs
+      .map((p) => escapeLatex(p))
+      .join('\n\n');
   }
 
-  const extraParagraphs = draft.coverLetterParagraphs.slice(0, 3);
   return [
-    fallbackParagraphs[0],
-    ...extraParagraphs,
-    fallbackParagraphs[2]
-  ].slice(0, 4);
+    escapeLatex(
+      `I am writing to express my interest in the ${input.job.title} position at ${input.job.companyName}. ` +
+      `My background in software development and hands-on experience with automation and tooling align well with the responsibilities outlined in the job posting.`
+    ),
+    escapeLatex(
+      `Through my work experience, I have developed skills in building automation workflows, integrating APIs, and creating tools that improve efficiency. ` +
+      `I am confident these experiences have prepared me to contribute meaningfully to your team.`
+    ),
+    escapeLatex(
+      `I would welcome the opportunity to discuss how my background and skills can support ${input.job.companyName}'s goals. ` +
+      `Thank you for considering my application.`
+    )
+  ].join('\n\n');
 }
 
 export async function generateCoverLetterVariant(
   input: GenerateCoverLetterVariantInput
 ): Promise<ArtifactRecord[]> {
-  const baseResume = loadBaseResume(input.applicantProfile);
+  loadBaseResume(input.applicantProfile);
   loadApplicantContext(input.applicantProfile);
   const tailoringInput = buildTailoringInput({
     job: input.job,
     applicantProfile: input.applicantProfile
   });
-  const draft = await loadOptionalCoverLetterDraft(tailoringInput, input.openRouter ?? null);
+  const draft = await generateCoverLetterContent(tailoringInput, input.openRouter ?? null);
   const outputRoot = resolve(input.outputRoot ?? 'output');
   const version = await input.artifactsRepository.nextVersionForJobAndKind(
     input.job.id,
@@ -103,23 +105,37 @@ export async function generateCoverLetterVariant(
   const jobDir = join(outputRoot, 'artifacts', input.job.id, 'cover-letter', `v${version}`);
   const texPath = join(jobDir, 'cover-letter.tex');
   const pdfPath = join(jobDir, 'cover-letter.pdf');
-  const paragraphs = buildCoverLetterParagraphs(tailoringInput, draft);
+
+  const body = buildCoverLetterBody(tailoringInput, draft);
+
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
   const coverLetterTemplate = await readFile(
     new URL('../templates/cover-letter/base.tex', import.meta.url),
     'utf8'
   );
-  const coverLetterTex = renderTemplate(
-    coverLetterTemplate,
-    {
-      company_name: input.job.companyName,
-      candidate_name: input.applicantProfile.fullName || 'Applicant',
-      cover_letter_body: paragraphs.map((paragraph) => `${escapeLatex(paragraph)}\n\n`).join(''),
-      resume_reference: baseResume.baseResumeFileName
-    },
-    {
-      rawTokens: ['cover_letter_body']
-    }
-  );
+
+  const tokens: Record<string, string> = {
+    '{{date}}': escapeLatex(dateStr),
+    '{{addressee}}': escapeLatex('Hiring Manager'),
+    '{{company_name}}': escapeLatex(input.job.companyName),
+    '{{position_title}}': escapeLatex(input.job.title),
+    '{{candidate_name}}': escapeLatex(input.applicantProfile.fullName || 'Applicant'),
+    '{{candidate_email}}': escapeLatex(input.applicantProfile.email || ''),
+    '{{candidate_phone}}': escapeLatex(input.applicantProfile.phone || ''),
+    '{{candidate_location}}': escapeLatex(input.applicantProfile.location || ''),
+    '{{cover_letter_body}}': body
+  };
+
+  let coverLetterTex = coverLetterTemplate;
+  for (const [token, value] of Object.entries(tokens)) {
+    coverLetterTex = coverLetterTex.replaceAll(token, value);
+  }
 
   await mkdir(jobDir, { recursive: true });
   await writeFile(texPath, coverLetterTex, 'utf8');

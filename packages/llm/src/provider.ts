@@ -32,7 +32,8 @@ type OpenRouterErrorResponse = {
 };
 
 const OPENROUTER_MAX_FETCH_ATTEMPTS = 3;
-const OPENROUTER_RETRY_DELAY_MS = 150;
+const OPENROUTER_RETRY_DELAY_MS = 2000;
+const OPENROUTER_REQUEST_TIMEOUT_MS = 300_000;
 
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
@@ -131,15 +132,11 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
               authorization: `Bearer ${config.apiKey}`,
               'content-type': 'application/json'
             },
+            signal: AbortSignal.timeout(OPENROUTER_REQUEST_TIMEOUT_MS),
             body: JSON.stringify({
               model: config.model,
               response_format: {
-                type: 'json_schema',
-                json_schema: {
-                  name: input.schemaName,
-                  strict: true,
-                  schema: input.schema
-                }
+                type: 'json_object'
               },
               messages: [
                 {

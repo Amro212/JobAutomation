@@ -13,6 +13,10 @@ docs/
 
 ## Generated Files
 
+# Artifact output (generated PDFs, LaTeX files, logs)
+output/
+apps/api/output/
+
 node_modules/
 .next/
 playwright-report/
