@@ -1,5 +1,9 @@
 import type { ApplicantProfile } from '@jobautomation/core';
 
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { SubmitButton } from '@/components/submit-button';
+
 const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
   id: 'default',
   fullName: '',
@@ -17,7 +21,6 @@ const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
 export function ApplicantProfileForm({
   action,
   profile,
-  saveState
 }: {
   action: (formData: FormData) => Promise<void>;
   profile: ApplicantProfile | null;
@@ -26,41 +29,77 @@ export function ApplicantProfileForm({
   const current = profile ? { ...profile, updatedAt: undefined } : defaultProfile;
 
   return (
-    <form action={action} className="space-y-6 rounded-3xl bg-white p-8 shadow-sm">
+    <form action={action} className="space-y-6 rounded-xl border bg-card p-6 shadow-sm">
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Full name</span><input name="fullName" defaultValue={current.fullName} className="w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Email</span><input name="email" defaultValue={current.email} className="w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Phone</span><input name="phone" defaultValue={current.phone} className="w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Location</span><input name="location" defaultValue={current.location} className="w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">LinkedIn URL</span><input name="linkedinUrl" defaultValue={current.linkedinUrl} className="w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Website URL</span><input name="websiteUrl" defaultValue={current.websiteUrl} className="w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Full name</span>
+          <Input name="fullName" defaultValue={current.fullName} />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Email</span>
+          <Input name="email" defaultValue={current.email} />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Phone</span>
+          <Input name="phone" defaultValue={current.phone} />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Location</span>
+          <Input name="location" defaultValue={current.location} />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">LinkedIn URL</span>
+          <Input name="linkedinUrl" defaultValue={current.linkedinUrl} />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Website URL</span>
+          <Input name="websiteUrl" defaultValue={current.websiteUrl} />
+        </label>
       </div>
 
-      <label className="block space-y-2 text-sm text-slate-700">
+      <label className="block space-y-2 text-sm">
         <span className="font-medium">Professional summary</span>
-        <textarea name="summary" defaultValue={current.summary} rows={4} className="w-full rounded-2xl border border-slate-200 px-4 py-3" />
+        <Textarea name="summary" defaultValue={current.summary} rows={4} />
       </label>
 
-      <label className="block space-y-2 text-sm text-slate-700">
+      <label className="block space-y-2 text-sm">
         <span className="font-medium">Reusable applicant context</span>
-        <textarea name="reusableContext" defaultValue={current.reusableContext} rows={6} className="w-full rounded-2xl border border-slate-200 px-4 py-3" />
+        <Textarea name="reusableContext" defaultValue={current.reusableContext} rows={6} />
       </label>
 
       <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Base resume file name</span><input name="baseResumeFileName" defaultValue={current.baseResumeFileName} className="w-full rounded-2xl border border-slate-200 px-4 py-3" /></label>
-        <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">Upload replacement `.tex` source</span><input name="baseResumeFile" type="file" accept=".tex,text/plain" className="block w-full rounded-2xl border border-dashed border-slate-300 px-4 py-3" /></label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Base resume file name</span>
+          <Input name="baseResumeFileName" defaultValue={current.baseResumeFileName} />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Upload replacement .tex source</span>
+          <Input
+            name="baseResumeFile"
+            type="file"
+            accept=".tex,text/plain"
+            className="file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
+          />
+        </label>
       </div>
 
-      <label className="block space-y-2 text-sm text-slate-700">
+      <label className="block space-y-2 text-sm">
         <span className="font-medium">Stored LaTeX source</span>
-        <textarea name="baseResumeTex" defaultValue={current.baseResumeTex} rows={12} className="w-full rounded-2xl border border-slate-200 px-4 py-3 font-mono text-xs" />
+        <Textarea
+          name="baseResumeTex"
+          defaultValue={current.baseResumeTex}
+          rows={12}
+          className="font-mono text-xs"
+        />
       </label>
 
       <input type="hidden" name="id" value={current.id} />
 
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-slate-500">{saveState ?? 'Store the canonical applicant context and base LaTeX resume source for later milestones.'}</p>
-        <button type="submit" className="rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white">Save setup</button>
+        <p className="text-sm text-muted-foreground">
+          Store the canonical applicant context and base LaTeX resume source for later milestones.
+        </p>
+        <SubmitButton pendingText="Saving...">Save setup</SubmitButton>
       </div>
     </form>
   );

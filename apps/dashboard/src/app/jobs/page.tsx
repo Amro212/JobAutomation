@@ -2,16 +2,16 @@ import { revalidatePath } from 'next/cache';
 
 import { jobListFiltersSchema } from '@jobautomation/core';
 
-import { DiscoverySourcesPanel } from '../../components/jobs/discovery-sources-panel';
-import { JobFilters } from '../../components/jobs/job-filters';
-import { JobsTable } from '../../components/jobs/jobs-table';
+import { DiscoverySourcesPanel } from '@/components/jobs/discovery-sources-panel';
+import { JobFilters } from '@/components/jobs/job-filters';
+import { JobsTable } from '@/components/jobs/jobs-table';
 import {
   createDiscoverySource,
   getDiscoverySources,
   getJobs,
   runDiscoverySources,
   updateDiscoverySource
-} from '../../lib/api';
+} from '@/lib/api';
 
 async function addDiscoverySource(formData: FormData): Promise<void> {
   'use server';
@@ -79,11 +79,11 @@ export default async function JobsPage({
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Jobs</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Jobs</p>
+        <h2 className="mt-2 text-2xl font-semibold text-foreground">
           Discovery review and intake
         </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Structured discovery is live for Greenhouse, Lever, and Ashby, and browser fallback can
           now onboard persisted Playwright sources when a public jobs page has no supported feed.
         </p>

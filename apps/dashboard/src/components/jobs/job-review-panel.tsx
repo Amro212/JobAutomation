@@ -1,5 +1,8 @@
 import type { JobRecord } from '@jobautomation/core';
 
+import { Textarea } from '@/components/ui/textarea';
+import { SubmitButton } from '@/components/submit-button';
+
 function InfoCard({
   label,
   value
@@ -8,9 +11,11 @@ function InfoCard({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</dt>
-      <dd className="mt-2 text-sm leading-6 text-slate-900">{value}</dd>
+    <div className="rounded-lg border bg-muted/50 p-4">
+      <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-2 text-sm leading-6 text-foreground">{value}</dd>
     </div>
   );
 }
@@ -18,8 +23,6 @@ function InfoCard({
 export function JobReviewPanel({
   job,
   scoringEnabled,
-  flashMessage,
-  flashError,
   saveReviewAction,
   addToShortlistAction,
   removeFromShortlistAction,
@@ -35,12 +38,14 @@ export function JobReviewPanel({
   scoreAction: () => Promise<void>;
 }) {
   return (
-    <section className="space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+    <section className="space-y-6 rounded-xl border bg-card p-6 shadow-sm">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Review Workflow</p>
-          <h3 className="mt-2 text-2xl font-semibold text-slate-900">Triage and shortlist</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Review Workflow
+          </p>
+          <h3 className="mt-2 text-2xl font-semibold text-foreground">Triage and shortlist</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Persist notes, move this job into or out of the shortlist, and optionally request an
             on-demand summary and score.
           </p>
@@ -48,62 +53,43 @@ export function JobReviewPanel({
         <div className="flex flex-wrap gap-3">
           {job.status === 'shortlisted' ? (
             <form action={removeFromShortlistAction}>
-              <button
-                type="submit"
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
-              >
+              <SubmitButton variant="outline" pendingText="Removing...">
                 Remove from shortlist
-              </button>
+              </SubmitButton>
             </form>
           ) : (
             <form action={addToShortlistAction}>
-              <button
-                type="submit"
-                className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
-              >
+              <SubmitButton variant="success" pendingText="Adding...">
                 Add to shortlist
-              </button>
+              </SubmitButton>
             </form>
           )}
           <form action={scoreAction}>
-            <button
-              type="submit"
+            <SubmitButton
               disabled={!scoringEnabled}
-              className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              pendingText="Generating..."
             >
               Generate summary and score
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </div>
 
-      {flashMessage ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {flashMessage}
-        </div>
-      ) : null}
-
-      {flashError ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {flashError}
-        </div>
-      ) : null}
-
       {!scoringEnabled ? (
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           Configure OpenRouter to enable on-demand scoring.
         </p>
       ) : null}
 
       <form action={saveReviewAction} className="space-y-4">
         <div className="grid gap-4 md:grid-cols-[220px,1fr]">
-          <label className="space-y-2 text-sm text-slate-700">
+          <label className="space-y-2 text-sm">
             <span className="font-medium">Review status</span>
             <select
               name="status"
               aria-label="Review status"
               defaultValue={job.status}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <option value="discovered">Discovered</option>
               <option value="reviewing">Reviewing</option>
@@ -111,24 +97,18 @@ export function JobReviewPanel({
               <option value="archived">Archived</option>
             </select>
           </label>
-          <label className="space-y-2 text-sm text-slate-700">
+          <label className="space-y-2 text-sm">
             <span className="font-medium">Review notes</span>
-            <textarea
+            <Textarea
               name="reviewNotes"
               aria-label="Review notes"
               defaultValue={job.reviewNotes}
               rows={5}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
             />
           </label>
         </div>
         <div className="flex justify-end">
-          <button
-            type="submit"
-            className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
-          >
-            Save review
-          </button>
+          <SubmitButton pendingText="Saving...">Save review</SubmitButton>
         </div>
       </form>
 

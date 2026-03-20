@@ -1,5 +1,17 @@
 import type { DiscoverySourceRecord } from '@jobautomation/core';
 
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { SubmitButton } from '@/components/submit-button';
+
 export function DiscoverySourcesPanel({
   sources,
   createAction,
@@ -12,24 +24,31 @@ export function DiscoverySourcesPanel({
   toggleAction: (formData: FormData) => Promise<void>;
 }) {
   return (
-    <section className="space-y-4 rounded-3xl bg-white p-8 shadow-sm">
+    <section className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
       <div>
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Discovery Sources</p>
-        <h3 className="mt-2 text-xl font-semibold text-slate-900">Structured and fallback source onboarding</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Discovery Sources
+        </p>
+        <h3 className="mt-2 text-xl font-semibold text-foreground">
+          Structured and fallback source onboarding
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Add Greenhouse, Lever, Ashby, or a persisted Playwright fallback source. Playwright
           sources use a canonical public jobs or listings URL and remain inspectable through the
           same runs, logs, and artifact views.
         </p>
       </div>
 
-      <form action={createAction} className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[0.9fr_1.2fr_1.2fr_auto] md:items-end">
-        <label className="space-y-2 text-sm text-slate-700">
+      <form
+        action={createAction}
+        className="grid gap-4 rounded-lg border bg-muted/50 p-4 md:grid-cols-[0.9fr_1.2fr_1.2fr_auto] md:items-end"
+      >
+        <label className="space-y-2 text-sm text-foreground">
           <span className="font-medium">Source type</span>
           <select
             name="sourceKind"
             defaultValue="greenhouse"
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Source type"
           >
             <option value="greenhouse">Greenhouse</option>
@@ -38,90 +57,83 @@ export function DiscoverySourcesPanel({
             <option value="playwright">Playwright</option>
           </select>
         </label>
-        <label className="space-y-2 text-sm text-slate-700">
+        <label className="space-y-2 text-sm text-foreground">
           <span className="font-medium">Board label</span>
-          <input
-            name="label"
-            required
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
-          />
+          <Input name="label" required />
         </label>
-        <label className="space-y-2 text-sm text-slate-700">
+        <label className="space-y-2 text-sm text-foreground">
           <span className="font-medium">Source token or URL</span>
-          <input
-            name="sourceKey"
-            required
-            aria-label="Source token or URL"
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
-          />
+          <Input name="sourceKey" required aria-label="Source token or URL" />
         </label>
         <div className="space-y-3">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input name="enabled" type="checkbox" defaultChecked className="h-4 w-4" />
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input name="enabled" type="checkbox" defaultChecked className="h-4 w-4 rounded border-input" />
             <span>Enabled</span>
           </label>
-          <button
-            type="submit"
-            className="w-full rounded-full bg-slate-900 px-4 py-3 text-sm font-medium text-white"
-          >
+          <SubmitButton className="w-full" pendingText="Adding...">
             Add source
-          </button>
+          </SubmitButton>
         </div>
       </form>
 
       {sources.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-600">
+        <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
           No discovery sources configured yet.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 font-medium">Label</th>
-                <th className="px-4 py-3 font-medium">Source Key</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Type</TableHead>
+                <TableHead>Label</TableHead>
+                <TableHead>Source Key</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sources.map((source) => (
-                <tr key={source.id}>
-                  <td className="px-4 py-3 capitalize text-slate-700">{source.sourceKind}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{source.label}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{source.sourceKey}</td>
-                  <td className="px-4 py-3 text-slate-700">
-                    {source.enabled ? 'Enabled' : 'Disabled'}
-                  </td>
-                  <td className="px-4 py-3">
+                <TableRow key={source.id}>
+                  <TableCell className="capitalize">{source.sourceKind}</TableCell>
+                  <TableCell className="font-medium">{source.label}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {source.sourceKey}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={source.enabled ? 'success' : 'secondary'}>
+                      {source.enabled ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
                     <div className="flex flex-wrap gap-2">
                       <form action={toggleAction}>
                         <input type="hidden" name="sourceId" value={source.id} />
                         <input type="hidden" name="enabled" value={source.enabled ? 'false' : 'true'} />
-                        <button
-                          type="submit"
-                          className="rounded-full border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700"
+                        <SubmitButton
+                          variant="outline"
+                          size="sm"
+                          pendingText={source.enabled ? 'Disabling...' : 'Enabling...'}
                         >
                           {source.enabled ? 'Disable' : 'Enable'}
-                        </button>
+                        </SubmitButton>
                       </form>
                       <form action={runAction}>
                         <input type="hidden" name="sourceId" value={source.id} />
-                        <button
-                          type="submit"
+                        <SubmitButton
+                          size="sm"
                           disabled={!source.enabled}
-                          className="rounded-full bg-slate-900 px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                          pendingText="Running..."
                         >
                           Run now
-                        </button>
+                        </SubmitButton>
                       </form>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </section>

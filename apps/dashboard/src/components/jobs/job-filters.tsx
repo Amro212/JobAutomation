@@ -2,6 +2,9 @@ import Link from 'next/link';
 
 import type { JobListFilters } from '@jobautomation/core';
 
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+
 const sourceKindOptions = [
   { value: '', label: 'Any source' },
   { value: 'greenhouse', label: 'Greenhouse' },
@@ -25,6 +28,9 @@ const remoteTypeOptions = [
   { value: 'unknown', label: 'Unknown' }
 ];
 
+const selectClassName =
+  'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+
 export function JobFilters({
   filters,
   resetHref
@@ -35,29 +41,29 @@ export function JobFilters({
   return (
     <form
       method="get"
-      className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+      className="rounded-xl border bg-card p-6 shadow-sm"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Review Filters
           </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Filter persisted discovery results without leaving the current workflow.
           </p>
         </div>
-        <Link href={resetHref} className="text-sm font-medium text-slate-600 underline">
-          Reset
-        </Link>
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={resetHref}>Reset</Link>
+        </Button>
       </div>
       <div className="mt-6 grid gap-4 md:grid-cols-5">
-        <label className="space-y-2 text-sm text-slate-700">
+        <label className="space-y-2 text-sm">
           <span className="font-medium">Filter source kind</span>
           <select
             name="sourceKind"
             aria-label="Filter source kind"
             defaultValue={filters.sourceKind ?? ''}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            className={selectClassName}
           >
             {sourceKindOptions.map((option) => (
               <option key={option.value || 'any-source'} value={option.value}>
@@ -66,13 +72,13 @@ export function JobFilters({
             ))}
           </select>
         </label>
-        <label className="space-y-2 text-sm text-slate-700">
+        <label className="space-y-2 text-sm">
           <span className="font-medium">Filter status</span>
           <select
             name="status"
             aria-label="Filter status"
             defaultValue={filters.status ?? ''}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            className={selectClassName}
           >
             {statusOptions.map((option) => (
               <option key={option.value || 'any-status'} value={option.value}>
@@ -81,13 +87,13 @@ export function JobFilters({
             ))}
           </select>
         </label>
-        <label className="space-y-2 text-sm text-slate-700">
+        <label className="space-y-2 text-sm">
           <span className="font-medium">Filter remote type</span>
           <select
             name="remoteType"
             aria-label="Filter remote type"
             defaultValue={filters.remoteType ?? ''}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            className={selectClassName}
           >
             {remoteTypeOptions.map((option) => (
               <option key={option.value || 'any-remote-type'} value={option.value}>
@@ -96,36 +102,29 @@ export function JobFilters({
             ))}
           </select>
         </label>
-        <label className="space-y-2 text-sm text-slate-700">
+        <label className="space-y-2 text-sm">
           <span className="font-medium">Filter title</span>
-          <input
+          <Input
             type="text"
             name="title"
             aria-label="Filter title"
             defaultValue={filters.title ?? ''}
             placeholder="Platform"
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
           />
         </label>
-        <label className="space-y-2 text-sm text-slate-700">
+        <label className="space-y-2 text-sm">
           <span className="font-medium">Filter location</span>
-          <input
+          <Input
             type="text"
             name="location"
             aria-label="Filter location"
             defaultValue={filters.location ?? ''}
             placeholder="Canada"
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3"
           />
         </label>
       </div>
       <div className="mt-4 flex justify-end">
-        <button
-          type="submit"
-          className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
-        >
-          Apply filters
-        </button>
+        <Button type="submit">Apply filters</Button>
       </div>
     </form>
   );

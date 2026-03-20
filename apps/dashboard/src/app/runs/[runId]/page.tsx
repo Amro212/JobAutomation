@@ -3,7 +3,18 @@ import { revalidatePath } from 'next/cache';
 
 import type { LogEventRecord } from '@jobautomation/core';
 
-import { getDiscoveryRun, retryDiscoveryRunStep } from '../../../lib/api';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { SubmitButton } from '@/components/submit-button';
+import { getDiscoveryRun, retryDiscoveryRunStep } from '@/lib/api';
 
 type RetryableSource = {
   discoverySourceId: string;
@@ -20,10 +31,7 @@ type ArtifactSummary = {
 };
 
 function parseDetails(log: LogEventRecord): Record<string, unknown> | null {
-  if (!log.detailsJson) {
-    return null;
-  }
-
+  if (!log.detailsJson) return null;
   try {
     return JSON.parse(log.detailsJson) as Record<string, unknown>;
   } catch {
@@ -36,15 +44,11 @@ function getRetryableSources(logs: LogEventRecord[]): RetryableSource[] {
   const retryable: RetryableSource[] = [];
 
   for (const log of logs) {
-    if (log.level !== 'error') {
-      continue;
-    }
+    if (log.level !== 'error') continue;
 
     const details = parseDetails(log);
     const discoverySourceId = typeof details?.discoverySourceId === 'string' ? details.discoverySourceId : null;
-    if (!discoverySourceId || seen.has(discoverySourceId)) {
-      continue;
-    }
+    if (!discoverySourceId || seen.has(discoverySourceId)) continue;
 
     retryable.push({
       discoverySourceId,
@@ -59,9 +63,7 @@ function getRetryableSources(logs: LogEventRecord[]): RetryableSource[] {
 
 function renderLogDetails(log: LogEventRecord): string {
   const details = parseDetails(log);
-  if (!details) {
-    return 'No structured details';
-  }
+  if (!details) return 'No structured details';
 
   const parts = [
     typeof details.label === 'string' ? details.label : null,
@@ -70,7 +72,18 @@ function renderLogDetails(log: LogEventRecord): string {
     typeof details.fallbackMode === 'string' ? `mode ${details.fallbackMode}` : null
   ].filter((value): value is string => value !== null);
 
-  return parts.length > 0 ? parts.join(' • ') : 'Structured run metadata';
+  return parts.length > 0 ? parts.join(' \u2022 ') : 'Structured run metadata';
+}
+
+function logLevelVariant(level: string) {
+  switch (level) {
+    case 'error':
+      return 'destructive' as const;
+    case 'warn':
+      return 'warning' as const;
+    default:
+      return 'secondary' as const;
+  }
 }
 
 async function retrySourceAction(formData: FormData): Promise<void> {
@@ -79,9 +92,7 @@ async function retrySourceAction(formData: FormData): Promise<void> {
   const runId = String(formData.get('runId') ?? '');
   const sourceId = String(formData.get('sourceId') ?? '');
 
-  await retryDiscoveryRunStep(runId, {
-    sourceId
-  });
+  await retryDiscoveryRunStep(runId, { sourceId });
 
   revalidatePath('/runs');
   revalidatePath(`/runs/${runId}`);
@@ -93,11 +104,11 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
 
   if (!detail) {
     return (
-      <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600 shadow-sm">
+      <section className="rounded-xl border border-dashed bg-card p-8 text-sm text-muted-foreground shadow-sm">
         Discovery run not found. Return to{' '}
-        <Link href="/runs" className="font-medium text-slate-900 underline">
-          runs
-        </Link>
+        <Button variant="link" className="h-auto p-0" asChild>
+          <Link href="/runs">runs</Link>
+        </Button>
         .
       </section>
     );
@@ -108,103 +119,144 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
 
   return (
     <section className="space-y-6">
-      <div className="rounded-3xl bg-white p-8 shadow-sm">
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Run Detail</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">{detail.run.sourceKind} discovery run</h2>
-        <dl className="mt-4 grid gap-4 text-sm text-slate-700 md:grid-cols-2 xl:grid-cols-4">
+      <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Run Detail
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-foreground">
+          {detail.run.sourceKind} discovery run
+        </h2>
+        <dl className="mt-4 grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
           <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Status</dt>
-            <dd className="mt-1 capitalize">{detail.run.status}</dd>
+            <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Status
+            </dt>
+            <dd className="mt-1">
+              <Badge
+                variant={
+                  detail.run.status === 'completed'
+                    ? 'success'
+                    : detail.run.status === 'failed'
+                      ? 'destructive'
+                      : 'warning'
+                }
+                className="capitalize"
+              >
+                {detail.run.status}
+              </Badge>
+            </dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Trigger</dt>
+            <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Trigger
+            </dt>
             <dd className="mt-1 capitalize">{detail.run.triggerKind}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">New Jobs</dt>
+            <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              New Jobs
+            </dt>
             <dd className="mt-1">{detail.run.newJobCount}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Updated Jobs</dt>
+            <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Updated Jobs
+            </dt>
             <dd className="mt-1">{detail.run.updatedJobCount}</dd>
           </div>
         </dl>
       </div>
 
       {retryableSources.length > 0 ? (
-        <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-          <p className="text-sm uppercase tracking-[0.24em] text-amber-700">Retry Failed Sources</p>
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">
+            Retry Failed Sources
+          </p>
           <div className="mt-4 flex flex-wrap gap-3">
             {retryableSources.map((source) => (
               <form key={source.discoverySourceId} action={retrySourceAction}>
                 <input type="hidden" name="runId" value={runId} />
                 <input type="hidden" name="sourceId" value={source.discoverySourceId} />
-                <button className="rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100">
+                <SubmitButton variant="warning" pendingText="Retrying...">
                   Retry {source.sourceKind} {source.label}
-                </button>
+                </SubmitButton>
               </form>
             ))}
           </div>
         </section>
       ) : null}
 
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Logs</p>
-          <h3 className="mt-2 text-xl font-semibold text-slate-900">Step visibility</h3>
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="border-b px-6 py-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Logs
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-foreground">Step visibility</h3>
         </div>
-        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Level</th>
-              <th className="px-4 py-3 font-medium">Message</th>
-              <th className="px-4 py-3 font-medium">Details</th>
-              <th className="px-4 py-3 font-medium">Created</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Level</TableHead>
+              <TableHead>Message</TableHead>
+              <TableHead>Details</TableHead>
+              <TableHead>Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {detail.logs.map((log) => (
-              <tr key={log.id}>
-                <td className="px-4 py-3 uppercase text-slate-600">{log.level}</td>
-                <td className="px-4 py-3 text-slate-900">{log.message}</td>
-                <td className="px-4 py-3 text-xs text-slate-600">{renderLogDetails(log)}</td>
-                <td className="px-4 py-3 text-slate-600">{log.createdAt.toLocaleString()}</td>
-              </tr>
+              <TableRow key={log.id}>
+                <TableCell>
+                  <Badge variant={logLevelVariant(log.level)} className="uppercase">
+                    {log.level}
+                  </Badge>
+                </TableCell>
+                <TableCell>{log.message}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {renderLogDetails(log)}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {log.createdAt.toLocaleString()}
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </section>
 
-      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Artifacts</p>
-          <h3 className="mt-2 text-xl font-semibold text-slate-900">Fallback evidence</h3>
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="border-b px-6 py-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Artifacts
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-foreground">Fallback evidence</h3>
         </div>
         {artifacts.length === 0 ? (
-          <div className="px-6 py-5 text-sm text-slate-600">
+          <div className="px-6 py-5 text-sm text-muted-foreground">
             No fallback evidence was captured for this run.
           </div>
         ) : (
-          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Kind</th>
-                <th className="px-4 py-3 font-medium">Format</th>
-                <th className="px-4 py-3 font-medium">File</th>
-                <th className="px-4 py-3 font-medium">Storage Path</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Kind</TableHead>
+                <TableHead>Format</TableHead>
+                <TableHead>File</TableHead>
+                <TableHead>Storage Path</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {artifacts.map((artifact) => (
-                <tr key={artifact.id}>
-                  <td className="px-4 py-3 text-slate-900">{artifact.kind}</td>
-                  <td className="px-4 py-3 uppercase text-slate-600">{artifact.format}</td>
-                  <td className="px-4 py-3 text-slate-900">{artifact.fileName}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{artifact.storagePath}</td>
-                </tr>
+                <TableRow key={artifact.id}>
+                  <TableCell>{artifact.kind}</TableCell>
+                  <TableCell className="uppercase text-muted-foreground">{artifact.format}</TableCell>
+                  <TableCell>{artifact.fileName}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {artifact.storagePath}
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </section>
     </section>

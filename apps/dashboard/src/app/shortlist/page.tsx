@@ -1,5 +1,5 @@
-import { JobsTable } from '../../components/jobs/jobs-table';
-import { getJobs } from '../../lib/api';
+import { JobsTable } from '@/components/jobs/jobs-table';
+import { getJobs } from '@/lib/api';
 
 export default async function ShortlistPage() {
   const jobs = await getJobs({
@@ -9,11 +9,13 @@ export default async function ShortlistPage() {
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Shortlist</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Shortlist
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-foreground">
           Persisted shortlist workflow
         </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Jobs moved into shortlisted state stay visible here until you send them back to
           reviewing or archive them.
         </p>
