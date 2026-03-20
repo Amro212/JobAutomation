@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import {
   generateJobArtifacts,
   getApplicantProfile,
+  getApiBaseUrl,
   getJob,
   getJobArtifacts
 } from '../../../../lib/api';
@@ -17,6 +18,24 @@ function buildJobArtifactsHref(jobId: string, values: Record<string, string>): s
   const searchParams = new URLSearchParams(values);
   const query = searchParams.toString();
   return query.length > 0 ? `/jobs/${jobId}/artifacts?${query}` : `/jobs/${jobId}/artifacts`;
+}
+
+function getGenerateMessage(mode: 'both' | 'resume' | 'cover-letter'): string {
+  if (mode === 'resume') {
+    return 'Generated tailored resume.';
+  }
+
+  if (mode === 'cover-letter') {
+    return 'Generated tailored cover letter.';
+  }
+
+  return 'Generated tailored resume and cover letter.';
+}
+
+function buildArtifactUrl(artifactId: string, download = false): string {
+  const baseUrl = getApiBaseUrl();
+  const search = download ? '?download=1' : '';
+  return `${baseUrl}/artifacts/${artifactId}/file${search}`;
 }
 
 export default async function JobArtifactsPage({
@@ -48,11 +67,15 @@ export default async function JobArtifactsPage({
     );
   }
 
-  async function generateArtifactsAction(): Promise<void> {
+  async function generateArtifactsAction(formData: FormData): Promise<void> {
     'use server';
+    const payloadMode = String(formData.get('mode') ?? 'both') as
+      | 'both'
+      | 'resume'
+      | 'cover-letter';
 
     try {
-      await generateJobArtifacts(jobId);
+      await generateJobArtifacts(jobId, { mode: payloadMode });
       revalidatePath(`/jobs/${jobId}/artifacts`);
       revalidatePath(`/jobs/${jobId}`);
     } catch (error) {
@@ -60,11 +83,21 @@ export default async function JobArtifactsPage({
       redirect(buildJobArtifactsHref(jobId, { error: message }));
     }
 
-    redirect(buildJobArtifactsHref(jobId, { message: 'Generated tailored resume and cover letter.' }));
+    redirect(buildJobArtifactsHref(jobId, { message: getGenerateMessage(payloadMode) }));
   }
 
   const readiness = profileState.readiness;
   const canGenerate = readiness.readyForTailoring;
+  const latestPdfArtifacts = artifacts
+    .filter((artifact) => artifact.format === 'pdf')
+    .reduce<Record<string, (typeof artifacts)[number]>>((accumulator, artifact) => {
+      const current = accumulator[artifact.kind];
+      if (!current || artifact.version > current.version) {
+        accumulator[artifact.kind] = artifact;
+      }
+
+      return accumulator;
+    }, {});
 
   return (
     <section className="space-y-6">
@@ -77,7 +110,20 @@ export default async function JobArtifactsPage({
               {job.companyName} - {job.location || 'Unspecified'}
             </p>
           </div>
-          <form action={generateArtifactsAction}>
+          <form action={generateArtifactsAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+              Generate mode
+              <select
+                name="mode"
+                defaultValue="both"
+                disabled={!canGenerate}
+                className="min-w-56 rounded-full border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                <option value="both">Resume and cover letter</option>
+                <option value="resume">Resume only</option>
+                <option value="cover-letter">Cover letter only</option>
+              </select>
+            </label>
             <button
               type="submit"
               disabled={!canGenerate}
@@ -126,6 +172,56 @@ export default async function JobArtifactsPage({
           </p>
         ) : null}
       </div>
+
+      {Object.keys(latestPdfArtifacts).length > 0 ? (
+        <div className="rounded-3xl bg-white p-8 shadow-sm">
+          <div>
+            <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Preview</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900">Rendered PDFs</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              These are the compiled outputs served by the API. Open or download the latest version for each artifact kind.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            {Object.values(latestPdfArtifacts).map((artifact) => (
+              <article key={artifact.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{artifact.kind}</p>
+                    <h4 className="mt-1 text-sm font-semibold text-slate-900">
+                      v{artifact.version} - {artifact.fileName}
+                    </h4>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 text-sm">
+                    <a
+                      href={buildArtifactUrl(artifact.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-slate-700 underline"
+                    >
+                      Open PDF
+                    </a>
+                    <a
+                      href={buildArtifactUrl(artifact.id, true)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-slate-700 underline"
+                    >
+                      Download PDF
+                    </a>
+                  </div>
+                </div>
+                <iframe
+                  title={`${artifact.kind} preview`}
+                  src={buildArtifactUrl(artifact.id)}
+                  className="mt-4 h-[28rem] w-full rounded-xl border border-slate-200 bg-white"
+                />
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-3xl bg-white p-8 shadow-sm">
         <div className="flex items-center justify-between gap-4">

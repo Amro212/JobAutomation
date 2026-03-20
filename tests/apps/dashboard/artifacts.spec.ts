@@ -68,11 +68,26 @@ test('shows setup readiness and generates tailored artifacts for a job', async (
 
     await expect(page.getByText('Tailoring ready')).toBeVisible();
 
+    const apiBaseUrl = 'http://127.0.0.1:3201';
+    const sourceResponse = await page.request.post(`${apiBaseUrl}/discovery-sources`, {
+      data: {
+        sourceKind: 'greenhouse',
+        sourceKey: 'acme',
+        label: 'Acme Corp',
+        enabled: true
+      }
+    });
+    expect(sourceResponse.ok()).toBe(true);
+    const source = (await sourceResponse.json()) as { source: { id: string } };
+
+    const runResponse = await page.request.post(`${apiBaseUrl}/discovery-runs`, {
+      data: {
+        sourceIds: [source.source.id]
+      }
+    });
+    expect(runResponse.ok()).toBe(true);
+
     await page.goto('/jobs');
-    await page.getByLabel('Board label').fill('Acme Corp');
-    await page.getByLabel('Source token or URL').fill('acme');
-    await page.getByRole('button', { name: 'Add source' }).click();
-    await page.getByRole('button', { name: 'Run now' }).click();
 
     await expect(page.getByRole('link', { name: 'Senior Platform Engineer' })).toBeVisible({
       timeout: 15000
@@ -83,14 +98,43 @@ test('shows setup readiness and generates tailored artifacts for a job', async (
     await page.getByRole('link', { name: 'View artifacts' }).click();
 
     await expect(page.getByRole('heading', { name: 'Resume and cover letter versions' })).toBeVisible();
+    await expect(page.getByLabel('Generate mode')).toBeVisible();
+    await expect(page.getByLabel('Generate mode')).toContainText('Resume and cover letter');
+    await expect(page.getByLabel('Generate mode')).toContainText('Resume only');
+    await expect(page.getByLabel('Generate mode')).toContainText('Cover letter only');
     await expect(page.getByRole('button', { name: 'Generate tailored artifacts' })).toBeEnabled();
 
+    await page.getByLabel('Generate mode').selectOption('resume');
     await page.getByRole('button', { name: 'Generate tailored artifacts' }).click();
-    await expect(page.getByText('Generated tailored resume and cover letter.')).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'resume-variant' }).first()).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'cover-letter' }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'resume-variant' }).first()).toBeVisible({
+      timeout: 30000
+    });
     await expect(page.getByRole('cell', { name: 'resume.tex' }).first()).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'cover-letter.tex' }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Rendered PDFs' })).toBeVisible({
+      timeout: 30000
+    });
+
+    const resumePreview = page.getByTitle('resume-variant preview');
+    await expect(resumePreview).toBeVisible();
+    const resumePreviewUrl = await resumePreview.getAttribute('src');
+    expect(resumePreviewUrl).toContain('/artifacts/');
+    expect(resumePreviewUrl).toContain('/file');
+
+    const resumeDownload = page.getByRole('link', { name: 'Download PDF' }).first();
+    await expect(resumeDownload).toBeVisible();
+    const resumeDownloadUrl = await resumeDownload.getAttribute('href');
+    expect(resumeDownloadUrl).toContain('/artifacts/');
+    expect(resumeDownloadUrl).toContain('/file?download=1');
+
+    const pdfResponse = await page.request.get(resumePreviewUrl ?? '');
+    expect(pdfResponse.ok()).toBe(true);
+    expect(pdfResponse.headers()['content-type']).toContain('application/pdf');
+    const pdfBytes = await pdfResponse.body();
+    expect(Buffer.from(pdfBytes).subarray(0, 4).toString('utf8')).toBe('%PDF');
+
+    const downloadResponse = await page.request.get(resumeDownloadUrl ?? '');
+    expect(downloadResponse.ok()).toBe(true);
+    expect(downloadResponse.headers()['content-disposition']).toContain('attachment');
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {

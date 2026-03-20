@@ -3,10 +3,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 
-export type TectonicCommand = {
-  command: string;
-  args?: string[];
-};
+import { resolveTectonicCommand, type ResolvedTectonicCommand } from './resolve-tectonic';
+
+export type TectonicCommand = ResolvedTectonicCommand;
 
 export type TectonicCompileSuccess = {
   ok: true;
@@ -33,32 +32,27 @@ export type CompileLatexDocumentInput = {
   env?: NodeJS.ProcessEnv;
 };
 
-function defaultTectonicCommand(): TectonicCommand {
-  const command = process.env.JOB_AUTOMATION_TECTONIC_COMMAND ?? 'tectonic';
-  const argsJson = process.env.JOB_AUTOMATION_TECTONIC_ARGS_JSON;
-  let args: string[] = [];
-
-  if (argsJson) {
-    try {
-      const parsed = JSON.parse(argsJson) as unknown;
-      if (Array.isArray(parsed)) {
-        args = parsed.filter((value): value is string => typeof value === 'string');
-      }
-    } catch {
-      args = [];
-    }
-  }
-
-  return {
-    command,
-    args
-  };
-}
-
 export async function compileLatexDocument(
   input: CompileLatexDocumentInput
 ): Promise<TectonicCompileResult> {
-  const tectonic = input.tectonic ?? defaultTectonicCommand();
+  let tectonic: TectonicCommand;
+
+  try {
+    tectonic = await resolveTectonicCommand(input.tectonic);
+  } catch (error) {
+    const diagnosticsPath = join(input.outDir, 'tectonic-install.log');
+    const message = error instanceof Error ? error.message : 'Failed to resolve Tectonic.';
+    await mkdir(input.outDir, { recursive: true });
+    await writeFile(diagnosticsPath, message, 'utf8');
+    return {
+      ok: false,
+      code: null,
+      stdout: '',
+      stderr: message,
+      diagnosticsPath
+    };
+  }
+
   const nodeStyleCommand =
     tectonic.command === process.execPath ||
     /(?:^|[\\/])node(?:\.exe)?$/i.test(tectonic.command);

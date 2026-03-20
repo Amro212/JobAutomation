@@ -4,6 +4,9 @@ import {
   jobRecordSchema
 } from '@jobautomation/core';
 import { createOpenRouterProvider, DEFAULT_OPENROUTER_JOB_SUMMARY_MODEL } from '@jobautomation/llm';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { generateCoverLetterVariant, generateResumeVariant } from '@jobautomation/documents';
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 
@@ -41,6 +44,36 @@ function buildOpenRouterClient(
 }
 
 export const registerArtifactsRoutes: FastifyPluginAsync = async (app) => {
+  app.get('/artifacts/:artifactId/file', async (request, reply) => {
+    const { artifactId } = request.params as { artifactId: string };
+    const { download } = request.query as { download?: string };
+    const artifact = await app.repositories.artifacts.findById(artifactId);
+
+    if (!artifact) {
+      return reply.code(404).send({ message: 'Artifact not found.' });
+    }
+
+    if (!existsSync(artifact.storagePath)) {
+      return reply.code(404).send({ message: 'Artifact file not found on disk.' });
+    }
+
+    const fileName = basename(artifact.fileName || artifact.storagePath);
+    const contentType =
+      artifact.format === 'pdf'
+        ? 'application/pdf'
+        : artifact.format === 'tex' || artifact.format === 'log'
+          ? 'text/plain; charset=utf-8'
+          : 'application/octet-stream';
+
+    const content = await readFile(artifact.storagePath);
+
+    reply
+      .header('content-type', contentType)
+      .header('content-disposition', `${download === '1' ? 'attachment' : 'inline'}; filename="${fileName}"`)
+      .header('cache-control', 'no-store')
+      .send(content);
+  });
+
   app.get('/jobs/:jobId/artifacts', async (request, reply) => {
     const { jobId } = request.params as { jobId: string };
     const job = await app.repositories.jobs.findById(jobId);

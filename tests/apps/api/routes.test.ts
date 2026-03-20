@@ -146,5 +146,77 @@ describe('API routes', () => {
     expect(loadResponse.json().artifacts[0].version).toBe(1);
     expect(loadResponse.json().artifacts.some((artifact: { kind: string }) => artifact.kind === 'resume-variant')).toBe(true);
     expect(loadResponse.json().artifacts.some((artifact: { kind: string }) => artifact.kind === 'cover-letter')).toBe(true);
+
+    const resumePdf = loadResponse.json().artifacts.find(
+      (artifact: { kind: string; format: string }) =>
+        artifact.kind === 'resume-variant' && artifact.format === 'pdf'
+    );
+    expect(resumePdf).toBeTruthy();
+    if (resumePdf) {
+      const fileResponse = await app.inject({
+        method: 'GET',
+        url: `/artifacts/${resumePdf.id}/file`
+      });
+
+      expect(fileResponse.statusCode).toBe(200);
+      expect(fileResponse.headers['content-type']).toContain('application/pdf');
+      expect(fileResponse.headers['content-disposition']).toContain('inline');
+      expect(fileResponse.headers['content-disposition']).toContain('resume.pdf');
+      expect(fileResponse.body.slice(0, 4).toString('utf8')).toBe('%PDF');
+    }
+  });
+
+  test('can generate only the resume variant when requested', async () => {
+    await app.inject({
+      method: 'PUT',
+      url: '/applicant-profile',
+      payload: {
+        id: 'default',
+        fullName: 'Taylor Example',
+        email: 'taylor@example.com',
+        phone: '555-0100',
+        location: 'Toronto, ON',
+        summary: 'TypeScript engineer',
+        reusableContext: 'Builds automation systems.',
+        linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+        websiteUrl: 'https://example.com',
+        baseResumeFileName: 'resume.tex',
+        baseResumeTex: String.raw`\documentclass{article}
+\begin{document}
+\section{Experience}
+\begin{itemize}
+\item Built TypeScript automation systems.
+\end{itemize}
+\end{document}`
+      }
+    });
+
+    const job = await app.repositories.jobs.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-456',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/456',
+      companyName: 'Example Corp',
+      title: 'Platform Engineer',
+      location: 'Remote - Canada',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: '$170k-$190k CAD',
+      descriptionText: 'Build the local-first platform automation pipeline.',
+      rawPayload: '{"id":"job-456"}',
+      discoveryRunId: null,
+      status: 'shortlisted',
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    const generateResponse = await app.inject({
+      method: 'POST',
+      url: `/jobs/${job.id}/artifacts`,
+      payload: { mode: 'resume' }
+    });
+
+    expect(generateResponse.statusCode).toBe(200);
+    expect(generateResponse.json().artifacts).toHaveLength(2);
+    expect(generateResponse.json().artifacts.every((artifact: { kind: string }) => artifact.kind === 'resume-variant')).toBe(true);
   });
 });

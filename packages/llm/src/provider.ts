@@ -25,6 +25,12 @@ type OpenRouterResponse = {
   }>;
 };
 
+type OpenRouterErrorResponse = {
+  error?: {
+    message?: string;
+  };
+};
+
 function trimTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
@@ -82,7 +88,19 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
       });
 
       if (!response.ok) {
-        throw new Error(`OpenRouter request failed with status ${response.status}.`);
+        let details = '';
+
+        try {
+          const errorPayload = (await response.json()) as OpenRouterErrorResponse;
+          const message = errorPayload.error?.message?.trim();
+          if (message) {
+            details = `: ${message}`;
+          }
+        } catch {
+          details = '';
+        }
+
+        throw new Error(`OpenRouter request failed with status ${response.status}${details}.`);
       }
 
       const payload = (await response.json()) as OpenRouterResponse;

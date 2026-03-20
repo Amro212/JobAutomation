@@ -36,6 +36,12 @@ export class ArtifactsRepository {
     return artifactRecordSchema.parse(record);
   }
 
+  async findById(id: string): Promise<ArtifactRecord | null> {
+    const [record] = await this.db.select().from(artifactsTable).where(eq(artifactsTable.id, id));
+
+    return record ? mapArtifactRecord(record) : null;
+  }
+
   async listByJob(jobId: string): Promise<ArtifactRecord[]> {
     const records = await this.db
       .select()

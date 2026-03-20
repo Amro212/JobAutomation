@@ -190,4 +190,65 @@ describe('scoreJob', () => {
     expect(stored?.reviewScoreReasoning).toBeNull();
     expect(stored?.status).toBe('reviewing');
   });
+
+  test('maps OpenRouter authentication errors to not_configured with actionable message', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const job = await jobsRepository.upsert({
+      sourceKind: 'ashby',
+      sourceId: 'job-789',
+      sourceUrl: 'https://jobs.ashbyhq.com/example/job-789',
+      companyName: 'Example Corp',
+      title: 'Staff Automation Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Own end-to-end automation reliability and quality.',
+      rawPayload: '{"id":"job-789"}',
+      discoveryRunId: null,
+      status: 'reviewing',
+      reviewNotes: 'High-priority role, pending summary and score.',
+      reviewSummary: null,
+      reviewScore: null,
+      reviewScoreReasoning: null,
+      reviewUpdatedAt: new Date('2026-03-15T12:00:00.000Z'),
+      reviewScoreUpdatedAt: null,
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    await expect(
+      scoreJob({
+        jobId: job.id,
+        jobsRepository,
+        openRouter: {
+          apiKey: 'test-key',
+          baseUrl: 'https://openrouter.example/api/v1',
+          model: 'openrouter/test-model',
+          fetchImpl: async () =>
+            new Response(
+              JSON.stringify({
+                error: {
+                  message: 'User not found.'
+                }
+              }),
+              {
+                status: 401,
+                headers: {
+                  'content-type': 'application/json'
+                }
+              }
+            )
+        }
+      })
+    ).rejects.toMatchObject({
+      code: 'not_configured',
+      message: 'OpenRouter authentication failed. Check OPENROUTER_API_KEY and retry.'
+    } satisfies Pick<JobScoreError, 'code' | 'message'>);
+  });
 });
