@@ -131,6 +131,22 @@ export default async function JobDetailPage({
           <p className="mt-2 text-sm text-slate-600">
             {job.companyName} - {job.location || 'Unspecified'}
           </p>
+          <div className="mt-4 flex flex-wrap gap-3 text-sm">
+            <Link
+              href={`/jobs/${jobId}/artifacts`}
+              className="rounded-full border border-slate-200 px-4 py-2 font-medium text-slate-700 underline-offset-2 hover:border-slate-300 hover:text-slate-900 hover:underline"
+            >
+              View artifacts
+            </Link>
+            <a
+              href={job.sourceUrl}
+              className="rounded-full border border-slate-200 px-4 py-2 font-medium text-slate-700 underline-offset-2 hover:border-slate-300 hover:text-slate-900 hover:underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open source posting
+            </a>
+          </div>
         </div>
         <dl className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
@@ -144,14 +160,6 @@ export default async function JobDetailPage({
           <div>
             <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Remote</dt>
             <dd className="mt-1 text-sm capitalize text-slate-900">{job.remoteType}</dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Posting</dt>
-            <dd className="mt-1 text-sm text-slate-900">
-              <a href={job.sourceUrl} className="underline" target="_blank" rel="noreferrer">
-                Open source posting
-              </a>
-            </dd>
           </div>
         </dl>
         <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">

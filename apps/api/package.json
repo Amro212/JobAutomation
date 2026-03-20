@@ -12,6 +12,8 @@
     "@jobautomation/core": "workspace:*",
     "@jobautomation/db": "workspace:*",
     "@jobautomation/discovery": "workspace:*",
+    "@jobautomation/documents": "workspace:*",
+    "@jobautomation/llm": "workspace:*",
     "fastify": "^5.6.0",
     "fastify-plugin": "^5.0.1",
     "node-cron": "^4.2.1",

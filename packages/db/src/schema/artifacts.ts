@@ -13,6 +13,9 @@ export const artifactsTable = sqliteTable(
     discoveryRunId: text('discovery_run_id').references(() => discoveryRunsTable.id, {
       onDelete: 'set null'
     }),
+    applicantProfileId: text('applicant_profile_id'),
+    applicantProfileUpdatedAt: integer('applicant_profile_updated_at', { mode: 'timestamp_ms' }),
+    version: integer('version').notNull().default(1),
     kind: text('kind').notNull(),
     format: text('format').notNull(),
     fileName: text('file_name').notNull(),
@@ -20,6 +23,12 @@ export const artifactsTable = sqliteTable(
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull()
   },
   (table) => ({
-    artifactsJobIdx: index('artifacts_job_idx').on(table.jobId)
+    artifactsJobIdx: index('artifacts_job_idx').on(table.jobId),
+    artifactsJobKindVersionIdx: index('artifacts_job_kind_version_idx').on(
+      table.jobId,
+      table.kind,
+      table.format,
+      table.version
+    )
   })
 );

@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, max } from 'drizzle-orm';
 
 import { artifactRecordSchema, type ArtifactRecord } from '@jobautomation/core';
 
 import type { JobAutomationDatabase } from '../client';
 import { artifactsTable } from '../schema';
 
-export type CreateArtifactInput = Omit<ArtifactRecord, 'id'> & {
+export type CreateArtifactInput = Omit<
+  ArtifactRecord,
+  'id' | 'version' | 'applicantProfileId' | 'applicantProfileUpdatedAt'
+> &
+  Partial<Pick<ArtifactRecord, 'version' | 'applicantProfileId' | 'applicantProfileUpdatedAt'>> & {
   id?: string;
 };
 
@@ -21,12 +25,21 @@ export class ArtifactsRepository {
   async create(input: CreateArtifactInput): Promise<ArtifactRecord> {
     const record = {
       ...input,
-      id: input.id ?? randomUUID()
+      id: input.id ?? randomUUID(),
+      version: input.version ?? 1,
+      applicantProfileId: input.applicantProfileId ?? null,
+      applicantProfileUpdatedAt: input.applicantProfileUpdatedAt ?? null
     };
 
     await this.db.insert(artifactsTable).values(record);
 
     return artifactRecordSchema.parse(record);
+  }
+
+  async findById(id: string): Promise<ArtifactRecord | null> {
+    const [record] = await this.db.select().from(artifactsTable).where(eq(artifactsTable.id, id));
+
+    return record ? mapArtifactRecord(record) : null;
   }
 
   async listByJob(jobId: string): Promise<ArtifactRecord[]> {
@@ -47,5 +60,26 @@ export class ArtifactsRepository {
       .orderBy(desc(artifactsTable.createdAt));
 
     return records.map(mapArtifactRecord);
+  }
+
+  async listByJobAndKind(jobId: string, kind: string): Promise<ArtifactRecord[]> {
+    const records = await this.db
+      .select()
+      .from(artifactsTable)
+      .where(and(eq(artifactsTable.jobId, jobId), eq(artifactsTable.kind, kind)))
+      .orderBy(desc(artifactsTable.version), desc(artifactsTable.createdAt));
+
+    return records.map(mapArtifactRecord);
+  }
+
+  async nextVersionForJobAndKind(jobId: string, kind: string): Promise<number> {
+    const [record] = await this.db
+      .select({
+        version: max(artifactsTable.version)
+      })
+      .from(artifactsTable)
+      .where(and(eq(artifactsTable.jobId, jobId), eq(artifactsTable.kind, kind)));
+
+    return (record?.version ?? 0) + 1;
   }
 }

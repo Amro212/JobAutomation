@@ -19,13 +19,13 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `${powershell} -NoLogo -NoProfile -Command \"Set-Location 'C:\\VScode\\JobAutomation'; Remove-Item -Force 'apps\\api\\data\\playwright.sqlite' -ErrorAction SilentlyContinue; $env:JOB_AUTOMATION_DB_PATH='C:\\VScode\\JobAutomation\\apps\\api\\data\\playwright.sqlite'; $env:API_PORT='${apiPort}'; $env:API_BASE_URL='http://127.0.0.1:${apiPort}'; $env:GREENHOUSE_API_BASE_URL='http://127.0.0.1:${greenhouseStubPort}/v1/boards'; corepack pnpm --filter @jobautomation/api dev\"`,
+      command: `${powershell} -NoLogo -NoProfile -Command "Set-Location 'C:\\VScode\\JobAutomation'; Remove-Item -Force 'apps\\api\\data\\playwright.sqlite' -ErrorAction SilentlyContinue; $env:JOB_AUTOMATION_DB_PATH='C:\\VScode\\JobAutomation\\apps\\api\\data\\playwright.sqlite'; $env:API_PORT='${apiPort}'; $env:API_BASE_URL='http://127.0.0.1:${apiPort}'; $env:GREENHOUSE_API_BASE_URL='http://127.0.0.1:${greenhouseStubPort}/v1/boards'; corepack pnpm --filter @jobautomation/api dev"` ,
       port: apiPort,
       reuseExistingServer: false,
       timeout: 120000
     },
     {
-      command: `${powershell} -NoLogo -NoProfile -Command \"Set-Location 'C:\\VScode\\JobAutomation'; $env:API_BASE_URL='http://127.0.0.1:${apiPort}'; corepack pnpm --filter @jobautomation/dashboard dev --hostname 127.0.0.1 --port ${dashboardPort}\"`,
+      command: `${powershell} -NoLogo -NoProfile -Command "Set-Location 'C:\\VScode\\JobAutomation'; $env:API_BASE_URL='http://127.0.0.1:${apiPort}'; corepack pnpm --filter @jobautomation/dashboard dev --hostname 127.0.0.1 --port ${dashboardPort}"`,
       port: dashboardPort,
       reuseExistingServer: false,
       timeout: 120000

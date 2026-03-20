@@ -17,7 +17,16 @@ export type DiscoveryRunDetail = {
   artifacts: ArtifactRecord[];
 };
 
-function getApiBaseUrl(): string {
+export type ApplicantProfileResponse = {
+  profile: ApplicantProfile | null;
+  readiness: {
+    hasBaseResume: boolean;
+    hasReusableContext: boolean;
+    readyForTailoring: boolean;
+  };
+};
+
+export function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
 }
 
@@ -280,9 +289,8 @@ export async function updateDiscoverySource(
   return ((await response.json()) as { source: DiscoverySourceRecord }).source;
 }
 
-export async function getApplicantProfile(): Promise<ApplicantProfile | null> {
-  const response = await fetchFromApi<{ profile: ApplicantProfile | null }>('/applicant-profile');
-  return response.profile;
+export async function getApplicantProfile(): Promise<ApplicantProfileResponse> {
+  return fetchFromApi<ApplicantProfileResponse>('/applicant-profile');
 }
 
 export async function saveApplicantProfile(
@@ -302,4 +310,38 @@ export async function saveApplicantProfile(
   }
 
   return ((await response.json()) as { profile: ApplicantProfile }).profile;
+}
+
+export async function getJobArtifacts(jobId: string): Promise<ArtifactRecord[]> {
+  const response = await fetchFromApi<{ job: unknown; profile: unknown; artifacts: ArtifactRecord[] }>(
+    `/jobs/${jobId}/artifacts`
+  );
+
+  return response.artifacts;
+}
+
+export type GenerateArtifactsResult = {
+  artifacts: ArtifactRecord[];
+  warnings: string[] | undefined;
+};
+
+export async function generateJobArtifacts(
+  jobId: string,
+  payload: { mode?: 'both' | 'resume' | 'cover-letter' } = {}
+): Promise<GenerateArtifactsResult> {
+  const response = await fetch(`${getApiBaseUrl()}/jobs/${jobId}/artifacts`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  const body = (await response.json()) as { artifacts: ArtifactRecord[]; warnings?: string[] };
+  return { artifacts: body.artifacts, warnings: body.warnings };
 }
