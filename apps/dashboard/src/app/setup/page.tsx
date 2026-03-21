@@ -1,7 +1,8 @@
 import { revalidatePath } from 'next/cache';
 
-import { ApplicantProfileForm } from '../../components/setup/applicant-profile-form';
-import { getApplicantProfile, saveApplicantProfile } from '../../lib/api';
+import { Badge } from '@/components/ui/badge';
+import { ApplicantProfileForm } from '@/components/setup/applicant-profile-form';
+import { getApplicantProfile, saveApplicantProfile } from '@/lib/api';
 
 async function saveSetup(formData: FormData): Promise<void> {
   'use server';
@@ -35,29 +36,45 @@ export default async function SetupPage() {
   return (
     <section className="space-y-4">
       <div>
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Setup</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">Applicant context and base resume</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Setup
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-foreground">
+          Applicant context and base resume
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Batch A persists the reusable applicant context plus the canonical LaTeX resume source
           that later document milestones will build from.
         </p>
-        <div className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Base resume</p>
-            <p className="mt-1 font-medium text-slate-900">
-              {readiness.hasBaseResume ? 'Stored' : 'Not stored'}
+        <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+          <div className="rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Base resume
+            </p>
+            <p className="mt-1">
+              <Badge variant={readiness.hasBaseResume ? 'success' : 'destructive'}>
+                {readiness.hasBaseResume ? 'Stored' : 'Not stored'}
+              </Badge>
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Applicant context</p>
-            <p className="mt-1 font-medium text-slate-900">
-              {readiness.hasReusableContext ? 'Stored' : 'Not stored'}
+          <div className="rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Applicant context
+            </p>
+            <p className="mt-1">
+              <Badge variant={readiness.hasReusableContext ? 'success' : 'destructive'}>
+                {readiness.hasReusableContext ? 'Stored' : 'Not stored'}
+              </Badge>
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tailoring ready</p>
-            <p className="mt-1 font-medium text-slate-900">
-              {readiness.readyForTailoring ? 'Yes' : 'Not yet'}
+          <div className="rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Tailoring ready
+            </p>
+            <p className="mt-1">
+              <Badge variant={readiness.readyForTailoring ? 'success' : 'warning'}>
+                {readiness.readyForTailoring ? 'Yes' : 'Not yet'}
+              </Badge>
             </p>
           </div>
         </div>

@@ -2,6 +2,29 @@ import Link from 'next/link';
 
 import type { JobRecord } from '@jobautomation/core';
 
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+
+function statusVariant(status: string) {
+  switch (status) {
+    case 'shortlisted':
+      return 'success' as const;
+    case 'reviewing':
+      return 'warning' as const;
+    case 'archived':
+      return 'secondary' as const;
+    default:
+      return 'outline' as const;
+  }
+}
+
 export function JobsTable({
   jobs,
   emptyMessage = 'No jobs have been discovered yet.'
@@ -11,42 +34,49 @@ export function JobsTable({
 }) {
   if (jobs.length === 0) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600 shadow-sm">
+      <div className="rounded-xl border border-dashed bg-card p-8 text-sm text-muted-foreground shadow-sm">
         {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-        <thead className="bg-slate-50 text-slate-500">
-          <tr>
-            <th className="px-4 py-3 font-medium">Company</th>
-            <th className="px-4 py-3 font-medium">Title</th>
-            <th className="px-4 py-3 font-medium">Source</th>
-            <th className="px-4 py-3 font-medium">Location</th>
-            <th className="px-4 py-3 font-medium">Remote</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
+    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <Table className="table-fixed">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[150px]">Company</TableHead>
+            <TableHead>Title</TableHead>
+            <TableHead className="w-[105px]">Source</TableHead>
+            <TableHead className="w-[145px]">Location</TableHead>
+            <TableHead className="w-[85px]">Remote</TableHead>
+            <TableHead className="w-[110px]">Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {jobs.map((job) => (
-            <tr key={job.id}>
-              <td className="px-4 py-3">{job.companyName}</td>
-              <td className="px-4 py-3 font-medium text-slate-900">
-                <Link href={`/jobs/${job.id}`} className="hover:underline">
+            <TableRow key={job.id}>
+              <TableCell className="truncate">{job.companyName}</TableCell>
+              <TableCell className="overflow-hidden font-medium">
+                <Link
+                  href={`/jobs/${job.id}`}
+                  className="block truncate hover:underline underline-offset-4"
+                >
                   {job.title}
                 </Link>
-              </td>
-              <td className="px-4 py-3 capitalize">{job.sourceKind}</td>
-              <td className="px-4 py-3">{job.location || 'Unspecified'}</td>
-              <td className="px-4 py-3 capitalize">{job.remoteType}</td>
-              <td className="px-4 py-3 capitalize">{job.status}</td>
-            </tr>
+              </TableCell>
+              <TableCell className="capitalize">{job.sourceKind}</TableCell>
+              <TableCell className="truncate">{job.location || 'Unspecified'}</TableCell>
+              <TableCell className="capitalize">{job.remoteType}</TableCell>
+              <TableCell>
+                <Badge variant={statusVariant(job.status)} className="capitalize">
+                  {job.status}
+                </Badge>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -1,12 +1,12 @@
 import { revalidatePath } from 'next/cache';
 
-import { DiscoveryScheduleCard } from '../../components/runs/discovery-schedule-card';
-import { RunsTable } from '../../components/runs/runs-table';
+import { DiscoveryScheduleCard } from '@/components/runs/discovery-schedule-card';
+import { RunsTable } from '@/components/runs/runs-table';
 import {
   getDiscoveryRuns,
   getDiscoverySchedule,
   updateDiscoverySchedule
-} from '../../lib/api';
+} from '@/lib/api';
 
 async function updateDiscoveryScheduleAction(formData: FormData): Promise<void> {
   'use server';
@@ -26,10 +26,13 @@ export default async function RunsPage() {
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Runs</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">Discovery run history</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Early run visibility matters because discovery is the first major subsystem in this product.
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Runs
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-foreground">Discovery run history</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          Early run visibility matters because discovery is the first major subsystem in this
+          product.
         </p>
       </div>
       <DiscoveryScheduleCard schedule={schedule} updateAction={updateDiscoveryScheduleAction} />

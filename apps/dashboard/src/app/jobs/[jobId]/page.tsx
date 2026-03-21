@@ -2,7 +2,9 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { JobReviewPanel } from '../../../components/jobs/job-review-panel';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { JobReviewPanel } from '@/components/jobs/job-review-panel';
 import {
   addJobToShortlist,
   getJob,
@@ -10,13 +12,7 @@ import {
   removeJobFromShortlist,
   scoreJobReview,
   updateJobReview
-} from '../../../lib/api';
-
-function getSearchParamValue(
-  value: string | string[] | undefined
-): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
+} from '@/lib/api';
 
 function buildJobDetailHref(jobId: string, values: Record<string, string>): string {
   const searchParams = new URLSearchParams(values);
@@ -26,27 +22,23 @@ function buildJobDetailHref(jobId: string, values: Record<string, string>): stri
 
 export default async function JobDetailPage({
   params,
-  searchParams
 }: {
   params: Promise<{ jobId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { jobId } = await params;
-  const resolvedSearchParams = await searchParams;
   const [job, capabilities] = await Promise.all([
     getJob(jobId),
     getJobReviewCapabilities()
   ]);
-  const flashMessage = getSearchParamValue(resolvedSearchParams.message);
-  const flashError = getSearchParamValue(resolvedSearchParams.error);
 
   if (!job) {
     return (
-      <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600 shadow-sm">
+      <section className="rounded-xl border border-dashed bg-card p-8 text-sm text-muted-foreground shadow-sm">
         Job not found. Return to{' '}
-        <Link href="/jobs" className="font-medium text-slate-900 underline">
-          jobs
-        </Link>
+        <Button variant="link" className="h-auto p-0" asChild>
+          <Link href="/jobs">jobs</Link>
+        </Button>
         .
       </section>
     );
@@ -124,45 +116,60 @@ export default async function JobDetailPage({
 
   return (
     <section className="space-y-6">
-      <div className="rounded-3xl bg-white p-8 shadow-sm">
+      <div className="rounded-xl border bg-card p-6 shadow-sm">
         <div>
-          <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Job Detail</p>
-          <h2 className="mt-2 text-2xl font-semibold text-slate-900">{job.title}</h2>
-          <p className="mt-2 text-sm text-slate-600">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Job Detail
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-foreground">{job.title}</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
             {job.companyName} - {job.location || 'Unspecified'}
           </p>
           <div className="mt-4 flex flex-wrap gap-3 text-sm">
-            <Link
-              href={`/jobs/${jobId}/artifacts`}
-              className="rounded-full border border-slate-200 px-4 py-2 font-medium text-slate-700 underline-offset-2 hover:border-slate-300 hover:text-slate-900 hover:underline"
-            >
-              View artifacts
-            </Link>
-            <a
-              href={job.sourceUrl}
-              className="rounded-full border border-slate-200 px-4 py-2 font-medium text-slate-700 underline-offset-2 hover:border-slate-300 hover:text-slate-900 hover:underline"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open source posting
-            </a>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/jobs/${jobId}/artifacts`}>View artifacts</Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <a href={job.sourceUrl} target="_blank" rel="noreferrer">
+                Open source posting
+              </a>
+            </Button>
           </div>
         </div>
         <dl className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Source</dt>
-            <dd className="mt-1 text-sm capitalize text-slate-900">{job.sourceKind}</dd>
+            <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Source
+            </dt>
+            <dd className="mt-1 text-sm capitalize">{job.sourceKind}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Status</dt>
-            <dd className="mt-1 text-sm capitalize text-slate-900">{job.status}</dd>
+            <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Status
+            </dt>
+            <dd className="mt-1">
+              <Badge
+                variant={
+                  job.status === 'shortlisted'
+                    ? 'success'
+                    : job.status === 'reviewing'
+                      ? 'warning'
+                      : 'secondary'
+                }
+                className="capitalize"
+              >
+                {job.status}
+              </Badge>
+            </dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-[0.18em] text-slate-500">Remote</dt>
-            <dd className="mt-1 text-sm capitalize text-slate-900">{job.remoteType}</dd>
+            <dt className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Remote
+            </dt>
+            <dd className="mt-1 text-sm capitalize">{job.remoteType}</dd>
           </div>
         </dl>
-        <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+        <div className="mt-6 rounded-lg bg-muted/50 p-4 text-sm leading-6 text-muted-foreground">
           {job.descriptionText || 'No description text was captured for this job.'}
         </div>
       </div>
@@ -170,8 +177,6 @@ export default async function JobDetailPage({
       <JobReviewPanel
         job={job}
         scoringEnabled={capabilities.scoringEnabled}
-        flashMessage={flashMessage}
-        flashError={flashError}
         saveReviewAction={saveReviewAction}
         addToShortlistAction={addToShortlistAction}
         removeFromShortlistAction={removeFromShortlistAction}
@@ -179,9 +184,9 @@ export default async function JobDetailPage({
       />
 
       <div>
-        <Link href="/jobs" className="text-sm font-medium text-slate-700 underline">
-          Return to jobs
-        </Link>
+        <Button variant="link" className="h-auto p-0" asChild>
+          <Link href="/jobs">Return to jobs</Link>
+        </Button>
       </div>
     </section>
   );

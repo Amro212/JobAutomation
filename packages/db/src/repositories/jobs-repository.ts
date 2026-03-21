@@ -75,6 +75,10 @@ export class JobsRepository {
       conditions.push(like(jobsTable.location, `%${filters.location}%`));
     }
 
+    if (filters.companyName) {
+      conditions.push(like(jobsTable.companyName, `%${filters.companyName}%`));
+    }
+
     const query = this.db.select().from(jobsTable);
     const records = await (conditions.length > 0 ? query.where(and(...conditions)) : query).orderBy(
       desc(jobsTable.updatedAt)

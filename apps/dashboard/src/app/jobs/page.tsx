@@ -2,16 +2,19 @@ import { revalidatePath } from 'next/cache';
 
 import { jobListFiltersSchema } from '@jobautomation/core';
 
-import { DiscoverySourcesPanel } from '../../components/jobs/discovery-sources-panel';
-import { JobFilters } from '../../components/jobs/job-filters';
-import { JobsTable } from '../../components/jobs/jobs-table';
+import { DiscoverySourcesPanel } from '@/components/jobs/discovery-sources-panel';
+import { JobFilters } from '@/components/jobs/job-filters';
+import { JobsTable } from '@/components/jobs/jobs-table';
 import {
   createDiscoverySource,
   getDiscoverySources,
   getJobs,
   runDiscoverySources,
   updateDiscoverySource
-} from '../../lib/api';
+} from '@/lib/api';
+
+const VALID_SOURCE_KINDS = ['greenhouse', 'lever', 'ashby', 'playwright'] as const;
+type ValidSourceKind = typeof VALID_SOURCE_KINDS[number];
 
 async function addDiscoverySource(formData: FormData): Promise<void> {
   'use server';
@@ -55,6 +58,56 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
   revalidatePath('/runs');
 }
 
+function stripCsvQuotes(value: string | undefined): string {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+async function importDiscoverySources(formData: FormData): Promise<void> {
+  'use server';
+
+  const file = formData.get('csvFile');
+  if (!file || typeof file === 'string') return;
+
+  const blob = file as File;
+  if (!blob.size) return;
+
+  const text = await blob.text();
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const dataLines = lines.slice(1);
+
+  for (const line of dataLines) {
+    const parts = line.split(',');
+    // Normalize to lowercase so "Greenhouse", "greenhouse", "GREENHOUSE" all match
+    const sourceKind = stripCsvQuotes(parts[0]).toLowerCase();
+    const label = stripCsvQuotes(parts[1]);
+    const sourceKey = stripCsvQuotes(parts[2]);
+    const enabled = stripCsvQuotes(parts[3]) !== 'false';
+
+    if (
+      !sourceKind ||
+      !label ||
+      !sourceKey ||
+      !(VALID_SOURCE_KINDS as readonly string[]).includes(sourceKind)
+    ) {
+      continue;
+    }
+
+    await createDiscoverySource({
+      sourceKind: sourceKind as ValidSourceKind,
+      label,
+      sourceKey,
+      enabled
+    });
+  }
+
+  revalidatePath('/jobs');
+}
+
 function getSearchParamValue(
   value: string | string[] | undefined
 ): string | undefined {
@@ -72,18 +125,19 @@ export default async function JobsPage({
     status: getSearchParamValue(resolvedSearchParams.status),
     remoteType: getSearchParamValue(resolvedSearchParams.remoteType),
     title: getSearchParamValue(resolvedSearchParams.title),
-    location: getSearchParamValue(resolvedSearchParams.location)
+    location: getSearchParamValue(resolvedSearchParams.location),
+    companyName: getSearchParamValue(resolvedSearchParams.companyName)
   });
   const [jobs, sources] = await Promise.all([getJobs(filters), getDiscoverySources()]);
 
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-sm uppercase tracking-[0.24em] text-slate-500">Jobs</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Jobs</p>
+        <h2 className="mt-2 text-2xl font-semibold text-foreground">
           Discovery review and intake
         </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Structured discovery is live for Greenhouse, Lever, and Ashby, and browser fallback can
           now onboard persisted Playwright sources when a public jobs page has no supported feed.
         </p>
@@ -93,6 +147,7 @@ export default async function JobsPage({
         createAction={addDiscoverySource}
         runAction={runDiscoverySourceAction}
         toggleAction={toggleDiscoverySource}
+        importAction={importDiscoverySources}
       />
       <JobFilters filters={filters} resetHref="/jobs" />
       <JobsTable jobs={jobs} emptyMessage="No jobs matched the current filters." />

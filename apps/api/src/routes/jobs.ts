@@ -3,7 +3,7 @@ import type { FastifyPluginAsync } from 'fastify';
 
 function getQueryValue(
   query: Record<string, unknown>,
-  key: 'sourceKind' | 'status' | 'remoteType' | 'title' | 'location'
+  key: 'sourceKind' | 'status' | 'remoteType' | 'title' | 'location' | 'companyName'
 ): string | undefined {
   const value = query[key];
   return typeof value === 'string' ? value : undefined;
@@ -17,7 +17,8 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
       status: getQueryValue(query, 'status'),
       remoteType: getQueryValue(query, 'remoteType'),
       title: getQueryValue(query, 'title'),
-      location: getQueryValue(query, 'location')
+      location: getQueryValue(query, 'location'),
+      companyName: getQueryValue(query, 'companyName')
     });
     const jobs = await app.repositories.jobs.list(filters);
     return { jobs };

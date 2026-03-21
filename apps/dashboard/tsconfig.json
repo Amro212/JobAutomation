@@ -21,6 +21,14 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@jobautomation/config": ["../../packages/config/src/index.ts"],
+      "@jobautomation/core": ["../../packages/core/src/index.ts"],
+      "@jobautomation/db": ["../../packages/db/src/index.ts"],
+      "@jobautomation/discovery": ["../../packages/discovery/src/index.ts"]
+    },
     "plugins": [
       {
         "name": "next"
