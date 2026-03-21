@@ -169,7 +169,7 @@ export default async function JobDetailPage({
             <dd className="mt-1 text-sm capitalize">{job.remoteType}</dd>
           </div>
         </dl>
-        <div className="mt-6 rounded-lg bg-muted/50 p-4 text-sm leading-6 text-muted-foreground">
+        <div className="mt-6 whitespace-pre-wrap rounded-lg bg-muted/50 p-4 text-sm leading-6 text-muted-foreground">
           {job.descriptionText || 'No description text was captured for this job.'}
         </div>
       </div>
