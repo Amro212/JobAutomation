@@ -6,14 +6,19 @@ export const jobKeywordProfileJsonSchema = {
   properties: {
     target_titles: {
       type: 'array',
+      description:
+        'Many short phrases that may appear in desired job titles; prefer exhaustive synonyms and variants for high recall.',
       items: { type: 'string' }
     },
     positive_keywords: {
       type: 'array',
+      description:
+        'Many skills, tools, domains, and abbreviations that signal a good title match; err on the side of including more.',
       items: { type: 'string' }
     },
     negative_keywords: {
       type: 'array',
+      description: 'Terms in titles that indicate a poor role fit for this applicant.',
       items: { type: 'string' }
     },
     seniority: {

@@ -65,15 +65,20 @@ export async function generateJobKeywordProfile(
   }
 
   const systemPrompt = [
-    'You extract a compact job-search filter profile for ONE applicant from their resume and notes.',
-    'Infer realistic target job titles, skill/domain keywords to seek in titles, roles or domains to avoid, and their career seniority level.',
+    'You extract a job-search filter profile for ONE applicant from their resume and notes.',
+    'Maximize recall while keeping entries useful for FAST substring filtering (avoid weak or generic terms).',
+    'Prefer breadth over minimal lists. Use short lowercase phrases suitable for matching job titles and descriptions.',
     'Rules:',
-    '- target_titles: short phrases that might appear in job titles (e.g. software engineer, embedded engineer).',
-    '- positive_keywords: skills, tools, domains that signal a good match when they appear in a job title.',
-    '- negative_keywords: terms in titles that usually mean a poor fit (e.g. sales, nurse) for this person.',
+    '- target_titles: include ALL plausible job-title phrases with synonyms, variations, abbreviations, and stack-specific versions (e.g. software engineer, software developer, backend engineer, ml engineer, machine learning engineer, embedded engineer, firmware engineer, systems engineer).',
+    '- positive_keywords: include ONLY strong, concrete signals such as programming languages, tools, frameworks, technologies, and domains. Include abbreviations and variants (e.g. javascript, js, node, nodejs, c++, cpp). DO NOT include soft skills (e.g. teamwork, communication).',
+    '- negative_keywords: include title-level terms that indicate poor fit. Focus on roles, not skills (e.g. sales, recruiter, nurse, attorney, accountant, marketing, hr, customer support if not relevant).',
     '- seniority: one of new_grad, junior, mid, senior, lead — match how they present on the resume.',
+    'Constraints:',
+    '- Every entry must be useful for substring filtering.',
+    '- Avoid duplicates.',
+    '- No explanations or extra text.',
     'Return only the JSON object. No commentary.'
-  ].join('\n');
+  ].join('\\n');
 
   const prompt = buildPrompt(input.applicantProfile);
 

@@ -29,12 +29,12 @@ export function GenerateJobKeywordProfileButton({ generatedAtLabel }: Props) {
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-dashed bg-muted/30 p-4">
+    <div className="space-y-3 rounded-lg border border-dashed border-border bg-muted/20 p-4">
       <div>
-        <p className="text-sm font-medium">Job filter profile</p>
+        <p className="text-sm font-medium">AI extraction</p>
         <p className="text-xs text-muted-foreground">
-          One OpenRouter call extracts titles and keywords from your setup text for fast pre-filtering before
-          scoring. Filtering itself uses only string checks.
+          Regenerate from your current summary, context, and resume text. Your manual edits below are replaced
+          when you generate again.
         </p>
         {generatedAtLabel ? (
           <p className="mt-2 text-xs text-muted-foreground">Last generated: {generatedAtLabel}</p>
@@ -42,7 +42,7 @@ export function GenerateJobKeywordProfileButton({ generatedAtLabel }: Props) {
         {error ? <p className="mt-2 text-xs text-destructive">{error}</p> : null}
       </div>
       <Button type="button" disabled={pending} onClick={onGenerate} variant="secondary" size="sm">
-        {pending ? 'Generating…' : 'Generate job filter profile'}
+        {pending ? 'Generating…' : 'Generate from setup text'}
       </Button>
     </div>
   );

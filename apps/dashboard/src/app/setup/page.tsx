@@ -2,7 +2,7 @@ import { revalidatePath } from 'next/cache';
 
 import { Badge } from '@/components/ui/badge';
 import { ApplicantProfileForm } from '@/components/setup/applicant-profile-form';
-import { GenerateJobKeywordProfileButton } from '@/components/setup/generate-job-keyword-profile-button';
+import { JobKeywordProfileSection } from '@/components/setup/job-keyword-profile-section';
 import { getApplicantProfile, saveApplicantProfile } from '@/lib/api';
 
 async function saveSetup(formData: FormData): Promise<void> {
@@ -43,11 +43,6 @@ async function saveSetup(formData: FormData): Promise<void> {
 
 export default async function SetupPage() {
   const { profile, readiness } = await getApplicantProfile();
-
-  const generatedAtLabel =
-    profile?.jobKeywordProfileGeneratedAt != null
-      ? new Date(profile.jobKeywordProfileGeneratedAt).toLocaleString()
-      : null;
 
   return (
     <section className="space-y-4">
@@ -96,7 +91,7 @@ export default async function SetupPage() {
         </div>
       </div>
       <ApplicantProfileForm action={saveSetup} profile={profile} />
-      <GenerateJobKeywordProfileButton generatedAtLabel={generatedAtLabel} />
+      <JobKeywordProfileSection profile={profile} />
     </section>
   );
 }
