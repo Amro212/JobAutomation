@@ -111,60 +111,65 @@ export function DiscoverySourcesPanel({
           No discovery sources configured yet.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Type</TableHead>
-                <TableHead>Label</TableHead>
-                <TableHead>Source Key</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sources.map((source) => (
-                <TableRow key={source.id}>
-                  <TableCell className="capitalize">{source.sourceKind}</TableCell>
-                  <TableCell className="font-medium">{source.label}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {source.sourceKey}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={source.enabled ? 'success' : 'secondary'}>
-                      {source.enabled ? 'Enabled' : 'Disabled'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-2">
-                      <form action={toggleAction}>
-                        <input type="hidden" name="sourceId" value={source.id} />
-                        <input type="hidden" name="enabled" value={source.enabled ? 'false' : 'true'} />
-                        <SubmitButton
-                          variant="outline"
-                          size="sm"
-                          pendingText={source.enabled ? 'Disabling...' : 'Enabling...'}
-                        >
-                          {source.enabled ? 'Disable' : 'Enable'}
-                        </SubmitButton>
-                      </form>
-                      <form action={runAction}>
-                        <input type="hidden" name="sourceId" value={source.id} />
-                        <SubmitButton
-                          size="sm"
-                          disabled={!source.enabled}
-                          pendingText="Running..."
-                        >
-                          Run now
-                        </SubmitButton>
-                      </form>
-                    </div>
-                  </TableCell>
+        <details className="rounded-lg border" open={false}>
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground">
+            Source table ({sources.length})
+          </summary>
+          <div className="overflow-hidden border-t">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Type</TableHead>
+                  <TableHead>Label</TableHead>
+                  <TableHead>Source Key</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {sources.map((source) => (
+                  <TableRow key={source.id}>
+                    <TableCell className="capitalize">{source.sourceKind}</TableCell>
+                    <TableCell className="font-medium">{source.label}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {source.sourceKey}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={source.enabled ? 'success' : 'secondary'}>
+                        {source.enabled ? 'Enabled' : 'Disabled'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-2">
+                        <form action={toggleAction}>
+                          <input type="hidden" name="sourceId" value={source.id} />
+                          <input type="hidden" name="enabled" value={source.enabled ? 'false' : 'true'} />
+                          <SubmitButton
+                            variant="outline"
+                            size="sm"
+                            pendingText={source.enabled ? 'Disabling...' : 'Enabling...'}
+                          >
+                            {source.enabled ? 'Disable' : 'Enable'}
+                          </SubmitButton>
+                        </form>
+                        <form action={runAction}>
+                          <input type="hidden" name="sourceId" value={source.id} />
+                          <SubmitButton
+                            size="sm"
+                            disabled={!source.enabled}
+                            pendingText="Running..."
+                          >
+                            Run now
+                          </SubmitButton>
+                        </form>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </details>
       )}
     </section>
   );
