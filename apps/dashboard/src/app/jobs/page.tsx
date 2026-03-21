@@ -1,10 +1,16 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { jobListFiltersSchema } from '@jobautomation/core';
+import {
+  JOB_LIST_DEFAULT_PAGE_SIZE,
+  jobListFiltersSchema,
+  jobListQuerySchema,
+  type JobListQuery
+} from '@jobautomation/core';
 
 import { DiscoverySourcesPanel } from '@/components/jobs/discovery-sources-panel';
 import { JobFilters } from '@/components/jobs/job-filters';
+import { JobsPagination } from '@/components/jobs/jobs-pagination';
 import { JobsTable } from '@/components/jobs/jobs-table';
 import {
   createDiscoverySource,
@@ -155,22 +161,42 @@ function getSearchParamValue(
   return Array.isArray(value) ? value[0] : value;
 }
 
+function buildJobsListHref(query: JobListQuery, page: number, pageSize: number): string {
+  const params = new URLSearchParams();
+  if (query.sourceKind) params.set('sourceKind', query.sourceKind);
+  if (query.status) params.set('status', query.status);
+  if (query.remoteType) params.set('remoteType', query.remoteType);
+  if (query.title) params.set('title', query.title);
+  if (query.location) params.set('location', query.location);
+  if (query.companyName) params.set('companyName', query.companyName);
+  params.set('page', String(page));
+  params.set('pageSize', String(pageSize));
+  const qs = params.toString();
+  return qs ? `/jobs?${qs}` : '/jobs';
+}
+
 export default async function JobsPage({
   searchParams
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const filters = jobListFiltersSchema.parse({
+  const query = jobListQuerySchema.parse({
     sourceKind: getSearchParamValue(resolvedSearchParams.sourceKind),
     status: getSearchParamValue(resolvedSearchParams.status),
     remoteType: getSearchParamValue(resolvedSearchParams.remoteType),
     title: getSearchParamValue(resolvedSearchParams.title),
     location: getSearchParamValue(resolvedSearchParams.location),
-    companyName: getSearchParamValue(resolvedSearchParams.companyName)
+    companyName: getSearchParamValue(resolvedSearchParams.companyName),
+    page: getSearchParamValue(resolvedSearchParams.page),
+    pageSize: getSearchParamValue(resolvedSearchParams.pageSize)
   });
-  const [jobs, jobsForCompanyOptions, sources] = await Promise.all([
-    getJobs(filters),
+  const filters = jobListFiltersSchema.parse(query);
+  const page = query.page ?? 1;
+  const pageSize = query.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
+
+  const [{ jobs, total }, jobsForCompanyOptions, sources] = await Promise.all([
+    getJobs(filters, { page, pageSize }),
     getJobs({
       sourceKind: filters.sourceKind,
       status: filters.status,
@@ -181,7 +207,7 @@ export default async function JobsPage({
     getDiscoverySources()
   ]);
   const companyOptions = Array.from(
-    new Set(jobsForCompanyOptions.map((j) => j.companyName).filter((n) => n.trim().length > 0))
+    new Set(jobsForCompanyOptions.jobs.map((j) => j.companyName).filter((n) => n.trim().length > 0))
   ).sort((a, b) => a.localeCompare(b));
 
   return (
@@ -204,7 +230,18 @@ export default async function JobsPage({
         importAction={importDiscoverySources}
       />
       <JobFilters filters={filters} resetHref="/jobs" companyOptions={companyOptions} />
-      <JobsTable jobs={jobs} emptyMessage="No jobs matched the current filters." />
+      <JobsTable
+        jobs={jobs}
+        emptyMessage="No jobs matched the current filters."
+        footer={
+          <JobsPagination
+            currentPage={page}
+            pageSize={pageSize}
+            total={total}
+            hrefForPage={(nextPage) => buildJobsListHref(query, nextPage, pageSize)}
+          />
+        }
+      />
     </section>
   );
 }

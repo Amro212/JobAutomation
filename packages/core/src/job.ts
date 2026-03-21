@@ -57,6 +57,32 @@ export const jobListFiltersSchema = z.object({
   companyName: filterTextSchema
 });
 
+const optionalPageInt = z.preprocess((val) => {
+  if (val === '' || val === undefined || val === null) {
+    return undefined;
+  }
+  const n = Number(val);
+  return Number.isFinite(n) ? n : undefined;
+}, z.number().int().min(1).optional());
+
+const optionalPageSizeInt = z.preprocess((val) => {
+  if (val === '' || val === undefined || val === null) {
+    return undefined;
+  }
+  const n = Number(val);
+  return Number.isFinite(n) ? n : undefined;
+}, z.number().int().min(1).max(100).optional());
+
+export const jobListPaginationSchema = z.object({
+  page: optionalPageInt,
+  pageSize: optionalPageSizeInt
+});
+
+export const jobListQuerySchema = jobListFiltersSchema.merge(jobListPaginationSchema);
+
+/** Default page size for paginated job lists (dashboard). */
+export const JOB_LIST_DEFAULT_PAGE_SIZE = 25;
+
 export const jobReviewPatchSchema = z
   .object({
     status: jobStatusSchema.optional(),
@@ -68,4 +94,6 @@ export const jobReviewPatchSchema = z
 
 export type JobRecord = z.infer<typeof jobRecordSchema>;
 export type JobListFilters = z.infer<typeof jobListFiltersSchema>;
+export type JobListPagination = z.infer<typeof jobListPaginationSchema>;
+export type JobListQuery = z.infer<typeof jobListQuerySchema>;
 export type JobReviewPatch = z.infer<typeof jobReviewPatchSchema>;

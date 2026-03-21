@@ -96,10 +96,11 @@ describe('repositories', () => {
       updatedAt: new Date('2026-03-13T12:00:00.000Z')
     });
 
-    const jobs = await repository.list();
+    const { jobs, total } = await repository.list();
 
     expect(updated.id).toBe(created.id);
     expect(jobs).toHaveLength(1);
+    expect(total).toBe(1);
     expect(jobs[0]?.title).toBe('Senior Platform Engineer');
     expect(jobs[0]?.status).toBe('reviewing');
   });

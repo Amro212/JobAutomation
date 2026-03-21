@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 
 import type { JobRecord } from '@jobautomation/core';
@@ -27,10 +28,12 @@ function statusVariant(status: string) {
 
 export function JobsTable({
   jobs,
-  emptyMessage = 'No jobs have been discovered yet.'
+  emptyMessage = 'No jobs have been discovered yet.',
+  footer
 }: {
   jobs: JobRecord[];
   emptyMessage?: string;
+  footer?: ReactNode;
 }) {
   if (jobs.length === 0) {
     return (
@@ -77,6 +80,7 @@ export function JobsTable({
           ))}
         </TableBody>
       </Table>
+      {footer}
     </div>
   );
 }

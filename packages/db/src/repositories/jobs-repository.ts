@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, count, desc, eq, like } from 'drizzle-orm';
 
 import {
   jobRecordSchema,
@@ -52,7 +52,10 @@ function mapJobRecord(record: typeof jobsTable.$inferSelect): JobRecord {
 export class JobsRepository {
   constructor(private readonly db: JobAutomationDatabase) {}
 
-  async list(filters: JobListFilters = {}): Promise<JobRecord[]> {
+  async list(
+    filters: JobListFilters = {},
+    pagination?: { page: number; pageSize: number }
+  ): Promise<{ jobs: JobRecord[]; total: number }> {
     const conditions = [];
 
     if (filters.sourceKind) {
@@ -79,11 +82,24 @@ export class JobsRepository {
       conditions.push(like(jobsTable.companyName, `%${filters.companyName}%`));
     }
 
-    const query = this.db.select().from(jobsTable);
-    const records = await (conditions.length > 0 ? query.where(and(...conditions)) : query).orderBy(
-      desc(jobsTable.updatedAt)
-    );
-    return records.map(mapJobRecord);
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const countQuery = this.db.select({ total: count() }).from(jobsTable);
+    const [{ total }] = whereClause
+      ? await countQuery.where(whereClause)
+      : await countQuery;
+
+    const baseSelect = this.db.select().from(jobsTable);
+    const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
+    const ordered = filtered.orderBy(desc(jobsTable.updatedAt));
+
+    const records = pagination
+      ? await ordered
+          .limit(pagination.pageSize)
+          .offset((pagination.page - 1) * pagination.pageSize)
+      : await ordered;
+
+    return { jobs: records.map(mapJobRecord), total };
   }
 
   async findById(id: string): Promise<JobRecord | null> {

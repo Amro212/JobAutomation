@@ -48,7 +48,7 @@ describe('API routes', () => {
     const profileResponse = await app.inject({ method: 'GET', url: '/applicant-profile' });
 
     expect(jobsResponse.statusCode).toBe(200);
-    expect(jobsResponse.json()).toEqual({ jobs: [] });
+    expect(jobsResponse.json()).toEqual({ jobs: [], total: 0 });
     expect(runsResponse.json()).toEqual({ runs: [] });
     expect(profileResponse.json()).toEqual({
       profile: null,

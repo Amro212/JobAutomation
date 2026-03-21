@@ -114,7 +114,7 @@ describe('runStructuredDiscovery', () => {
       capturedAt: new Date('2026-03-14T01:00:00.000Z')
     });
 
-    const jobs = await jobsRepository.list();
+    const { jobs } = await jobsRepository.list();
     const logs = await logEventsRepository.listByDiscoveryRun(run.id);
 
     expect(finalRun.status).toBe('failed');

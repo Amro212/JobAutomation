@@ -2,7 +2,7 @@ import { JobsTable } from '@/components/jobs/jobs-table';
 import { getJobs } from '@/lib/api';
 
 export default async function ShortlistPage() {
-  const jobs = await getJobs({
+  const { jobs } = await getJobs({
     status: 'shortlisted'
   });
 

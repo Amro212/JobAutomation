@@ -66,18 +66,27 @@ async function fetchFromApi<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function getJobs(filters: JobListFilters = {}): Promise<JobRecord[]> {
-  const response = await fetchFromApi<{ jobs: JobRecord[] }>(
+export async function getJobs(
+  filters: JobListFilters = {},
+  pagination?: { page: number; pageSize: number }
+): Promise<{ jobs: JobRecord[]; total: number }> {
+  const response = await fetchFromApi<{ jobs: JobRecord[]; total: number }>(
     `/jobs${buildQueryString({
       sourceKind: filters.sourceKind,
       status: filters.status,
       remoteType: filters.remoteType,
       title: filters.title,
       location: filters.location,
-      companyName: filters.companyName
+      companyName: filters.companyName,
+      ...(pagination
+        ? {
+            page: String(pagination.page),
+            pageSize: String(pagination.pageSize)
+          }
+        : {})
     })}`
   );
-  return response.jobs;
+  return response;
 }
 
 export async function getJob(jobId: string): Promise<JobRecord | null> {
