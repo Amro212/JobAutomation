@@ -169,7 +169,20 @@ export default async function JobsPage({
     location: getSearchParamValue(resolvedSearchParams.location),
     companyName: getSearchParamValue(resolvedSearchParams.companyName)
   });
-  const [jobs, sources] = await Promise.all([getJobs(filters), getDiscoverySources()]);
+  const [jobs, jobsForCompanyOptions, sources] = await Promise.all([
+    getJobs(filters),
+    getJobs({
+      sourceKind: filters.sourceKind,
+      status: filters.status,
+      remoteType: filters.remoteType,
+      title: filters.title,
+      location: filters.location
+    }),
+    getDiscoverySources()
+  ]);
+  const companyOptions = Array.from(
+    new Set(jobsForCompanyOptions.map((j) => j.companyName).filter((n) => n.trim().length > 0))
+  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <section className="space-y-6">
@@ -190,7 +203,7 @@ export default async function JobsPage({
         toggleAction={toggleDiscoverySource}
         importAction={importDiscoverySources}
       />
-      <JobFilters filters={filters} resetHref="/jobs" />
+      <JobFilters filters={filters} resetHref="/jobs" companyOptions={companyOptions} />
       <JobsTable jobs={jobs} emptyMessage="No jobs matched the current filters." />
     </section>
   );

@@ -73,7 +73,8 @@ export async function getJobs(filters: JobListFilters = {}): Promise<JobRecord[]
       status: filters.status,
       remoteType: filters.remoteType,
       title: filters.title,
-      location: filters.location
+      location: filters.location,
+      companyName: filters.companyName
     })}`
   );
   return response.jobs;
