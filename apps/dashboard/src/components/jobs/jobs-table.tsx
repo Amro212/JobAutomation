@@ -3,7 +3,6 @@ import Link from 'next/link';
 import type { JobRecord } from '@jobautomation/core';
 
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -43,28 +42,31 @@ export function JobsTable({
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Company</TableHead>
+            <TableHead className="w-[150px]">Company</TableHead>
             <TableHead>Title</TableHead>
-            <TableHead>Source</TableHead>
-            <TableHead>Location</TableHead>
-            <TableHead>Remote</TableHead>
-            <TableHead>Status</TableHead>
+            <TableHead className="w-[105px]">Source</TableHead>
+            <TableHead className="w-[145px]">Location</TableHead>
+            <TableHead className="w-[85px]">Remote</TableHead>
+            <TableHead className="w-[110px]">Status</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {jobs.map((job) => (
             <TableRow key={job.id}>
-              <TableCell>{job.companyName}</TableCell>
-              <TableCell className="font-medium">
-                <Button variant="link" className="h-auto p-0 text-foreground" asChild>
-                  <Link href={`/jobs/${job.id}`}>{job.title}</Link>
-                </Button>
+              <TableCell className="truncate">{job.companyName}</TableCell>
+              <TableCell className="overflow-hidden font-medium">
+                <Link
+                  href={`/jobs/${job.id}`}
+                  className="block truncate hover:underline underline-offset-4"
+                >
+                  {job.title}
+                </Link>
               </TableCell>
               <TableCell className="capitalize">{job.sourceKind}</TableCell>
-              <TableCell>{job.location || 'Unspecified'}</TableCell>
+              <TableCell className="truncate">{job.location || 'Unspecified'}</TableCell>
               <TableCell className="capitalize">{job.remoteType}</TableCell>
               <TableCell>
                 <Badge variant={statusVariant(job.status)} className="capitalize">
