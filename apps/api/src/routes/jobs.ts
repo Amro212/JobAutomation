@@ -10,6 +10,18 @@ function getQueryValue(query: Record<string, unknown>, key: string): string | un
   return typeof value === 'string' ? value : undefined;
 }
 
+function getQueryArray(query: Record<string, unknown>, key: string): string[] | undefined {
+  const value = query[key];
+  if (typeof value === 'string') {
+    return value.trim().length > 0 ? [value] : undefined;
+  }
+  if (Array.isArray(value)) {
+    const filtered = value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+    return filtered.length > 0 ? filtered : undefined;
+  }
+  return undefined;
+}
+
 export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/jobs', async (request) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
@@ -30,7 +42,8 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
       remoteType: parsed.remoteType,
       title: parsed.title,
       location: parsed.location,
-      companyName: parsed.companyName
+      companyName: parsed.companyName,
+      locationCountries: getQueryArray(query, 'country')
     });
 
     const usePagination = parsed.page !== undefined || parsed.pageSize !== undefined;

@@ -87,6 +87,58 @@ describe('API routes', () => {
     expect(loadResponse.json().readiness.readyForTailoring).toBe(true);
   });
 
+  test('filters jobs by repeated country query params', async () => {
+    const baseJob = {
+      sourceKind: 'greenhouse' as const,
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Test',
+      rawPayload: null,
+      discoveryRunId: null,
+      status: 'discovered' as const,
+      discoveredAt: new Date('2026-03-13T10:00:00.000Z'),
+      updatedAt: new Date('2026-03-13T10:00:00.000Z')
+    };
+
+    await app.repositories.jobs.upsert({
+      ...baseJob,
+      sourceId: 'loc-us',
+      sourceUrl: 'https://example.com/loc-us',
+      companyName: 'US Corp',
+      title: 'US Engineer',
+      location: 'California, United States'
+    });
+    await app.repositories.jobs.upsert({
+      ...baseJob,
+      sourceId: 'loc-ca',
+      sourceUrl: 'https://example.com/loc-ca',
+      companyName: 'CA Corp',
+      title: 'CA Engineer',
+      location: 'Vancouver, British Columbia'
+    });
+    await app.repositories.jobs.upsert({
+      ...baseJob,
+      sourceId: 'loc-de',
+      sourceUrl: 'https://example.com/loc-de',
+      companyName: 'DE GmbH',
+      title: 'DE Engineer',
+      location: 'Munich, Germany'
+    });
+
+    const usResponse = await app.inject({ method: 'GET', url: '/jobs?country=US' });
+    expect(usResponse.statusCode).toBe(200);
+    const usJobs = usResponse.json().jobs as Array<{ title: string }>;
+    expect(usJobs.some((j) => j.title === 'US Engineer')).toBe(true);
+    expect(usJobs.some((j) => j.title === 'DE Engineer')).toBe(false);
+
+    const multiResponse = await app.inject({ method: 'GET', url: '/jobs?country=US&country=CA' });
+    const multiJobs = multiResponse.json().jobs as Array<{ title: string }>;
+    expect(multiJobs.some((j) => j.title === 'US Engineer')).toBe(true);
+    expect(multiJobs.some((j) => j.title === 'CA Engineer')).toBe(true);
+    expect(multiJobs.some((j) => j.title === 'DE Engineer')).toBe(false);
+  });
+
   test('generates versioned resume and cover letter artifacts for a job', async () => {
     await app.inject({
       method: 'PUT',

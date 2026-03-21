@@ -1,0 +1,1 @@
+ALTER TABLE `applicant_profile` ADD `preferred_countries` text DEFAULT '[]' NOT NULL;

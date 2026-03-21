@@ -32,12 +32,23 @@ export function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
 }
 
-function buildQueryString(values: Record<string, string | undefined>): string {
+function buildQueryString(
+  values: Record<string, string | undefined>,
+  arrayValues?: Record<string, string[]>
+): string {
   const searchParams = new URLSearchParams();
 
   for (const [key, value] of Object.entries(values)) {
     if (value && value.trim().length > 0) {
       searchParams.set(key, value);
+    }
+  }
+
+  if (arrayValues) {
+    for (const [key, arr] of Object.entries(arrayValues)) {
+      for (const value of arr) {
+        searchParams.append(key, value);
+      }
     }
   }
 
@@ -71,20 +82,25 @@ export async function getJobs(
   pagination?: { page: number; pageSize: number }
 ): Promise<{ jobs: JobRecord[]; total: number }> {
   const response = await fetchFromApi<{ jobs: JobRecord[]; total: number }>(
-    `/jobs${buildQueryString({
-      sourceKind: filters.sourceKind,
-      status: filters.status,
-      remoteType: filters.remoteType,
-      title: filters.title,
-      location: filters.location,
-      companyName: filters.companyName,
-      ...(pagination
-        ? {
-            page: String(pagination.page),
-            pageSize: String(pagination.pageSize)
-          }
-        : {})
-    })}`
+    `/jobs${buildQueryString(
+      {
+        sourceKind: filters.sourceKind,
+        status: filters.status,
+        remoteType: filters.remoteType,
+        title: filters.title,
+        location: filters.location,
+        companyName: filters.companyName,
+        ...(pagination
+          ? {
+              page: String(pagination.page),
+              pageSize: String(pagination.pageSize)
+            }
+          : {})
+      },
+      filters.locationCountries && filters.locationCountries.length > 0
+        ? { country: filters.locationCountries }
+        : undefined
+    )}`
   );
   return response;
 }

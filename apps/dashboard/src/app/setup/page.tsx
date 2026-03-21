@@ -11,6 +11,11 @@ async function saveSetup(formData: FormData): Promise<void> {
   const hasUploadedResume = uploadedResume instanceof File && uploadedResume.size > 0;
   const uploadedText = hasUploadedResume ? await uploadedResume.text() : null;
 
+  const preferredCountries = formData
+    .getAll('preferredCountry')
+    .filter((v): v is string => typeof v === 'string' && v.trim().length === 2)
+    .map((v) => v.toUpperCase());
+
   await saveApplicantProfile({
     id: String(formData.get('id') ?? 'default'),
     fullName: String(formData.get('fullName') ?? ''),
@@ -24,7 +29,8 @@ async function saveSetup(formData: FormData): Promise<void> {
     baseResumeFileName: hasUploadedResume
       ? uploadedResume.name
       : String(formData.get('baseResumeFileName') ?? ''),
-    baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? '')
+    baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? ''),
+    preferredCountries
   });
 
   revalidatePath('/setup');

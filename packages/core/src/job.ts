@@ -48,13 +48,30 @@ export const jobRecordSchema = z.object({
   updatedAt: z.date()
 });
 
+const optionalCountryCodesSchema = z.preprocess((val) => {
+  if (val === undefined || val === null || val === '') {
+    return undefined;
+  }
+  if (typeof val === 'string') {
+    return [val.toUpperCase()];
+  }
+  if (Array.isArray(val)) {
+    const codes = val
+      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+      .map((v) => v.toUpperCase());
+    return codes.length > 0 ? codes : undefined;
+  }
+  return undefined;
+}, z.array(z.string().length(2)).optional());
+
 export const jobListFiltersSchema = z.object({
   sourceKind: filterTextSchema,
   status: optionalStatusFilterSchema,
   remoteType: filterTextSchema,
   title: filterTextSchema,
   location: filterTextSchema,
-  companyName: filterTextSchema
+  companyName: filterTextSchema,
+  locationCountries: optionalCountryCodesSchema
 });
 
 const optionalPageInt = z.preprocess((val) => {

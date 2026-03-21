@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, count, desc, eq, like } from 'drizzle-orm';
+import { and, count, desc, eq, like, or, sql } from 'drizzle-orm';
 
 import {
+  buildLocationLikePatterns,
   jobRecordSchema,
   type JobListFilters,
   type JobRecord,
@@ -74,7 +75,15 @@ export class JobsRepository {
       conditions.push(like(jobsTable.title, `%${filters.title}%`));
     }
 
-    if (filters.location) {
+    if (filters.locationCountries && filters.locationCountries.length > 0) {
+      const patterns = buildLocationLikePatterns(filters.locationCountries);
+      const locationOr = patterns.map(
+        (p) => sql`lower(${jobsTable.location}) like ${p}`
+      );
+      if (locationOr.length > 0) {
+        conditions.push(or(...locationOr)!);
+      }
+    } else if (filters.location) {
       conditions.push(like(jobsTable.location, `%${filters.location}%`));
     }
 

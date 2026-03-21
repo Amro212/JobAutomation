@@ -14,6 +14,7 @@ import { JobsPagination } from '@/components/jobs/jobs-pagination';
 import { JobsTable } from '@/components/jobs/jobs-table';
 import {
   createDiscoverySource,
+  getApplicantProfile,
   getDiscoverySources,
   getDiscoveryRun,
   getJobs,
@@ -161,6 +162,15 @@ function getSearchParamValue(
   return Array.isArray(value) ? value[0] : value;
 }
 
+function getSearchParamArray(
+  value: string | string[] | undefined
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string') return value.trim().length > 0 ? [value] : undefined;
+  const arr = value.filter((v) => v.trim().length > 0);
+  return arr.length > 0 ? arr : undefined;
+}
+
 function buildJobsListHref(query: JobListQuery, page: number, pageSize: number): string {
   const params = new URLSearchParams();
   if (query.sourceKind) params.set('sourceKind', query.sourceKind);
@@ -169,6 +179,11 @@ function buildJobsListHref(query: JobListQuery, page: number, pageSize: number):
   if (query.title) params.set('title', query.title);
   if (query.location) params.set('location', query.location);
   if (query.companyName) params.set('companyName', query.companyName);
+  if (query.locationCountries) {
+    for (const code of query.locationCountries) {
+      params.append('country', code);
+    }
+  }
   params.set('page', String(page));
   params.set('pageSize', String(pageSize));
   const qs = params.toString();
@@ -188,12 +203,23 @@ export default async function JobsPage({
     title: getSearchParamValue(resolvedSearchParams.title),
     location: getSearchParamValue(resolvedSearchParams.location),
     companyName: getSearchParamValue(resolvedSearchParams.companyName),
+    locationCountries: getSearchParamArray(resolvedSearchParams.country),
     page: getSearchParamValue(resolvedSearchParams.page),
     pageSize: getSearchParamValue(resolvedSearchParams.pageSize)
   });
-  const filters = jobListFiltersSchema.parse(query);
+  const parsedFilters = jobListFiltersSchema.parse(query);
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
+
+  const hasExplicitCountry = resolvedSearchParams.country !== undefined;
+  let filters = parsedFilters;
+
+  if (!hasExplicitCountry && (!filters.locationCountries || filters.locationCountries.length === 0)) {
+    const { profile } = await getApplicantProfile();
+    if (profile && profile.preferredCountries.length > 0) {
+      filters = { ...filters, locationCountries: profile.preferredCountries };
+    }
+  }
 
   const [{ jobs, total }, jobsForCompanyOptions, sources] = await Promise.all([
     getJobs(filters, { page, pageSize }),
