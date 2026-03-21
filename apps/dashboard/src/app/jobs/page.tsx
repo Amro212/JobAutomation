@@ -1,4 +1,5 @@
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import { jobListFiltersSchema } from '@jobautomation/core';
 
@@ -8,8 +9,10 @@ import { JobsTable } from '@/components/jobs/jobs-table';
 import {
   createDiscoverySource,
   getDiscoverySources,
+  getDiscoveryRun,
   getJobs,
   runDiscoverySources,
+  waitForDiscoveryRun,
   updateDiscoverySource
 } from '@/lib/api';
 
@@ -50,12 +53,50 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
   'use server';
 
   const sourceId = String(formData.get('sourceId') ?? '');
-  await runDiscoverySources({
+  const [run] = await runDiscoverySources({
     sourceIds: [sourceId]
   });
+  const detail = await waitForDiscoveryRun(run.id);
 
   revalidatePath('/jobs');
   revalidatePath('/runs');
+
+  const params = new URLSearchParams();
+  const summary = detail?.sourceSummaries[0] ?? null;
+
+  if (summary?.status === 'completed') {
+    params.set(
+      'message',
+      `${summary.label}: scraped ${formatJobCount(summary.jobCount)} (${summary.newJobCount} new, ${summary.updatedJobCount} updated).`
+    );
+  } else if (summary?.status === 'failed') {
+    params.set(
+      'error',
+      summary.errorMessage
+        ? `${summary.label}: ${summary.errorMessage}`
+        : `${summary.label}: scrape failed.`
+    );
+  } else {
+    const latestDetail = detail ?? (await getDiscoveryRun(run.id));
+
+    if (latestDetail?.run.status === 'completed') {
+      params.set(
+        'message',
+        `Discovery run completed: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated).`
+      );
+    } else if (latestDetail?.run.status === 'failed') {
+      params.set('error', latestDetail.run.errorMessage ?? 'Discovery run failed.');
+    } else {
+      params.set('message', 'Discovery run queued. Counts will appear once the run completes.');
+    }
+  }
+
+  const query = params.toString();
+  redirect(query.length > 0 ? `/jobs?${query}` : '/jobs');
+}
+
+function formatJobCount(count: number): string {
+  return `${count} job${count === 1 ? '' : 's'}`;
 }
 
 function stripCsvQuotes(value: string | undefined): string {
@@ -128,7 +169,20 @@ export default async function JobsPage({
     location: getSearchParamValue(resolvedSearchParams.location),
     companyName: getSearchParamValue(resolvedSearchParams.companyName)
   });
-  const [jobs, sources] = await Promise.all([getJobs(filters), getDiscoverySources()]);
+  const [jobs, jobsForCompanyOptions, sources] = await Promise.all([
+    getJobs(filters),
+    getJobs({
+      sourceKind: filters.sourceKind,
+      status: filters.status,
+      remoteType: filters.remoteType,
+      title: filters.title,
+      location: filters.location
+    }),
+    getDiscoverySources()
+  ]);
+  const companyOptions = Array.from(
+    new Set(jobsForCompanyOptions.map((j) => j.companyName).filter((n) => n.trim().length > 0))
+  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <section className="space-y-6">
@@ -149,7 +203,7 @@ export default async function JobsPage({
         toggleAction={toggleDiscoverySource}
         importAction={importDiscoverySources}
       />
-      <JobFilters filters={filters} resetHref="/jobs" />
+      <JobFilters filters={filters} resetHref="/jobs" companyOptions={companyOptions} />
       <JobsTable jobs={jobs} emptyMessage="No jobs matched the current filters." />
     </section>
   );

@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import type { JobListFilters } from '@jobautomation/core';
 
+import { CompanyNameCombobox } from '@/components/jobs/company-name-combobox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
@@ -33,10 +34,12 @@ const selectClassName =
 
 export function JobFilters({
   filters,
-  resetHref
+  resetHref,
+  companyOptions
 }: {
   filters: JobListFilters;
   resetHref: string;
+  companyOptions: string[];
 }) {
   return (
     <form
@@ -124,12 +127,11 @@ export function JobFilters({
         </label>
         <label className="space-y-2 text-sm">
           <span className="font-medium">Filter company</span>
-          <Input
-            type="text"
+          <CompanyNameCombobox
             name="companyName"
-            aria-label="Filter company name"
+            options={companyOptions}
             defaultValue={filters.companyName ?? ''}
-            placeholder="Acme Corp"
+            aria-label="Filter company name"
           />
         </label>
       </div>

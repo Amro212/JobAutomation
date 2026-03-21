@@ -1,6 +1,7 @@
 import {
   artifactRecordSchema,
   discoveryRunRecordSchema,
+  discoveryRunSourceSummarySchema,
   logEventRecordSchema
 } from '@jobautomation/core';
 import { retryDiscoveryStep } from '@jobautomation/discovery';
@@ -34,6 +35,66 @@ function parseRetryPayload(body: unknown): { sourceId: string } {
   return { sourceId };
 }
 
+type DiscoveryRunSourceSummaryDetails = {
+  discoverySourceId?: string;
+  sourceKind?: string;
+  sourceKey?: string;
+  label?: string;
+  jobCount?: number;
+  newJobCount?: number;
+  updatedJobCount?: number;
+  errorMessage?: string;
+};
+
+function parseDetailsJson(detailsJson: string | null): DiscoveryRunSourceSummaryDetails | null {
+  if (!detailsJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(detailsJson) as DiscoveryRunSourceSummaryDetails;
+    return typeof parsed === 'object' && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildSourceSummaries(logs: Array<{ message: string; detailsJson: string | null }>) {
+  return logs.flatMap((log) => {
+    const details = parseDetailsJson(log.detailsJson);
+    if (
+      !details?.sourceKind ||
+      !details.sourceKey ||
+      !details.label ||
+      (!log.message.startsWith('Completed ') &&
+        !log.message.startsWith('Failed ') &&
+        !log.message.startsWith('Skipped '))
+    ) {
+      return [];
+    }
+
+    const status = log.message.startsWith('Completed ')
+      ? 'completed'
+      : log.message.startsWith('Failed ')
+        ? 'failed'
+        : 'skipped';
+
+    return [
+      discoveryRunSourceSummarySchema.parse({
+        discoverySourceId: details.discoverySourceId ?? null,
+        sourceKind: details.sourceKind,
+        sourceKey: details.sourceKey,
+        label: details.label,
+        status,
+        jobCount: details.jobCount ?? 0,
+        newJobCount: details.newJobCount ?? 0,
+        updatedJobCount: details.updatedJobCount ?? 0,
+        errorMessage: details.errorMessage ?? null
+      })
+    ];
+  });
+}
+
 export const registerDiscoveryRunRoutes: FastifyPluginAsync = async (app) => {
   app.get('/discovery-runs', async () => {
     const runs = await app.repositories.discoveryRuns.list();
@@ -55,7 +116,8 @@ export const registerDiscoveryRunRoutes: FastifyPluginAsync = async (app) => {
     return {
       run: discoveryRunRecordSchema.parse(run),
       logs: logs.map((entry) => logEventRecordSchema.parse(entry)),
-      artifacts: artifacts.map((artifact) => artifactRecordSchema.parse(artifact))
+      artifacts: artifacts.map((artifact) => artifactRecordSchema.parse(artifact)),
+      sourceSummaries: buildSourceSummaries(logs)
     };
   });
 

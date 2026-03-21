@@ -2,6 +2,7 @@ import type {
   ApplicantProfile,
   ArtifactRecord,
   DiscoveryRunRecord,
+  DiscoveryRunSourceSummary,
   DiscoveryScheduleRecord,
   DiscoverySourcePatch,
   DiscoverySourceRecord,
@@ -15,6 +16,7 @@ export type DiscoveryRunDetail = {
   run: DiscoveryRunRecord;
   logs: LogEventRecord[];
   artifacts: ArtifactRecord[];
+  sourceSummaries: DiscoveryRunSourceSummary[];
 };
 
 export type ApplicantProfileResponse = {
@@ -71,7 +73,8 @@ export async function getJobs(filters: JobListFilters = {}): Promise<JobRecord[]
       status: filters.status,
       remoteType: filters.remoteType,
       title: filters.title,
-      location: filters.location
+      location: filters.location,
+      companyName: filters.companyName
     })}`
   );
   return response.jobs;
@@ -175,6 +178,31 @@ export async function getDiscoveryRun(runId: string): Promise<DiscoveryRunDetail
   }
 
   return (await response.json()) as DiscoveryRunDetail;
+}
+
+export async function waitForDiscoveryRun(
+  runId: string,
+  options: { timeoutMs?: number; pollIntervalMs?: number } = {}
+): Promise<DiscoveryRunDetail | null> {
+  const timeoutMs = options.timeoutMs ?? 15000;
+  const pollIntervalMs = options.pollIntervalMs ?? 250;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const detail = await getDiscoveryRun(runId);
+
+    if (!detail) {
+      return null;
+    }
+
+    if (detail.run.status !== 'pending' && detail.run.status !== 'running') {
+      return detail;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  return getDiscoveryRun(runId);
 }
 
 export async function runDiscoverySources(payload: {
