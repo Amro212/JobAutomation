@@ -56,7 +56,7 @@ export function JobFilters({
           <Link href={resetHref}>Reset</Link>
         </Button>
       </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-5">
+      <div className="mt-6 grid gap-4 md:grid-cols-3 lg:grid-cols-6">
         <label className="space-y-2 text-sm">
           <span className="font-medium">Filter source kind</span>
           <select
@@ -120,6 +120,16 @@ export function JobFilters({
             aria-label="Filter location"
             defaultValue={filters.location ?? ''}
             placeholder="Canada"
+          />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="font-medium">Filter company</span>
+          <Input
+            type="text"
+            name="companyName"
+            aria-label="Filter company name"
+            defaultValue={filters.companyName ?? ''}
+            placeholder="Acme Corp"
           />
         </label>
       </div>

@@ -16,12 +16,14 @@ export function DiscoverySourcesPanel({
   sources,
   createAction,
   runAction,
-  toggleAction
+  toggleAction,
+  importAction
 }: {
   sources: DiscoverySourceRecord[];
   createAction: (formData: FormData) => Promise<void>;
   runAction: (formData: FormData) => Promise<void>;
   toggleAction: (formData: FormData) => Promise<void>;
+  importAction: (formData: FormData) => Promise<void>;
 }) {
   return (
     <section className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
@@ -73,6 +75,34 @@ export function DiscoverySourcesPanel({
           <SubmitButton className="w-full" pendingText="Adding...">
             Add source
           </SubmitButton>
+        </div>
+      </form>
+
+      <form
+        action={importAction}
+        className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/30 px-4 py-3"
+      >
+        <label className="flex flex-col gap-1 text-sm text-foreground">
+          <span className="font-medium">Bulk import via CSV</span>
+          <input
+            type="file"
+            name="csvFile"
+            accept=".csv"
+            required
+            className="text-sm text-muted-foreground file:mr-3 file:rounded file:border file:border-input file:bg-background file:px-3 file:py-1 file:text-xs file:font-medium file:text-foreground"
+          />
+        </label>
+        <div className="flex items-center gap-2">
+          <SubmitButton size="sm" pendingText="Importing...">
+            Import CSV
+          </SubmitButton>
+          <a
+            href="/discovery-sources-template.csv"
+            download
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Download template
+          </a>
         </div>
       </form>
 

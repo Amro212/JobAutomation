@@ -53,7 +53,8 @@ export const jobListFiltersSchema = z.object({
   status: optionalStatusFilterSchema,
   remoteType: filterTextSchema,
   title: filterTextSchema,
-  location: filterTextSchema
+  location: filterTextSchema,
+  companyName: filterTextSchema
 });
 
 export const jobReviewPatchSchema = z
