@@ -45,6 +45,15 @@ export const FILTER_COUNTRIES: readonly CountryEntry[] = [
   { code: 'CL', label: 'Chile' },
   { code: 'AE', label: 'United Arab Emirates' },
   { code: 'SA', label: 'Saudi Arabia' },
+  { code: 'BH', label: 'Bahrain' },
+  { code: 'KW', label: 'Kuwait' },
+  { code: 'OM', label: 'Oman' },
+  { code: 'QA', label: 'Qatar' },
+  { code: 'JO', label: 'Jordan' },
+  { code: 'LB', label: 'Lebanon' },
+  { code: 'IQ', label: 'Iraq' },
+  { code: 'TR', label: 'Turkey' },
+  { code: 'IR', label: 'Iran' },
   { code: 'ZA', label: 'South Africa' },
   { code: 'NG', label: 'Nigeria' },
   { code: 'KE', label: 'Kenya' },
@@ -101,8 +110,77 @@ const COUNTRY_ALIASES: Record<string, string[]> = {
   AR: ['argentina', 'latam'],
   CO: ['colombia', 'latam'],
   CL: ['chile', 'latam'],
-  AE: ['united arab emirates', 'uae', 'dubai', 'abu dhabi'],
-  SA: ['saudi arabia'],
+  AE: [
+    'united arab emirates',
+    'uae',
+    'emirates',
+    'dubai',
+    'abu dhabi',
+    'sharjah',
+    'ajman',
+    'ras al khaimah',
+    'rak',
+    'fujairah',
+    'umm al quwain',
+    'gcc',
+    'gulf cooperation council',
+    'mena'
+  ],
+  SA: [
+    'saudi arabia',
+    'saudi',
+    'ksa',
+    'kingdom of saudi arabia',
+    'riyadh',
+    'jeddah',
+    'dammam',
+    'khobar',
+    'dhahran',
+    'mecca',
+    'medina',
+    'gcc',
+    'gulf',
+    'gulf cooperation council',
+    'mena'
+  ],
+  BH: [
+    'bahrain',
+    'kingdom of bahrain',
+    'manama',
+    'gcc',
+    'gulf cooperation council',
+    'mena'
+  ],
+  KW: [
+    'kuwait',
+    'state of kuwait',
+    'kuwait city',
+    'gcc',
+    'gulf cooperation council',
+    'mena'
+  ],
+  OM: [
+    'oman',
+    'sultanate of oman',
+    'muscat',
+    'salalah',
+    'gcc',
+    'gulf cooperation council',
+    'mena'
+  ],
+  QA: [
+    'qatar',
+    'state of qatar',
+    'doha',
+    'gcc',
+    'gulf cooperation council',
+    'mena'
+  ],
+  JO: ['jordan', 'hashemite kingdom of jordan', 'amman', 'mena', 'middle east'],
+  LB: ['lebanon', 'republic of lebanon', 'beirut', 'mena', 'middle east'],
+  IQ: ['iraq', 'republic of iraq', 'baghdad', 'basra', 'erbil', 'mena', 'middle east'],
+  TR: ['turkey', 'türkiye', 'turkiye', 'istanbul', 'ankara', 'izmir', 'mena', 'emea'],
+  IR: ['iran', 'islamic republic of iran', 'persia', 'tehran', 'isfahan', 'shiraz', 'middle east'],
   ZA: ['south africa'],
   NG: ['nigeria'],
   KE: ['kenya'],
@@ -164,11 +242,35 @@ const GB_SUBDIVISIONS: string[] = [
   'bristol', 'leeds', 'liverpool', 'cambridge', 'oxford', 'belfast', 'cardiff'
 ];
 
+/** Major cities / regions for Gulf and wider Middle East job postings. */
+const AE_CITIES: string[] = ['al ain', 'khalifa city'];
+const SA_CITIES: string[] = ['neom', 'tabuk', 'abha', 'taif'];
+const BH_CITIES: string[] = ['muharraq', 'riffa'];
+const KW_CITIES: string[] = ['al jahra', 'hawalli', 'salmiya'];
+const OM_CITIES: string[] = ['nizwa', 'sohar'];
+const QA_CITIES: string[] = ['al rayyan', 'al wakrah', 'lusail'];
+const JO_CITIES: string[] = ['zarqa', 'irbid', 'aqaba'];
+const LB_CITIES: string[] = ['tripoli', 'sidon', 'tyre'];
+const IQ_CITIES: string[] = ['mosul', 'kirkuk', 'najaf'];
+const TR_CITIES: string[] = ['bursa', 'antalya', 'gaziantep'];
+const IR_CITIES: string[] = ['mashhad', 'tabriz'];
+
 const SUBDIVISIONS: Record<string, string[]> = {
   US: US_STATES,
   CA: CA_PROVINCES,
   AU: AU_SUBDIVISIONS,
-  GB: GB_SUBDIVISIONS
+  GB: GB_SUBDIVISIONS,
+  AE: AE_CITIES,
+  SA: SA_CITIES,
+  BH: BH_CITIES,
+  KW: KW_CITIES,
+  OM: OM_CITIES,
+  QA: QA_CITIES,
+  JO: JO_CITIES,
+  LB: LB_CITIES,
+  IQ: IQ_CITIES,
+  TR: TR_CITIES,
+  IR: IR_CITIES
 };
 
 /**
