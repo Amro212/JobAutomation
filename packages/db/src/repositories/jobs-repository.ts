@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, like } from 'drizzle-orm';
+import { and, count, desc, eq, like, or, sql } from 'drizzle-orm';
 
 import {
+  buildLocationLikePatterns,
+  jobListItemSchema,
   jobRecordSchema,
   type JobListFilters,
+  type JobListItem,
   type JobRecord,
   type JobReviewPatch,
   type JobStatus
@@ -52,7 +55,7 @@ function mapJobRecord(record: typeof jobsTable.$inferSelect): JobRecord {
 export class JobsRepository {
   constructor(private readonly db: JobAutomationDatabase) {}
 
-  async list(filters: JobListFilters = {}): Promise<JobRecord[]> {
+  private buildWhereClause(filters: JobListFilters) {
     const conditions = [];
 
     if (filters.sourceKind) {
@@ -71,7 +74,15 @@ export class JobsRepository {
       conditions.push(like(jobsTable.title, `%${filters.title}%`));
     }
 
-    if (filters.location) {
+    if (filters.locationCountries && filters.locationCountries.length > 0) {
+      const patterns = buildLocationLikePatterns(filters.locationCountries);
+      const locationOr = patterns.map(
+        (p) => sql`lower(${jobsTable.location}) like ${p}`
+      );
+      if (locationOr.length > 0) {
+        conditions.push(or(...locationOr)!);
+      }
+    } else if (filters.location) {
       conditions.push(like(jobsTable.location, `%${filters.location}%`));
     }
 
@@ -79,11 +90,77 @@ export class JobsRepository {
       conditions.push(like(jobsTable.companyName, `%${filters.companyName}%`));
     }
 
-    const query = this.db.select().from(jobsTable);
-    const records = await (conditions.length > 0 ? query.where(and(...conditions)) : query).orderBy(
-      desc(jobsTable.updatedAt)
-    );
-    return records.map(mapJobRecord);
+    return conditions.length > 0 ? and(...conditions) : undefined;
+  }
+
+  async list(
+    filters: JobListFilters = {},
+    pagination?: { page: number; pageSize: number }
+  ): Promise<{ jobs: JobRecord[]; total: number }> {
+    const whereClause = this.buildWhereClause(filters);
+
+    const countQuery = this.db.select({ total: count() }).from(jobsTable);
+    const [{ total }] = whereClause
+      ? await countQuery.where(whereClause)
+      : await countQuery;
+
+    const baseSelect = this.db.select().from(jobsTable);
+    const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
+    const ordered = filtered.orderBy(desc(jobsTable.updatedAt));
+
+    const records = pagination
+      ? await ordered
+          .limit(pagination.pageSize)
+          .offset((pagination.page - 1) * pagination.pageSize)
+      : await ordered;
+
+    return { jobs: records.map(mapJobRecord), total };
+  }
+
+  async distinctCompanyNames(filters: JobListFilters = {}): Promise<string[]> {
+    const whereClause = this.buildWhereClause(filters);
+    const base = this.db
+      .selectDistinct({ companyName: jobsTable.companyName })
+      .from(jobsTable);
+    const filtered = whereClause ? base.where(whereClause) : base;
+    const rows = await filtered.orderBy(jobsTable.companyName);
+    return rows
+      .map((r) => r.companyName)
+      .filter((name) => name.trim().length > 0);
+  }
+
+  async listSummary(
+    filters: JobListFilters = {},
+    pagination?: { page: number; pageSize: number }
+  ): Promise<{ jobs: JobListItem[]; total: number }> {
+    const whereClause = this.buildWhereClause(filters);
+
+    const countQuery = this.db.select({ total: count() }).from(jobsTable);
+    const [{ total }] = whereClause
+      ? await countQuery.where(whereClause)
+      : await countQuery;
+
+    const summaryColumns = {
+      id: jobsTable.id,
+      companyName: jobsTable.companyName,
+      title: jobsTable.title,
+      sourceKind: jobsTable.sourceKind,
+      location: jobsTable.location,
+      remoteType: jobsTable.remoteType,
+      status: jobsTable.status
+    };
+
+    const baseSelect = this.db.select(summaryColumns).from(jobsTable);
+    const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
+    const ordered = filtered.orderBy(desc(jobsTable.updatedAt));
+
+    const records = pagination
+      ? await ordered
+          .limit(pagination.pageSize)
+          .offset((pagination.page - 1) * pagination.pageSize)
+      : await ordered;
+
+    return { jobs: records.map((r) => jobListItemSchema.parse(r)), total };
   }
 
   async findById(id: string): Promise<JobRecord | null> {

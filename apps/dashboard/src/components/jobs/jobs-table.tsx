@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 
-import type { JobRecord } from '@jobautomation/core';
+import type { JobListItem } from '@jobautomation/core';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -27,10 +28,12 @@ function statusVariant(status: string) {
 
 export function JobsTable({
   jobs,
-  emptyMessage = 'No jobs have been discovered yet.'
+  emptyMessage = 'No jobs have been discovered yet.',
+  footer
 }: {
-  jobs: JobRecord[];
+  jobs: JobListItem[];
   emptyMessage?: string;
+  footer?: ReactNode;
 }) {
   if (jobs.length === 0) {
     return (
@@ -48,7 +51,9 @@ export function JobsTable({
             <TableHead className="w-[150px]">Company</TableHead>
             <TableHead>Title</TableHead>
             <TableHead className="w-[105px]">Source</TableHead>
-            <TableHead className="w-[145px]">Location</TableHead>
+            <TableHead className="w-[min(320px,32%)] min-w-[200px]">
+              Location
+            </TableHead>
             <TableHead className="w-[85px]">Remote</TableHead>
             <TableHead className="w-[110px]">Status</TableHead>
           </TableRow>
@@ -66,7 +71,9 @@ export function JobsTable({
                 </Link>
               </TableCell>
               <TableCell className="capitalize">{job.sourceKind}</TableCell>
-              <TableCell className="truncate">{job.location || 'Unspecified'}</TableCell>
+              <TableCell className="whitespace-normal break-words align-top text-left">
+                {job.location || 'Unspecified'}
+              </TableCell>
               <TableCell className="capitalize">{job.remoteType}</TableCell>
               <TableCell>
                 <Badge variant={statusVariant(job.status)} className="capitalize">
@@ -77,6 +84,7 @@ export function JobsTable({
           ))}
         </TableBody>
       </Table>
+      {footer}
     </div>
   );
 }

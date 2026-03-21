@@ -8,6 +8,13 @@ export const workspaceProjects = [
   },
   {
     test: {
+      name: 'core',
+      environment: 'node',
+      include: ['tests/packages/core/**/*.test.ts']
+    }
+  },
+  {
+    test: {
       name: 'db',
       environment: 'node',
       include: ['tests/packages/db/**/*.test.ts']

@@ -96,10 +96,11 @@ describe('repositories', () => {
       updatedAt: new Date('2026-03-13T12:00:00.000Z')
     });
 
-    const jobs = await repository.list();
+    const { jobs, total } = await repository.list();
 
     expect(updated.id).toBe(created.id);
     expect(jobs).toHaveLength(1);
+    expect(total).toBe(1);
     expect(jobs[0]?.title).toBe('Senior Platform Engineer');
     expect(jobs[0]?.status).toBe('reviewing');
   });
@@ -189,6 +190,104 @@ describe('repositories', () => {
     expect(artifacts).toHaveLength(1);
     expect(runs[0]?.status).toBe('completed');
     expect(runs[0]?.newJobCount).toBe(1);
+  });
+
+  test('filters jobs by locationCountries with case-insensitive alias matching', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repository = new JobsRepository(db);
+    const baseJob = {
+      sourceKind: 'greenhouse' as const,
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Test job',
+      rawPayload: null,
+      discoveryRunId: null,
+      status: 'discovered' as const,
+      discoveredAt: new Date('2026-03-13T10:00:00.000Z'),
+      updatedAt: new Date('2026-03-13T10:00:00.000Z')
+    };
+
+    await repository.upsert({
+      ...baseJob,
+      sourceId: 'j1',
+      sourceUrl: 'https://example.com/j1',
+      companyName: 'Acme',
+      title: 'Engineer',
+      location: 'San Francisco, CA'
+    });
+    await repository.upsert({
+      ...baseJob,
+      sourceId: 'j2',
+      sourceUrl: 'https://example.com/j2',
+      companyName: 'Maple Inc',
+      title: 'Designer',
+      location: 'Toronto, Ontario'
+    });
+    await repository.upsert({
+      ...baseJob,
+      sourceId: 'j3',
+      sourceUrl: 'https://example.com/j3',
+      companyName: 'Berlin GmbH',
+      title: 'Backend Dev',
+      location: 'Berlin, Germany'
+    });
+    await repository.upsert({
+      ...baseJob,
+      sourceId: 'j4',
+      sourceUrl: 'https://example.com/j4',
+      companyName: 'Remote Co',
+      title: 'SRE',
+      location: 'United States of America'
+    });
+
+    const usOnly = await repository.list({ locationCountries: ['US'] });
+    const usLocations = usOnly.jobs.map((j) => j.location);
+    expect(usLocations).toContain('San Francisco, CA');
+    expect(usLocations).toContain('United States of America');
+    expect(usOnly.total).toBe(2);
+
+    const caOnly = await repository.list({ locationCountries: ['CA'] });
+    expect(caOnly.jobs.map((j) => j.location)).toContain('Toronto, Ontario');
+    expect(caOnly.total).toBe(1);
+
+    const usAndCa = await repository.list({ locationCountries: ['US', 'CA'] });
+    expect(usAndCa.total).toBe(3);
+
+    const deOnly = await repository.list({ locationCountries: ['DE'] });
+    expect(deOnly.jobs.map((j) => j.location)).toContain('Berlin, Germany');
+    expect(deOnly.total).toBe(1);
+  });
+
+  test('stores and retrieves applicant profile preferredCountries', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repository = new ApplicantProfileRepository(db);
+
+    await repository.save({
+      id: 'default',
+      fullName: 'Test User',
+      email: 'test@example.com',
+      phone: '',
+      location: 'NYC',
+      summary: '',
+      reusableContext: '',
+      linkedinUrl: '',
+      websiteUrl: '',
+      baseResumeFileName: '',
+      baseResumeTex: '',
+      preferredCountries: ['US', 'CA']
+    });
+
+    const stored = await repository.get();
+    expect(stored?.preferredCountries).toEqual(['US', 'CA']);
   });
 
   test('persists the singleton discovery schedule and run log events', async () => {

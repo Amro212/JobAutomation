@@ -186,7 +186,7 @@ describe('stagehand-assisted fallback discovery', () => {
     expect(createClient).toHaveBeenCalledTimes(1);
     expect(result.status).toBe('completed');
 
-    const jobs = await jobsRepository.list({ sourceKind: 'playwright' });
+    const { jobs } = await jobsRepository.list({ sourceKind: 'playwright' });
     expect(jobs).toHaveLength(1);
     expect(JSON.parse(jobs[0]!.rawPayload ?? '{}')).toMatchObject({
       fallbackMode: 'stagehand',

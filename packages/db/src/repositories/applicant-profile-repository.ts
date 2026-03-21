@@ -5,8 +5,20 @@ import { applicantProfileTable } from '../schema';
 
 const DEFAULT_PROFILE_ID = 'default';
 
+function parseCountriesJson(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 function mapApplicantProfile(record: typeof applicantProfileTable.$inferSelect): ApplicantProfile {
-  return applicantProfileSchema.parse(record);
+  return applicantProfileSchema.parse({
+    ...record,
+    preferredCountries: parseCountriesJson(record.preferredCountries)
+  });
 }
 
 export class ApplicantProfileRepository {
@@ -19,9 +31,11 @@ export class ApplicantProfileRepository {
 
   async save(input: ApplicantProfileInput): Promise<ApplicantProfile> {
     const parsed = applicantProfileInputSchema.parse(input);
+    const countriesJson = JSON.stringify(parsed.preferredCountries ?? []);
     const record = {
       ...parsed,
       id: parsed.id || DEFAULT_PROFILE_ID,
+      preferredCountries: countriesJson,
       updatedAt: new Date()
     };
 
@@ -41,10 +55,14 @@ export class ApplicantProfileRepository {
           websiteUrl: record.websiteUrl,
           baseResumeFileName: record.baseResumeFileName,
           baseResumeTex: record.baseResumeTex,
+          preferredCountries: record.preferredCountries,
           updatedAt: record.updatedAt
         }
       });
 
-    return applicantProfileSchema.parse(record);
+    return applicantProfileSchema.parse({
+      ...record,
+      preferredCountries: parsed.preferredCountries ?? []
+    });
   }
 }

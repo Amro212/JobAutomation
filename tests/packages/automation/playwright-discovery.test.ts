@@ -167,7 +167,7 @@ describe('playwright fallback discovery', () => {
     expect(escalate).not.toHaveBeenCalled();
     expect(result.status).toBe('completed');
 
-    const jobs = await jobsRepository.list({
+    const { jobs } = await jobsRepository.list({
       sourceKind: 'playwright'
     });
     expect(jobs).toHaveLength(1);
@@ -357,7 +357,7 @@ describe('playwright fallback discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const jobs = await jobsRepository.list({
+    const { jobs } = await jobsRepository.list({
       sourceKind: 'playwright'
     });
     expect(jobs.some((job) => job.sourceId === 'fingerprint-001')).toBe(true);
@@ -431,7 +431,7 @@ describe('playwright fallback discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const jobs = await jobsRepository.list({
+    const { jobs } = await jobsRepository.list({
       sourceKind: 'playwright'
     });
     const matchedJob = jobs.find((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'));
@@ -504,7 +504,7 @@ describe('playwright fallback discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const jobs = await jobsRepository.list({
+    const { jobs } = await jobsRepository.list({
       sourceKind: 'playwright'
     });
     expect(jobs.some((job) => job.sourceUrl.includes('linkedin.com'))).toBe(false);
@@ -586,7 +586,7 @@ describe('playwright fallback discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const jobs = await jobsRepository.list({
+    const { jobs } = await jobsRepository.list({
       sourceKind: 'playwright'
     });
     const matchedJob = jobs.find((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'));

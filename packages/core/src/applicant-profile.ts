@@ -12,6 +12,7 @@ export const applicantProfileSchema = z.object({
   websiteUrl: z.string().url().or(z.literal('')).default(''),
   baseResumeFileName: z.string().default(''),
   baseResumeTex: z.string().default(''),
+  preferredCountries: z.array(z.string().length(2)).default([]),
   updatedAt: z.date()
 });
 

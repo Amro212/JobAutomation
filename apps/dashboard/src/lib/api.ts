@@ -7,6 +7,7 @@ import type {
   DiscoverySourcePatch,
   DiscoverySourceRecord,
   JobListFilters,
+  JobListItem,
   JobReviewPatch,
   JobRecord,
   LogEventRecord
@@ -32,12 +33,23 @@ export function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
 }
 
-function buildQueryString(values: Record<string, string | undefined>): string {
+function buildQueryString(
+  values: Record<string, string | undefined>,
+  arrayValues?: Record<string, string[]>
+): string {
   const searchParams = new URLSearchParams();
 
   for (const [key, value] of Object.entries(values)) {
     if (value && value.trim().length > 0) {
       searchParams.set(key, value);
+    }
+  }
+
+  if (arrayValues) {
+    for (const [key, arr] of Object.entries(arrayValues)) {
+      for (const value of arr) {
+        searchParams.append(key, value);
+      }
     }
   }
 
@@ -66,18 +78,52 @@ async function fetchFromApi<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function getJobs(filters: JobListFilters = {}): Promise<JobRecord[]> {
-  const response = await fetchFromApi<{ jobs: JobRecord[] }>(
-    `/jobs${buildQueryString({
-      sourceKind: filters.sourceKind,
-      status: filters.status,
-      remoteType: filters.remoteType,
-      title: filters.title,
-      location: filters.location,
-      companyName: filters.companyName
-    })}`
+export async function getJobs(
+  filters: JobListFilters = {},
+  pagination?: { page: number; pageSize: number }
+): Promise<{ jobs: JobListItem[]; total: number }> {
+  const response = await fetchFromApi<{ jobs: JobListItem[]; total: number }>(
+    `/jobs${buildQueryString(
+      {
+        sourceKind: filters.sourceKind,
+        status: filters.status,
+        remoteType: filters.remoteType,
+        title: filters.title,
+        location: filters.location,
+        companyName: filters.companyName,
+        ...(pagination
+          ? {
+              page: String(pagination.page),
+              pageSize: String(pagination.pageSize)
+            }
+          : {})
+      },
+      filters.locationCountries && filters.locationCountries.length > 0
+        ? { country: filters.locationCountries }
+        : undefined
+    )}`
   );
-  return response.jobs;
+  return response;
+}
+
+export async function getDistinctCompanyNames(
+  filters: JobListFilters = {}
+): Promise<string[]> {
+  const response = await fetchFromApi<{ companies: string[] }>(
+    `/jobs/distinct-companies${buildQueryString(
+      {
+        sourceKind: filters.sourceKind,
+        status: filters.status,
+        remoteType: filters.remoteType,
+        title: filters.title,
+        location: filters.location
+      },
+      filters.locationCountries && filters.locationCountries.length > 0
+        ? { country: filters.locationCountries }
+        : undefined
+    )}`
+  );
+  return response.companies;
 }
 
 export async function getJob(jobId: string): Promise<JobRecord | null> {

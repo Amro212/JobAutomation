@@ -120,7 +120,7 @@ describe('ingestJobs', () => {
       capturedAt: new Date('2026-03-13T12:00:00.000Z')
     });
 
-    const storedJobs = await jobsRepository.list();
+    const { jobs: storedJobs } = await jobsRepository.list();
     const storedRuns = await runsRepository.list();
 
     expect(firstRun.run.newJobCount).toBe(1);
@@ -194,7 +194,7 @@ describe('ingestJobs', () => {
       capturedAt: new Date('2026-03-13T10:10:00.000Z')
     });
 
-    const storedJobs = await jobsRepository.list();
+    const { jobs: storedJobs } = await jobsRepository.list();
 
     expect(storedJobs).toHaveLength(3);
     expect(storedJobs.map((job) => job.sourceKind).sort()).toEqual([

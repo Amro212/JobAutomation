@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { JobListFilters } from '@jobautomation/core';
 
 import { CompanyNameCombobox } from '@/components/jobs/company-name-combobox';
+import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
@@ -117,12 +118,10 @@ export function JobFilters({
         </label>
         <label className="space-y-2 text-sm">
           <span className="font-medium">Filter location</span>
-          <Input
-            type="text"
-            name="location"
-            aria-label="Filter location"
-            defaultValue={filters.location ?? ''}
-            placeholder="Canada"
+          <LocationCountryCombobox
+            name="country"
+            defaultValue={filters.locationCountries ?? []}
+            aria-label="Filter location country"
           />
         </label>
         <label className="space-y-2 text-sm">
