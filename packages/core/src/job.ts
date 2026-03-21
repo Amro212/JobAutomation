@@ -109,7 +109,18 @@ export const jobReviewPatchSchema = z
     message: 'At least one review field must be provided.'
   });
 
+export const jobListItemSchema = z.object({
+  id: z.string().min(1),
+  companyName: z.string().min(1),
+  title: z.string().min(1),
+  sourceKind: z.string().min(1),
+  location: z.string().default(''),
+  remoteType: z.string().default('unknown'),
+  status: jobStatusSchema
+});
+
 export type JobRecord = z.infer<typeof jobRecordSchema>;
+export type JobListItem = z.infer<typeof jobListItemSchema>;
 export type JobListFilters = z.infer<typeof jobListFiltersSchema>;
 export type JobListPagination = z.infer<typeof jobListPaginationSchema>;
 export type JobListQuery = z.infer<typeof jobListQuerySchema>;

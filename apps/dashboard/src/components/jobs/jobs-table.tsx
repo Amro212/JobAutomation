@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 
-import type { JobRecord } from '@jobautomation/core';
+import type { JobListItem } from '@jobautomation/core';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -31,7 +31,7 @@ export function JobsTable({
   emptyMessage = 'No jobs have been discovered yet.',
   footer
 }: {
-  jobs: JobRecord[];
+  jobs: JobListItem[];
   emptyMessage?: string;
   footer?: ReactNode;
 }) {

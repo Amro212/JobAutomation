@@ -17,6 +17,7 @@ import {
   getApplicantProfile,
   getDiscoverySources,
   getDiscoveryRun,
+  getDistinctCompanyNames,
   getJobs,
   runDiscoverySources,
   waitForDiscoveryRun,
@@ -221,20 +222,18 @@ export default async function JobsPage({
     }
   }
 
-  const [{ jobs, total }, jobsForCompanyOptions, sources] = await Promise.all([
+  const [{ jobs, total }, companyOptions, sources] = await Promise.all([
     getJobs(filters, { page, pageSize }),
-    getJobs({
+    getDistinctCompanyNames({
       sourceKind: filters.sourceKind,
       status: filters.status,
       remoteType: filters.remoteType,
       title: filters.title,
-      location: filters.location
+      location: filters.location,
+      locationCountries: filters.locationCountries
     }),
     getDiscoverySources()
   ]);
-  const companyOptions = Array.from(
-    new Set(jobsForCompanyOptions.jobs.map((j) => j.companyName).filter((n) => n.trim().length > 0))
-  ).sort((a, b) => a.localeCompare(b));
 
   return (
     <section className="space-y-6">

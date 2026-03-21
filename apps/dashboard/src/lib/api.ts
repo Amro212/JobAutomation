@@ -7,6 +7,7 @@ import type {
   DiscoverySourcePatch,
   DiscoverySourceRecord,
   JobListFilters,
+  JobListItem,
   JobReviewPatch,
   JobRecord,
   LogEventRecord
@@ -80,8 +81,8 @@ async function fetchFromApi<T>(path: string): Promise<T> {
 export async function getJobs(
   filters: JobListFilters = {},
   pagination?: { page: number; pageSize: number }
-): Promise<{ jobs: JobRecord[]; total: number }> {
-  const response = await fetchFromApi<{ jobs: JobRecord[]; total: number }>(
+): Promise<{ jobs: JobListItem[]; total: number }> {
+  const response = await fetchFromApi<{ jobs: JobListItem[]; total: number }>(
     `/jobs${buildQueryString(
       {
         sourceKind: filters.sourceKind,
@@ -103,6 +104,26 @@ export async function getJobs(
     )}`
   );
   return response;
+}
+
+export async function getDistinctCompanyNames(
+  filters: JobListFilters = {}
+): Promise<string[]> {
+  const response = await fetchFromApi<{ companies: string[] }>(
+    `/jobs/distinct-companies${buildQueryString(
+      {
+        sourceKind: filters.sourceKind,
+        status: filters.status,
+        remoteType: filters.remoteType,
+        title: filters.title,
+        location: filters.location
+      },
+      filters.locationCountries && filters.locationCountries.length > 0
+        ? { country: filters.locationCountries }
+        : undefined
+    )}`
+  );
+  return response.companies;
 }
 
 export async function getJob(jobId: string): Promise<JobRecord | null> {

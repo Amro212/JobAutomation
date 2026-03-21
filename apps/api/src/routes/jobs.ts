@@ -51,10 +51,25 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
     const pageSize = parsed.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
 
     const { jobs, total } = usePagination
-      ? await app.repositories.jobs.list(filters, { page, pageSize })
-      : await app.repositories.jobs.list(filters);
+      ? await app.repositories.jobs.listSummary(filters, { page, pageSize })
+      : await app.repositories.jobs.listSummary(filters);
 
     return { jobs, total };
+  });
+
+  app.get('/jobs/distinct-companies', async (request) => {
+    const query = (request.query ?? {}) as Record<string, unknown>;
+    const filters = jobListFiltersSchema.parse({
+      sourceKind: getQueryValue(query, 'sourceKind'),
+      status: getQueryValue(query, 'status'),
+      remoteType: getQueryValue(query, 'remoteType'),
+      title: getQueryValue(query, 'title'),
+      location: getQueryValue(query, 'location'),
+      locationCountries: getQueryArray(query, 'country')
+    });
+
+    const companies = await app.repositories.jobs.distinctCompanyNames(filters);
+    return { companies };
   });
 
   app.get('/jobs/:jobId', async (request, reply) => {
