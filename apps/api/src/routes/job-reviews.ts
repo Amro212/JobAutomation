@@ -56,16 +56,21 @@ export const registerJobReviewRoutes: FastifyPluginAsync = async (app) => {
     const { jobId } = request.params as { jobId: string };
 
     try {
+      const applicantProfile = await app.repositories.applicantProfile.get();
+
       const job = await scoreJob({
         jobId,
         jobsRepository: app.repositories.jobs,
-        openRouter: app.config.OPENROUTER_API_KEY
+        applicantProfile,
+        ...(app.config.OPENROUTER_API_KEY
           ? {
-              apiKey: app.config.OPENROUTER_API_KEY,
-              baseUrl: app.config.OPENROUTER_API_BASE_URL,
-              model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
+              openRouter: {
+                apiKey: app.config.OPENROUTER_API_KEY,
+                baseUrl: app.config.OPENROUTER_API_BASE_URL,
+                model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
+              }
             }
-          : undefined
+          : {})
       });
 
       return { job };

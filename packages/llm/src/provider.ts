@@ -1,3 +1,5 @@
+import { formatOpenRouterHttpError } from './open-router-http-error';
+
 export type OpenRouterConfig = {
   apiKey: string;
   baseUrl: string;
@@ -181,19 +183,16 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        let details = '';
+        let providerMessage = '';
 
         try {
           const errorPayload = JSON.parse(errorText) as OpenRouterErrorResponse;
-          const message = errorPayload.error?.message?.trim();
-          if (message) {
-            details = `: ${message}`;
-          }
+          providerMessage = errorPayload.error?.message?.trim() ?? '';
         } catch {
-          details = '';
+          providerMessage = '';
         }
 
-        throw new Error(`OpenRouter request failed with status ${response.status}${details}.`);
+        throw new Error(formatOpenRouterHttpError(response.status, providerMessage));
       }
 
       const payload = (await response.json()) as OpenRouterResponse;

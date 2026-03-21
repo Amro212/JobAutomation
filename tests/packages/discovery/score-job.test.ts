@@ -284,8 +284,9 @@ describe('scoreJob', () => {
       }
     });
 
-    const messages = requestBody?.messages as Array<{ role: string; content: string }> | undefined;
-    expect(messages?.[0]?.content).toContain('personalized fit');
+    const body = requestBody as Record<string, unknown> | null;
+    const messages = body?.messages as Array<{ role: string; content: string }> | undefined;
+    expect(messages?.[0]?.content).toContain('Assess personalized fit');
     expect(messages?.[1]?.content).toContain(marker);
     expect(messages?.[1]?.content).toContain('--- Applicant (personalized fit) ---');
   });
@@ -424,6 +425,70 @@ describe('scoreJob', () => {
       code: 'not_configured',
       message: 'OpenRouter authentication failed. Check OPENROUTER_API_KEY and retry.'
     } satisfies Pick<JobScoreError, 'code' | 'message'>);
+  });
+
+  test('surfaces rate limit errors with an actionable message', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-429',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/429',
+      companyName: 'Rate Corp',
+      title: 'Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Build things.',
+      rawPayload: '{"id":"job-429"}',
+      discoveryRunId: null,
+      status: 'reviewing',
+      reviewNotes: '',
+      reviewSummary: null,
+      reviewScore: null,
+      reviewScoreReasoning: null,
+      reviewUpdatedAt: new Date('2026-03-15T12:00:00.000Z'),
+      reviewScoreUpdatedAt: null,
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    await expect(
+      scoreJob({
+        jobId: job.id,
+        jobsRepository,
+        openRouter: {
+          apiKey: 'test-key',
+          baseUrl: 'https://openrouter.example/api/v1',
+          model: 'openrouter/test-model',
+          fetchImpl: async () =>
+            new Response(
+              JSON.stringify({
+                error: {
+                  message: 'Provider returned error.'
+                }
+              }),
+              {
+                status: 429,
+                headers: {
+                  'content-type': 'application/json'
+                }
+              }
+            )
+        }
+      })
+    ).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof JobScoreError &&
+        e.code === 'provider_error' &&
+        /rate limited/i.test(e.message) &&
+        e.message.includes('(HTTP 429)')
+    );
   });
 
   test('retries transient OpenRouter transport failures', async () => {
