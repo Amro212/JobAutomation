@@ -496,7 +496,11 @@ describe('discovery run routes', () => {
       expect(jobsResponse.statusCode).toBe(200);
       expect(jobsResponse.json().jobs).toHaveLength(1);
       expect(jobsResponse.json().jobs[0].sourceKind).toBe('playwright');
-      expect(JSON.parse(jobsResponse.json().jobs[0].rawPayload)).toMatchObject({
+
+      const jobId = jobsResponse.json().jobs[0].id as string;
+      const jobDetailResponse = await app.inject({ method: 'GET', url: `/jobs/${jobId}` });
+      expect(jobDetailResponse.statusCode).toBe(200);
+      expect(JSON.parse(jobDetailResponse.json().job.rawPayload as string)).toMatchObject({
         sourcePageUrl: sourceUrl,
         detailPageUrl: `http://127.0.0.1:${address.port}/jobs/fallback-platform-engineer`,
         extractorId: 'generic-listing',

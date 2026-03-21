@@ -5,6 +5,7 @@ export * from './contracts/normalized-job';
 export * from './contracts/source-adapter';
 export * from './normalization/normalize-job';
 export * from './services/dedupe-jobs';
+export * from './services/generate-job-keyword-profile';
 export * from './services/ingest-jobs';
 export * from './services/normalize-discovery-source-input';
 export * from './services/score-job';

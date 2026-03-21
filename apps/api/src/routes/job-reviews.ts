@@ -88,6 +88,10 @@ export const registerJobReviewRoutes: FastifyPluginAsync = async (app) => {
           return reply.code(422).send({ message: error.message });
         }
 
+        if (error.code === 'prefilter_rejected') {
+          return reply.code(422).send({ message: error.message });
+        }
+
         return reply.code(502).send({ message: error.message });
       }
 

@@ -2,10 +2,13 @@ import { revalidatePath } from 'next/cache';
 
 import { Badge } from '@/components/ui/badge';
 import { ApplicantProfileForm } from '@/components/setup/applicant-profile-form';
+import { GenerateJobKeywordProfileButton } from '@/components/setup/generate-job-keyword-profile-button';
 import { getApplicantProfile, saveApplicantProfile } from '@/lib/api';
 
 async function saveSetup(formData: FormData): Promise<void> {
   'use server';
+
+  const { profile: existing } = await getApplicantProfile();
 
   const uploadedResume = formData.get('baseResumeFile');
   const hasUploadedResume = uploadedResume instanceof File && uploadedResume.size > 0;
@@ -30,7 +33,9 @@ async function saveSetup(formData: FormData): Promise<void> {
       ? uploadedResume.name
       : String(formData.get('baseResumeFileName') ?? ''),
     baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? ''),
-    preferredCountries
+    preferredCountries,
+    jobKeywordProfile: existing?.jobKeywordProfile ?? null,
+    jobKeywordProfileGeneratedAt: existing?.jobKeywordProfileGeneratedAt ?? null
   });
 
   revalidatePath('/setup');
@@ -38,6 +43,11 @@ async function saveSetup(formData: FormData): Promise<void> {
 
 export default async function SetupPage() {
   const { profile, readiness } = await getApplicantProfile();
+
+  const generatedAtLabel =
+    profile?.jobKeywordProfileGeneratedAt != null
+      ? new Date(profile.jobKeywordProfileGeneratedAt).toLocaleString()
+      : null;
 
   return (
     <section className="space-y-4">
@@ -86,6 +96,7 @@ export default async function SetupPage() {
         </div>
       </div>
       <ApplicantProfileForm action={saveSetup} profile={profile} />
+      <GenerateJobKeywordProfileButton generatedAtLabel={generatedAtLabel} />
     </section>
   );
 }
