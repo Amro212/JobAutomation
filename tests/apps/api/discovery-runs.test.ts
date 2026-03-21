@@ -118,6 +118,18 @@ describe('discovery run routes', () => {
         storagePath: 'artifacts/fallback/evidence.png'
       })
     ]);
+    expect(runDetailResponse.json().sourceSummaries).toEqual([
+      expect.objectContaining({
+        discoverySourceId: createSourceResponse.json().source.id,
+        sourceKind: 'greenhouse',
+        sourceKey: 'acme',
+        label: 'Acme Corp',
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 1,
+        updatedJobCount: 0
+      })
+    ]);
     expect(runDetailResponse.json().logs.map((log: { message: string }) => log.message)).toEqual([
       'Queued manual discovery run.',
       'Started discovery run.',
@@ -224,12 +236,45 @@ describe('discovery run routes', () => {
 
     const jobsResponse = await app.inject({ method: 'GET', url: '/jobs' });
     const runsResponse = await app.inject({ method: 'GET', url: '/discovery-runs' });
+    const runDetailResponse = await app.inject({
+      method: 'GET',
+      url: `/discovery-runs/${runResponse.json().runs[0].id}`
+    });
 
     expect(jobsResponse.json().jobs.some((job: { title: string }) => job.title === "Don't see what you're looking for?")).toBe(false);
     expect(jobsResponse.json().jobs.some((job: { title: string }) => job.title === 'Account Executive II, SLED (R-18831)')).toBe(true);
     expect(jobsResponse.json().jobs.some((job: { title: string }) => job.title === 'Engineer Who Can Design, Americas')).toBe(true);
     expect(runsResponse.json().runs).toHaveLength(2);
     expect(runsResponse.json().runs[0].status).toBe('completed');
+    expect(runDetailResponse.json().sourceSummaries).toEqual([
+      expect.objectContaining({
+        sourceKind: 'greenhouse',
+        sourceKey: 'greenhouse',
+        label: 'Greenhouse',
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 0,
+        updatedJobCount: 1
+      }),
+      expect.objectContaining({
+        sourceKind: 'lever',
+        sourceKey: 'dnb',
+        label: 'Dun & Bradstreet',
+        status: 'completed',
+        jobCount: 2,
+        newJobCount: 2,
+        updatedJobCount: 0
+      }),
+      expect.objectContaining({
+        sourceKind: 'ashby',
+        sourceKey: 'ashby',
+        label: 'Ashby',
+        status: 'completed',
+        jobCount: 2,
+        newJobCount: 2,
+        updatedJobCount: 0
+      })
+    ]);
   });
 
   test('queues a retry run for a specific source step', async () => {

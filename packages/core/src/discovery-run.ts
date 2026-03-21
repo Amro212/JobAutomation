@@ -21,6 +21,19 @@ export const discoveryRunRecordSchema = z.object({
   errorMessage: z.string().nullable()
 });
 
+export const discoveryRunSourceSummarySchema = z.object({
+  discoverySourceId: z.string().nullable(),
+  sourceKind: z.string().min(1),
+  sourceKey: z.string().min(1),
+  label: z.string().min(1),
+  status: z.enum(['completed', 'failed', 'skipped']),
+  jobCount: z.number().int().nonnegative(),
+  newJobCount: z.number().int().nonnegative(),
+  updatedJobCount: z.number().int().nonnegative(),
+  errorMessage: z.string().nullable()
+});
+
 export type DiscoveryRunKind = z.infer<typeof discoveryRunKindSchema>;
 export type DiscoveryRunTriggerKind = z.infer<typeof discoveryRunTriggerKindSchema>;
 export type DiscoveryRunRecord = z.infer<typeof discoveryRunRecordSchema>;
+export type DiscoveryRunSourceSummary = z.infer<typeof discoveryRunSourceSummarySchema>;

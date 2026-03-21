@@ -38,19 +38,21 @@ test('creates a greenhouse source, renders discovered jobs, and opens the detail
     await page.getByLabel('Source token or URL').fill('https://job-boards.greenhouse.io/acme');
     await page.getByRole('button', { name: 'Add source' }).click();
 
+    await page.getByText('Source table (1)').click();
     await expect(page.getByRole('cell', { name: 'Acme Corp' }).first()).toBeVisible();
     await page
       .getByRole('row', { name: /Acme Corp acme Enabled Disable Run now/i })
       .getByRole('button', { name: 'Run now' })
       .click();
 
+    await expect(page.getByText('Acme Corp: scraped 1 job (1 new, 0 updated).')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Senior Platform Engineer' })).toBeVisible();
     await expect(page.getByText('Remote - Canada')).toBeVisible();
     await page.getByRole('link', { name: 'Senior Platform Engineer' }).click();
 
     await expect(page).toHaveURL(/\/jobs\/.+/);
     await expect(page.getByRole('heading', { name: 'Senior Platform Engineer' })).toBeVisible();
-    await expect(page.getByText('Acme Corp')).toBeVisible();
+    await expect(page.getByText('Acme Corp - Remote - Canada')).toBeVisible();
     await expect(page.getByText('greenhouse')).toBeVisible();
   } finally {
     await new Promise<void>((resolve, reject) => {
