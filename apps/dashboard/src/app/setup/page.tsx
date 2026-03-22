@@ -2,10 +2,13 @@ import { revalidatePath } from 'next/cache';
 
 import { Badge } from '@/components/ui/badge';
 import { ApplicantProfileForm } from '@/components/setup/applicant-profile-form';
+import { JobKeywordProfileSection } from '@/components/setup/job-keyword-profile-section';
 import { getApplicantProfile, saveApplicantProfile } from '@/lib/api';
 
 async function saveSetup(formData: FormData): Promise<void> {
   'use server';
+
+  const { profile: existing } = await getApplicantProfile();
 
   const uploadedResume = formData.get('baseResumeFile');
   const hasUploadedResume = uploadedResume instanceof File && uploadedResume.size > 0;
@@ -30,7 +33,9 @@ async function saveSetup(formData: FormData): Promise<void> {
       ? uploadedResume.name
       : String(formData.get('baseResumeFileName') ?? ''),
     baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? ''),
-    preferredCountries
+    preferredCountries,
+    jobKeywordProfile: existing?.jobKeywordProfile ?? null,
+    jobKeywordProfileGeneratedAt: existing?.jobKeywordProfileGeneratedAt ?? null
   });
 
   revalidatePath('/setup');
@@ -86,6 +91,7 @@ export default async function SetupPage() {
         </div>
       </div>
       <ApplicantProfileForm action={saveSetup} profile={profile} />
+      <JobKeywordProfileSection profile={profile} />
     </section>
   );
 }

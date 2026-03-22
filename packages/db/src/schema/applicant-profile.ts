@@ -13,5 +13,7 @@ export const applicantProfileTable = sqliteTable('applicant_profile', {
   baseResumeFileName: text('base_resume_file_name').notNull().default(''),
   baseResumeTex: text('base_resume_tex').notNull().default(''),
   preferredCountries: text('preferred_countries').notNull().default('[]'),
+  jobKeywordProfileJson: text('job_keyword_profile_json'),
+  jobKeywordProfileGeneratedAt: integer('job_keyword_profile_generated_at', { mode: 'timestamp_ms' }),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
 });

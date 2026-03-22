@@ -386,6 +386,22 @@ export async function saveApplicantProfile(
   return ((await response.json()) as { profile: ApplicantProfile }).profile;
 }
 
+export async function generateApplicantJobKeywordProfile(): Promise<ApplicantProfile> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/applicant-profile/job-keyword-profile/generate`,
+    {
+      method: 'POST',
+      cache: 'no-store'
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { profile: ApplicantProfile }).profile;
+}
+
 export async function getJobArtifacts(jobId: string): Promise<ArtifactRecord[]> {
   const response = await fetchFromApi<{ job: unknown; profile: unknown; artifacts: ArtifactRecord[] }>(
     `/jobs/${jobId}/artifacts`

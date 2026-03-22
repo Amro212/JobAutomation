@@ -43,6 +43,13 @@
       "when": 1774121549027,
       "tag": "0005_sloppy_fixer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1774134327084,
+      "tag": "0006_job_keyword_profile",
+      "breakpoints": true
     }
   ]
 }

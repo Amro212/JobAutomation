@@ -1,4 +1,5 @@
 import type { ApplicantProfile, JobRecord } from '@jobautomation/core';
+import { prefilterJob } from '@jobautomation/core';
 import type { JobsRepository } from '@jobautomation/db';
 import {
   createOpenRouterProvider,
@@ -9,7 +10,12 @@ import {
 
 export class JobScoreError extends Error {
   constructor(
-    readonly code: 'invalid_output' | 'not_configured' | 'not_found' | 'provider_error',
+    readonly code:
+      | 'invalid_output'
+      | 'not_configured'
+      | 'not_found'
+      | 'provider_error'
+      | 'prefilter_rejected',
     message: string
   ) {
     super(message);
@@ -121,6 +127,25 @@ function buildPrompt(job: JobRecord, profile: ApplicantProfile | null | undefine
 }
 
 export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
+  const job = await input.jobsRepository.findById(input.jobId);
+
+  if (!job) {
+    throw new JobScoreError('not_found', 'Job not found.');
+  }
+
+  const profile = input.applicantProfile ?? null;
+  const prefilter = prefilterJob(job, {
+    jobKeywordProfile: profile?.jobKeywordProfile ?? null,
+    preferredCountries: profile?.preferredCountries ?? []
+  });
+
+  if (!prefilter.pass) {
+    throw new JobScoreError(
+      'prefilter_rejected',
+      `Job did not pass pre-filter (${prefilter.reasons.join(', ')}).`
+    );
+  }
+
   if (!input.openRouter?.apiKey) {
     throw new JobScoreError(
       'not_configured',
@@ -128,15 +153,9 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
     );
   }
 
-  const job = await input.jobsRepository.findById(input.jobId);
-
-  if (!job) {
-    throw new JobScoreError('not_found', 'Job not found.');
-  }
-
-  const personalized = applicantHasScoringContext(input.applicantProfile);
+  const personalized = applicantHasScoringContext(profile);
   const systemPrompt = scoringSystemPrompt(personalized);
-  const prompt = buildPrompt(job, input.applicantProfile ?? null);
+  const prompt = buildPrompt(job, profile);
 
   try {
     const provider = createOpenRouterProvider(input.openRouter);

@@ -243,6 +243,9 @@ describe('scoreJob', () => {
       websiteUrl: '',
       baseResumeFileName: '',
       baseResumeTex: '',
+      preferredCountries: [],
+      jobKeywordProfile: null,
+      jobKeywordProfileGeneratedAt: null,
       updatedAt: new Date('2026-03-15T10:00:00.000Z')
     };
 
@@ -289,6 +292,82 @@ describe('scoreJob', () => {
     expect(messages?.[0]?.content).toContain('Assess personalized fit');
     expect(messages?.[1]?.content).toContain(marker);
     expect(messages?.[1]?.content).toContain('--- Applicant (personalized fit) ---');
+  });
+
+  test('rejects before OpenRouter when pre-filter fails', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-nurse',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/nurse',
+      companyName: 'Health Corp',
+      title: 'Clinical Nurse Specialist',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Patient care.',
+      rawPayload: '{"id":"job-nurse"}',
+      discoveryRunId: null,
+      status: 'reviewing',
+      reviewNotes: '',
+      reviewSummary: null,
+      reviewScore: null,
+      reviewScoreReasoning: null,
+      reviewUpdatedAt: new Date('2026-03-15T10:00:00.000Z'),
+      reviewScoreUpdatedAt: null,
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    let fetchCalls = 0;
+
+    const applicantProfile: ApplicantProfile = {
+      id: 'default',
+      fullName: 'Dev',
+      email: '',
+      phone: '',
+      location: '',
+      summary: 'Software engineer.',
+      reusableContext: '',
+      linkedinUrl: '',
+      websiteUrl: '',
+      baseResumeFileName: '',
+      baseResumeTex: '',
+      preferredCountries: [],
+      jobKeywordProfile: {
+        target_titles: ['software engineer'],
+        positive_keywords: [],
+        negative_keywords: ['nurse'],
+        seniority: 'senior'
+      },
+      jobKeywordProfileGeneratedAt: new Date('2026-03-15T10:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T10:00:00.000Z')
+    };
+
+    await expect(
+      scoreJob({
+        jobId: job.id,
+        jobsRepository,
+        applicantProfile,
+        openRouter: {
+          apiKey: 'test-key',
+          baseUrl: 'https://openrouter.example/api/v1',
+          model: 'openrouter/test-model',
+          fetchImpl: async () => {
+            fetchCalls += 1;
+            return new Response('{}', { status: 200 });
+          }
+        }
+      })
+    ).rejects.toMatchObject({ code: 'prefilter_rejected' });
+
+    expect(fetchCalls).toBe(0);
   });
 
   test('rejects invalid model output without corrupting persisted review state', async () => {

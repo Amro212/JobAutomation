@@ -17,7 +17,9 @@ const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
   websiteUrl: '',
   baseResumeFileName: '',
   baseResumeTex: '',
-  preferredCountries: []
+  preferredCountries: [],
+  jobKeywordProfile: null,
+  jobKeywordProfileGeneratedAt: null
 };
 
 export function ApplicantProfileForm({
