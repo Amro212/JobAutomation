@@ -9,14 +9,24 @@ import { artifactsTable } from '../schema';
 
 export type CreateArtifactInput = Omit<
   ArtifactRecord,
-  'id' | 'version' | 'applicantProfileId' | 'applicantProfileUpdatedAt'
+  'id' | 'version' | 'applicantProfileId' | 'applicantProfileUpdatedAt' | 'applicationRunId'
 > &
-  Partial<Pick<ArtifactRecord, 'version' | 'applicantProfileId' | 'applicantProfileUpdatedAt'>> & {
+  Partial<
+    Pick<
+      ArtifactRecord,
+      'version' | 'applicationRunId' | 'applicantProfileId' | 'applicantProfileUpdatedAt'
+    >
+  > & {
   id?: string;
 };
 
 function mapArtifactRecord(record: typeof artifactsTable.$inferSelect): ArtifactRecord {
-  return artifactRecordSchema.parse(record);
+  return artifactRecordSchema.parse({
+    ...record,
+    applicationRunId: record.applicationRunId ?? null,
+    applicantProfileId: record.applicantProfileId ?? null,
+    applicantProfileUpdatedAt: record.applicantProfileUpdatedAt ?? null
+  });
 }
 
 export class ArtifactsRepository {
@@ -27,13 +37,14 @@ export class ArtifactsRepository {
       ...input,
       id: input.id ?? randomUUID(),
       version: input.version ?? 1,
+      applicationRunId: input.applicationRunId ?? null,
       applicantProfileId: input.applicantProfileId ?? null,
       applicantProfileUpdatedAt: input.applicantProfileUpdatedAt ?? null
     };
 
     await this.db.insert(artifactsTable).values(record);
 
-    return artifactRecordSchema.parse(record);
+    return mapArtifactRecord(record);
   }
 
   async findById(id: string): Promise<ArtifactRecord | null> {
@@ -57,6 +68,16 @@ export class ArtifactsRepository {
       .select()
       .from(artifactsTable)
       .where(eq(artifactsTable.discoveryRunId, discoveryRunId))
+      .orderBy(desc(artifactsTable.createdAt));
+
+    return records.map(mapArtifactRecord);
+  }
+
+  async listByApplicationRun(applicationRunId: string): Promise<ArtifactRecord[]> {
+    const records = await this.db
+      .select()
+      .from(artifactsTable)
+      .where(eq(artifactsTable.applicationRunId, applicationRunId))
       .orderBy(desc(artifactsTable.createdAt));
 
     return records.map(mapArtifactRecord);

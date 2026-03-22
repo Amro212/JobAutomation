@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 export const artifactRecordSchema = z.object({
   id: z.string().min(1),
-  jobId: z.string().nullable(),
-  discoveryRunId: z.string().nullable(),
+  jobId: z.string().nullable().default(null),
+  discoveryRunId: z.string().nullable().default(null),
+  applicationRunId: z.string().nullable().default(null),
   applicantProfileId: z.string().nullable().default(null),
   applicantProfileUpdatedAt: z.date().nullable().default(null),
   version: z.number().int().min(1).default(1),

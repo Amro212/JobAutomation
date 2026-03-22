@@ -1,5 +1,7 @@
 import type {
   ApplicantProfile,
+  ApplicationRunRecord,
+  ApplicationRunStatus,
   ArtifactRecord,
   DiscoveryRunRecord,
   DiscoveryRunSourceSummary,
@@ -8,8 +10,8 @@ import type {
   DiscoverySourceRecord,
   JobListFilters,
   JobListItem,
-  JobReviewPatch,
   JobRecord,
+  JobReviewPatch,
   LogEventRecord
 } from '@jobautomation/core';
 
@@ -27,6 +29,16 @@ export type ApplicantProfileResponse = {
     hasReusableContext: boolean;
     readyForTailoring: boolean;
   };
+};
+
+export type ApplicationRunSummary = {
+  run: ApplicationRunRecord;
+  job: JobRecord;
+};
+
+export type ApplicationRunDetail = ApplicationRunSummary & {
+  logs: LogEventRecord[];
+  artifacts: ArtifactRecord[];
 };
 
 export function getApiBaseUrl(): string {
@@ -208,6 +220,46 @@ export async function scoreJobReview(jobId: string): Promise<JobRecord> {
 export async function getDiscoveryRuns(): Promise<DiscoveryRunRecord[]> {
   const response = await fetchFromApi<{ runs: DiscoveryRunRecord[] }>('/discovery-runs');
   return response.runs;
+}
+
+export async function getApplicationRuns(): Promise<ApplicationRunSummary[]> {
+  const response = await fetchFromApi<{ runs: ApplicationRunSummary[] }>('/application-runs');
+  return response.runs;
+}
+
+export async function getApplicationRun(runId: string): Promise<ApplicationRunDetail | null> {
+  const response = await fetch(`${getApiBaseUrl()}/application-runs/${runId}`, {
+    cache: 'no-store'
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`API request failed: /application-runs/${runId}`);
+  }
+
+  return (await response.json()) as ApplicationRunDetail;
+}
+
+export async function createApplicationRun(payload: {
+  jobId: string;
+}): Promise<ApplicationRunSummary> {
+  const response = await fetch(`${getApiBaseUrl()}/application-runs`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as ApplicationRunSummary;
 }
 
 export async function getDiscoveryRun(runId: string): Promise<DiscoveryRunDetail | null> {

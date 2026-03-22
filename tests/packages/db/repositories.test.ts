@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import {
   ApplicantProfileRepository,
+  ApplicationRunsRepository,
   ArtifactsRepository,
   DiscoveryRunsRepository,
   DiscoverySchedulesRepository,
@@ -190,6 +191,92 @@ describe('repositories', () => {
     expect(artifacts).toHaveLength(1);
     expect(runs[0]?.status).toBe('completed');
     expect(runs[0]?.newJobCount).toBe(1);
+  });
+
+  test('stores application runs and links artifacts and log events to the run', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, {
+      migrationsFolder
+    });
+
+    const runsRepository = new ApplicationRunsRepository(db);
+    const jobsRepository = new JobsRepository(db);
+    const artifactsRepository = new ArtifactsRepository(db);
+    const logEventsRepository = new LogEventsRepository(db);
+
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-789',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/789',
+      companyName: 'Example Corp',
+      title: 'Platform Engineer',
+      location: 'Toronto, ON',
+      remoteType: 'hybrid',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Build reliable automation systems.',
+      rawPayload: null,
+      discoveryRunId: null,
+      status: 'shortlisted',
+      discoveredAt: new Date('2026-03-13T10:00:00.000Z'),
+      updatedAt: new Date('2026-03-13T10:00:00.000Z')
+    });
+
+    const created = await runsRepository.create({
+      jobId: job.id,
+      siteKey: 'greenhouse',
+      status: 'running',
+      currentStep: 'documents_resolved',
+      prefilterReasons: [],
+      createdAt: new Date('2026-03-13T10:10:00.000Z'),
+      startedAt: new Date('2026-03-13T10:10:05.000Z'),
+      updatedAt: new Date('2026-03-13T10:10:05.000Z')
+    });
+
+    const resumeArtifact = await artifactsRepository.create({
+      jobId: job.id,
+      applicationRunId: created.id,
+      discoveryRunId: null,
+      kind: 'resume-variant',
+      format: 'pdf',
+      fileName: 'resume.pdf',
+      storagePath: 'artifacts/default/resume.pdf',
+      createdAt: new Date('2026-03-13T10:10:10.000Z')
+    });
+
+    const logEvent = await logEventsRepository.create({
+      applicationRunId: created.id,
+      jobId: job.id,
+      level: 'info',
+      message: 'Opened application form.',
+      detailsJson: JSON.stringify({ step: 'documents_resolved' }),
+      createdAt: new Date('2026-03-13T10:10:12.000Z')
+    });
+
+    await runsRepository.update(created.id, {
+      status: 'paused',
+      currentStep: 'review_ready',
+      stopReason: 'manual_review_required',
+      reviewUrl: 'https://job-boards.greenhouse.io/example/jobs/789/application',
+      coverLetterArtifactId: resumeArtifact.id,
+      completedAt: new Date('2026-03-13T10:11:00.000Z'),
+      updatedAt: new Date('2026-03-13T10:11:00.000Z')
+    });
+
+    const storedRun = await runsRepository.findById(created.id);
+    const artifacts = await artifactsRepository.listByApplicationRun(created.id);
+    const logs = await logEventsRepository.listByApplicationRun(created.id);
+
+    expect(storedRun?.status).toBe('paused');
+    expect(storedRun?.prefilterReasons).toEqual([]);
+    expect(storedRun?.siteKey).toBe('greenhouse');
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]?.applicationRunId).toBe(created.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.applicationRunId).toBe(created.id);
+    expect(logEvent.id).toBeDefined();
   });
 
   test('filters jobs by locationCountries with case-insensitive alias matching', async () => {

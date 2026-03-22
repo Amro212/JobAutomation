@@ -34,4 +34,19 @@ describe('database schema', () => {
     expect(applicantColumns.baseResumeFileName).toBeDefined();
     expect(applicantColumns.baseResumeTex).toBeDefined();
   });
+
+  test('keeps application run and evidence linkage explicit', () => {
+    const applicationRunColumns = getTableColumns(applicationRunsTable);
+    const artifactColumns = getTableColumns(artifactsTable);
+    const logEventColumns = getTableColumns(logEventsTable);
+
+    expect(applicationRunColumns.siteKey).toBeDefined();
+    expect(applicationRunColumns.currentStep).toBeDefined();
+    expect(applicationRunColumns.prefilterReasonsJson).toBeDefined();
+    expect(applicationRunColumns.resumeArtifactId).toBeDefined();
+    expect(applicationRunColumns.coverLetterArtifactId).toBeDefined();
+    expect(applicationRunColumns.updatedAt).toBeDefined();
+    expect(artifactColumns.applicationRunId).toBeDefined();
+    expect(logEventColumns.applicationRunId).toBeDefined();
+  });
 });

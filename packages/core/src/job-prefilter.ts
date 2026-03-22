@@ -1,12 +1,17 @@
+import { z } from 'zod';
+
 import type { JobKeywordProfile, JobKeywordSeniority } from './job-keyword-profile';
 import type { JobRecord } from './job';
 import { getCountrySearchTokens } from './location-country-filter';
 
-export type PrefilterReason =
-  | 'title_negative'
-  | 'title_no_match'
-  | 'location'
-  | 'experience_min_years';
+export const prefilterReasonSchema = z.enum([
+  'title_negative',
+  'title_no_match',
+  'location',
+  'experience_min_years'
+]);
+
+export type PrefilterReason = z.infer<typeof prefilterReasonSchema>;
 
 export type PrefilterContext = {
   jobKeywordProfile: JobKeywordProfile | null;

@@ -10,6 +10,7 @@ import { logEventsTable } from '../schema';
 export type CreateLogEventInput = {
   discoveryRunId?: string | null;
   jobId?: string | null;
+  applicationRunId?: string | null;
   level: LogLevel;
   message: string;
   detailsJson?: string | null;
@@ -17,7 +18,13 @@ export type CreateLogEventInput = {
 };
 
 function mapLogEvent(record: typeof logEventsTable.$inferSelect): LogEventRecord {
-  return logEventRecordSchema.parse(record);
+  return logEventRecordSchema.parse({
+    ...record,
+    discoveryRunId: record.discoveryRunId ?? null,
+    jobId: record.jobId ?? null,
+    applicationRunId: record.applicationRunId ?? null,
+    detailsJson: record.detailsJson ?? null
+  });
 }
 
 export class LogEventsRepository {
@@ -28,6 +35,7 @@ export class LogEventsRepository {
       id: randomUUID(),
       discoveryRunId: input.discoveryRunId ?? null,
       jobId: input.jobId ?? null,
+      applicationRunId: input.applicationRunId ?? null,
       level: input.level,
       message: input.message,
       detailsJson: input.detailsJson ?? null,
@@ -43,6 +51,16 @@ export class LogEventsRepository {
       .select()
       .from(logEventsTable)
       .where(eq(logEventsTable.discoveryRunId, discoveryRunId))
+      .orderBy(asc(logEventsTable.createdAt));
+
+    return records.map(mapLogEvent);
+  }
+
+  async listByApplicationRun(applicationRunId: string): Promise<LogEventRecord[]> {
+    const records = await this.db
+      .select()
+      .from(logEventsTable)
+      .where(eq(logEventsTable.applicationRunId, applicationRunId))
       .orderBy(asc(logEventsTable.createdAt));
 
     return records.map(mapLogEvent);

@@ -1,5 +1,6 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+import { applicationRunsTable } from './application-runs';
 import { discoveryRunsTable } from './discovery-runs';
 import { jobsTable } from './jobs';
 
@@ -8,6 +9,9 @@ export const artifactsTable = sqliteTable(
   {
     id: text('id').primaryKey(),
     jobId: text('job_id').references(() => jobsTable.id, {
+      onDelete: 'set null'
+    }),
+    applicationRunId: text('application_run_id').references(() => applicationRunsTable.id, {
       onDelete: 'set null'
     }),
     discoveryRunId: text('discovery_run_id').references(() => discoveryRunsTable.id, {
@@ -24,6 +28,7 @@ export const artifactsTable = sqliteTable(
   },
   (table) => ({
     artifactsJobIdx: index('artifacts_job_idx').on(table.jobId),
+    artifactsApplicationRunIdx: index('artifacts_application_run_idx').on(table.applicationRunId),
     artifactsJobKindVersionIdx: index('artifacts_job_kind_version_idx').on(
       table.jobId,
       table.kind,

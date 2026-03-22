@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerApplicantProfileRoutes } from './routes/applicant-profile';
 import { registerArtifactsRoutes } from './routes/artifacts';
+import { registerApplicationRunRoutes } from './routes/application-runs.ts';
 import { registerDiscoveryRunRoutes } from './routes/discovery-runs';
 import { registerDiscoveryScheduleRoutes } from './routes/discovery-schedules';
 import { registerDiscoverySourceRoutes } from './routes/discovery-sources';
@@ -25,6 +26,7 @@ export function buildApp(): FastifyInstance {
   app.register(registerJobReviewRoutes);
   app.register(registerDiscoverySourceRoutes);
   app.register(registerDiscoveryRunRoutes);
+  app.register(registerApplicationRunRoutes);
   app.register(registerDiscoveryScheduleRoutes);
   app.register(registerApplicantProfileRoutes);
   app.register(registerArtifactsRoutes);

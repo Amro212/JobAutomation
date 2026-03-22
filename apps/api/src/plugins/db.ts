@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 
 import {
+  ApplicationRunsRepository,
   ApplicantProfileRepository,
   ArtifactsRepository,
   DiscoveryRunsRepository,
@@ -14,6 +15,7 @@ import {
 } from '@jobautomation/db';
 
 export interface ApiRepositories {
+  applicationRuns: ApplicationRunsRepository;
   applicantProfile: ApplicantProfileRepository;
   artifacts: ArtifactsRepository;
   discoveryRuns: DiscoveryRunsRepository;
@@ -36,6 +38,7 @@ export const registerDatabasePlugin = fp(async (app) => {
 
   app.decorate('db', db);
   app.decorate('repositories', {
+    applicationRuns: new ApplicationRunsRepository(db),
     applicantProfile: new ApplicantProfileRepository(db),
     artifacts: new ArtifactsRepository(db),
     discoveryRuns: new DiscoveryRunsRepository(db),
