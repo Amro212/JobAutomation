@@ -200,7 +200,7 @@ export function JobKeywordProfileEditor({
 
       <KeywordRow
         label="Positive keywords"
-        description="Skills, tools, or domains you want to see in titles."
+        description="Skills, tools, or domains you want to see in titles. Entries of 1–3 characters (e.g. c, js) only match as whole tokens, not inside longer words."
         items={draft.positive_keywords}
         setDraft={setDraft}
         field="positive_keywords"

@@ -41,10 +41,27 @@ function normalizeComparable(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Match a user keyword or title phrase against a normalized job title.
+ * Multi-word phrases use substring match. Single tokens with length <= 3 use boundary-aware
+ * matching so values like "c" or "js" do not match inside "social", "workplace", or "json".
+ */
 function titleContainsPhrase(titleNorm: string, phrase: string): boolean {
   const p = normalizeComparable(phrase);
   if (!p) {
     return false;
+  }
+  if (p.includes(' ')) {
+    return titleNorm.includes(p);
+  }
+  if (p.length <= 3) {
+    const esc = escapeRegExp(p);
+    const re = new RegExp(`(^|[^a-z0-9+.#])${esc}([^a-z0-9+.#]|$)`, 'i');
+    return re.test(titleNorm);
   }
   return titleNorm.includes(p);
 }

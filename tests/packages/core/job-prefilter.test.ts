@@ -69,6 +69,39 @@ describe('prefilterJob', () => {
     expect(r.pass).toBe(true);
   });
 
+  test('does not treat single-char language keywords as substring of unrelated words', () => {
+    const ctx = {
+      jobKeywordProfile: profile({
+        seniority: 'mid',
+        target_titles: [],
+        positive_keywords: ['c']
+      }),
+      preferredCountries: [] as string[]
+    };
+    expect(
+      prefilterJob({ ...baseJob, title: 'Workplace Manager' }, ctx).reasons
+    ).toContain('title_no_match');
+    expect(
+      prefilterJob({ ...baseJob, title: 'Social Marketing Manager' }, ctx).reasons
+    ).toContain('title_no_match');
+    expect(prefilterJob({ ...baseJob, title: 'C Developer' }, ctx).pass).toBe(true);
+  });
+
+  test('matches short tokens with symbols when bounded (e.g. c++)', () => {
+    const r = prefilterJob(
+      { ...baseJob, title: 'Senior C++ Developer' },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'senior',
+          target_titles: [],
+          positive_keywords: ['c++']
+        }),
+        preferredCountries: []
+      }
+    );
+    expect(r.pass).toBe(true);
+  });
+
   test('rejects location when countries are set and job is not remote and location does not match', () => {
     const r = prefilterJob(
       { ...baseJob, location: 'Berlin, Germany', remoteType: 'onsite' },
