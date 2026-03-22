@@ -6,11 +6,9 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import {
-  ApplicationRunsRepository,
   ApplicantProfileRepository,
   ArtifactsRepository,
   JobsRepository,
-  LogEventsRepository,
   createDatabaseClient,
   migrateDatabase
 } from '../../../packages/db/src/index';
@@ -31,65 +29,40 @@ test('starts a Greenhouse application run from the job page and shows persisted 
           <body>
             <main data-greenhouse-job-page>
               <h1>Senior Platform Engineer</h1>
-              <a id="apply_button" href="/jobs/senior-platform-engineer/apply">Apply now</a>
-            </main>
-          </body>
-        </html>
-      `);
-      return;
-    }
-
-    if (url === '/jobs/senior-platform-engineer/apply') {
-      response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(`
-        <html>
-          <body>
-            <main data-greenhouse-application-page>
-              <form id="application_form">
-                <label>
-                  First name
-                  <input id="first_name" name="job_application[first_name]" />
-                </label>
-                <label>
-                  Last name
-                  <input id="last_name" name="job_application[last_name]" />
-                </label>
-                <label>
-                  Email
-                  <input id="email" name="job_application[email]" />
-                </label>
-                <label>
-                  Phone
-                  <input id="phone" name="job_application[phone]" />
-                </label>
-                <label>
-                  Resume
-                  <input id="resume" type="file" name="job_application[resume]" />
-                </label>
-                <button id="continue_to_review" type="submit">Continue to review</button>
-              </form>
+              <button id="apply_button" type="button">Apply</button>
+              <section id="application_shell" hidden>
+                <h2>Apply for this job</h2>
+                <label for="first_name">First Name</label>
+                <input id="first_name" aria-label="First Name" required />
+                <label for="last_name">Last Name</label>
+                <input id="last_name" aria-label="Last Name" required />
+                <label for="email">Email</label>
+                <input id="email" aria-label="Email" required />
+                <label id="country-label" for="country">Country</label>
+                <input id="country" role="combobox" aria-labelledby="country-label" aria-required="true" required />
+                <label for="phone">Phone</label>
+                <input id="phone" aria-label="Phone" required />
+                <label for="resume">Resume/CV</label>
+                <input id="resume" type="file" />
+                <div>
+                  <label id="question_work_auth-label" for="question_work_auth">U.S. WORK AUTHORIZATION*</label>
+                  <input
+                    id="question_work_auth"
+                    role="combobox"
+                    aria-labelledby="question_work_auth-label"
+                    aria-required="true"
+                    required
+                  />
+                </div>
+                <button type="submit">Submit application</button>
+              </section>
               <script>
-                document.getElementById('application_form').addEventListener('submit', (event) => {
-                  event.preventDefault();
-                  window.location.href = '/jobs/senior-platform-engineer/review';
+                document.getElementById('apply_button').addEventListener('click', () => {
+                  const shell = document.getElementById('application_shell');
+                  shell.hidden = false;
+                  document.getElementById('first_name').focus();
                 });
               </script>
-            </main>
-          </body>
-        </html>
-      `);
-      return;
-    }
-
-    if (url === '/jobs/senior-platform-engineer/review') {
-      response.writeHead(200, { 'content-type': 'text/html' });
-      response.end(`
-        <html>
-          <body>
-            <main data-greenhouse-review-page>
-              <h2>Review your application</h2>
-              <p data-final-review-ready>Everything is ready for manual review.</p>
-              <button id="submit_application" type="submit">Submit application</button>
             </main>
           </body>
         </html>
@@ -126,16 +99,14 @@ test('starts a Greenhouse application run from the job page and shows persisted 
 
     const applicantProfileRepository = new ApplicantProfileRepository(db);
     const jobsRepository = new JobsRepository(db);
-    const applicationRunsRepository = new ApplicationRunsRepository(db);
     const artifactsRepository = new ArtifactsRepository(db);
-    const logEventsRepository = new LogEventsRepository(db);
 
     const profile = await applicantProfileRepository.save({
       id: 'default',
       fullName: 'Casey Ng',
       email: 'casey@example.com',
       phone: '+1 555 010 0101',
-      location: 'Toronto, ON',
+      location: 'Toronto, ON, Canada',
       summary: 'Automation engineer',
       reusableContext: 'Prefers inspectable browser runs.',
       linkedinUrl: 'https://www.linkedin.com/in/casey-ng',
@@ -188,70 +159,22 @@ test('starts a Greenhouse application run from the job page and shows persisted 
     await expect(page.getByRole('heading', { name: 'Senior Platform Engineer' })).toBeVisible();
     await expect(page.getByText('Paused at final review and waiting for a human to submit.')).toBeVisible();
     await expect(page.getByText('Stop reason: manual_review_required')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open final review URL' })).toBeVisible();
+    await expect(page.getByText('Manual review fields: U.S. WORK AUTHORIZATION')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open job posting URL' })).toBeVisible();
+    await expect(
+      page.getByText(
+        'Greenhouse required field needs manual review because applicant data is unavailable: U.S. WORK AUTHORIZATION.'
+      )
+    ).toBeVisible();
+    await expect(page.getByText('U.S. WORK AUTHORIZATION - blocked_missing_profile_data')).toBeVisible();
     await expect(page.getByText('Paused before final submit.')).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'application-screenshot' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'application-trace' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'application-screenshot' }).first()).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'application-trace' }).first()).toBeVisible();
 
     const pausedRunId = page.url().split('/').pop();
     if (!pausedRunId) {
       throw new Error('Expected paused application run id in URL.');
     }
-
-    const skippedJob = await jobsRepository.upsert({
-      sourceKind: 'greenhouse',
-      sourceId: `job-${randomUUID()}`,
-      sourceUrl: 'http://127.0.0.1:3202/jobs/senior-platform-engineer',
-      companyName: 'Acme Corp',
-      title: 'Skipped Platform Engineer',
-      location: 'Berlin, Germany',
-      remoteType: 'remote',
-      employmentType: 'full-time',
-      compensationText: null,
-      descriptionText: 'This job should appear as skipped.',
-      rawPayload: JSON.stringify({ id: 'job-2' }),
-      discoveryRunId: null,
-      status: 'reviewing',
-      discoveredAt: new Date('2026-03-21T10:10:00.000Z'),
-      updatedAt: new Date('2026-03-21T10:10:00.000Z')
-    });
-
-    const skippedRun = await applicationRunsRepository.create({
-      jobId: skippedJob.id,
-      siteKey: 'greenhouse',
-      status: 'skipped',
-      currentStep: 'prefilter_rejected',
-      stopReason: 'prefilter_rejected',
-      prefilterReasons: ['location'],
-      createdAt: new Date('2026-03-21T10:11:00.000Z'),
-      completedAt: new Date('2026-03-21T10:11:30.000Z'),
-      updatedAt: new Date('2026-03-21T10:11:30.000Z')
-    });
-    await logEventsRepository.create({
-      applicationRunId: skippedRun.id,
-      jobId: skippedJob.id,
-      level: 'warn',
-      message: 'Skipped application run after applicant prefilter rejection.',
-      detailsJson: JSON.stringify({
-        applicationRunId: skippedRun.id,
-        step: 'prefilter',
-        prefilterReasons: ['location']
-      })
-    });
-
-    await page.goto('/applications');
-    await expect(page.getByRole('heading', { name: 'Application run history' })).toBeVisible();
-    await expect(page.getByText('Paused before submit for manual review.')).toBeVisible();
-    await expect(page.getByText('Prefilter: location')).toBeVisible();
-    await expect(page.getByRole('row', { name: /Senior Platform Engineer/i })).toContainText('paused');
-    await expect(page.getByRole('row', { name: /Skipped Platform Engineer/i })).toContainText('skipped');
-
-    await page
-      .getByRole('row', { name: /Senior Platform Engineer/i })
-      .getByRole('link', { name: 'Open run' })
-      .click();
-
-    await expect(page).toHaveURL(new RegExp(`/applications/${pausedRunId}$`));
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {

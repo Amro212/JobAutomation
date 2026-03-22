@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+
 import { prefilterJob } from '@jobautomation/core';
 import type {
   ApplicantProfile,
@@ -87,6 +90,10 @@ export type RunApplicationInput = {
   createBrowser?: () => Promise<Browser>;
   createSession?: typeof createApplicationSession;
 };
+
+function sanitizeSegment(value: string): string {
+  return value.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+}
 
 function pickLatestPdfArtifact(artifacts: ArtifactRecord[]): ArtifactRecord | null {
   return artifacts
@@ -234,7 +241,13 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     }
   });
 
-  const browser = await (input.createBrowser ?? createDiscoveryBrowser)();
+  const browser = await (
+    input.createBrowser ??
+    (() =>
+      createDiscoveryBrowser({
+        headless: process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED !== '1'
+      }))
+  )();
   const session = await (input.createSession ?? createApplicationSession)({
     browser,
     runId: runningRun.id,
@@ -243,6 +256,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
   });
 
   let finalTraceStopped = false;
+  let leaveBrowserOpenForManualReview = false;
 
   try {
     const result = await siteFlow.run({
@@ -267,7 +281,51 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           }
         });
       },
-      stopBeforeSubmit: async ({ step, reviewUrl }) => {
+      captureScreenshot: async ({ step, message, details = {} }) => {
+        if (!input.artifactsRepository.create) {
+          throw new Error('Artifacts repository does not support application evidence persistence.');
+        }
+
+        const artifactsRootDir = input.artifactsRootDir ?? 'output/artifacts';
+        const directoryPath = join(artifactsRootDir, 'applications', runningRun.id);
+        await mkdir(directoryPath, { recursive: true });
+
+        const fileName = `${sanitizeSegment(siteFlow.siteKey)}-${sanitizeSegment(step)}-${Date.now()}.png`;
+        const storagePath = join(directoryPath, fileName);
+        const screenshot = await session.page.screenshot({ fullPage: true });
+        await writeFile(storagePath, screenshot);
+
+        const artifact = await input.artifactsRepository.create({
+          jobId: job.id,
+          applicationRunId: runningRun.id,
+          kind: 'application-screenshot',
+          format: 'png',
+          fileName: basename(storagePath),
+          storagePath,
+          createdAt: new Date()
+        });
+
+        await logRunEvent(input.logEventsRepository, {
+          applicationRunId: runningRun.id,
+          jobId: job.id,
+          level: 'info',
+          message,
+          details: {
+            applicationRunId: runningRun.id,
+            siteKey: siteFlow.siteKey,
+            step,
+            pageUrl: session.page.url(),
+            artifactId: artifact.id,
+            ...details
+          }
+        });
+
+        return {
+          artifactId: artifact.id,
+          storagePath
+        };
+      },
+      stopBeforeSubmit: async ({ step, reviewUrl, details }) => {
         finalTraceStopped = true;
         return stopBeforeSubmit({
           run: runningRun,
@@ -277,6 +335,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           },
           step,
           siteKey: siteFlow.siteKey,
+          ...(details !== undefined ? { details } : {}),
           artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
           applicationRunsRepository: {
             update: async (id, patch) => {
@@ -305,6 +364,12 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         });
       }
     });
+
+    const headedApply = process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED === '1';
+    const forceCloseBrowser = process.env.JOBAUTOMATION_APPLICATION_AUTO_CLOSE_BROWSER === '1';
+    if (result.status === 'paused' && headedApply && !forceCloseBrowser) {
+      leaveBrowserOpenForManualReview = true;
+    }
 
     return result;
   } catch (error) {
@@ -341,6 +406,24 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         // Preserve the original failure path; trace persistence is best-effort unless we pause.
       }
     }
-    await session.close();
+
+    if (leaveBrowserOpenForManualReview) {
+      await logRunEvent(input.logEventsRepository, {
+        applicationRunId: runningRun.id,
+        jobId: job.id,
+        level: 'info',
+        message:
+          'Automation Chromium window left open: partial draft lives only in that tab. Finish custom questions there, submit when ready, then close the window.',
+        details: {
+          applicationRunId: runningRun.id,
+          siteKey: siteFlow.siteKey,
+          step: 'browser_left_open_for_review',
+          pageUrl: session.page.url(),
+          reviewUrlBehavior: 'session_local_until_submit'
+        }
+      });
+    } else {
+      await session.close();
+    }
   }
 }

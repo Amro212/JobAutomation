@@ -12,6 +12,13 @@ import {
 } from '@/components/ui/table';
 import { getApplicationRun } from '@/lib/api';
 
+type ParsedLogDetails = Record<string, unknown> & {
+  classification?: string;
+  questionLabel?: string;
+  blockedRequiredFields?: Array<{ label?: string }>;
+  errorMessage?: string;
+};
+
 function statusVariant(status: string) {
   switch (status) {
     case 'completed':
@@ -49,6 +56,64 @@ function statusSummary(status: string, stopReason: string | null): string {
   }
 }
 
+function parseLogDetails(detailsJson: string | null): ParsedLogDetails | null {
+  if (!detailsJson) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(detailsJson) as ParsedLogDetails;
+  } catch {
+    return null;
+  }
+}
+
+function failedAutomationErrorMessage(detail: Awaited<ReturnType<typeof getApplicationRun>>): string | null {
+  if (!detail || detail.run.status !== 'failed') {
+    return null;
+  }
+
+  for (let index = detail.logs.length - 1; index >= 0; index -= 1) {
+    const log = detail.logs[index];
+    if (log.level !== 'error') {
+      continue;
+    }
+
+    const parsed = parseLogDetails(log.detailsJson);
+    const message = parsed?.errorMessage;
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return message;
+    }
+  }
+
+  return null;
+}
+
+function blockedFieldLabels(detail: Awaited<ReturnType<typeof getApplicationRun>>): string[] {
+  if (!detail) {
+    return [];
+  }
+
+  const labels = new Set<string>();
+
+  for (const log of detail.logs) {
+    const details = parseLogDetails(log.detailsJson);
+    if (typeof details?.questionLabel === 'string' && String(details.classification).startsWith('blocked_')) {
+      labels.add(details.questionLabel);
+    }
+
+    if (Array.isArray(details?.blockedRequiredFields)) {
+      for (const entry of details.blockedRequiredFields) {
+        if (typeof entry?.label === 'string' && entry.label.trim().length > 0) {
+          labels.add(entry.label);
+        }
+      }
+    }
+  }
+
+  return [...labels];
+}
+
 export default async function ApplicationRunDetailPage({
   params
 }: {
@@ -56,6 +121,8 @@ export default async function ApplicationRunDetailPage({
 }) {
   const { runId } = await params;
   const detail = await getApplicationRun(runId);
+  const blockedLabels = blockedFieldLabels(detail);
+  const automationFailureMessage = failedAutomationErrorMessage(detail);
 
   if (!detail) {
     return (
@@ -140,16 +207,37 @@ export default async function ApplicationRunDetailPage({
             Stop reason: {detail.run.stopReason}
           </p>
         ) : null}
+        {automationFailureMessage ? (
+          <p className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {automationFailureMessage}
+          </p>
+        ) : null}
         {detail.run.prefilterReasons.length > 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">
             Prefilter reasons: {detail.run.prefilterReasons.join(', ')}
+          </p>
+        ) : null}
+        {blockedLabels.length > 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Manual review fields: {blockedLabels.join(', ')}
+          </p>
+        ) : null}
+        {detail.run.status === 'paused' && detail.run.reviewUrl ? (
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            The link below is the <span className="font-medium">job posting</span> URL. Greenhouse keeps your
+            answers in the <span className="font-medium">automation browser tab</span> until you submit—opening
+            this link in Chrome or Edge starts a <span className="font-medium">new</span> session, so the form
+            looks empty. With <span className="font-medium">JOBAUTOMATION_APPLICATION_BROWSER_HEADED=1</span>{' '}
+            (and without <span className="font-medium">AUTO_CLOSE_BROWSER=1</span>), the Chromium window from
+            the run should stay open for you to finish custom questions; use screenshots in the log table if
+            you need a record after closing.
           </p>
         ) : null}
         {detail.run.reviewUrl ? (
           <div className="mt-3">
             <Button variant="link" className="h-auto p-0" asChild>
               <a href={detail.run.reviewUrl} target="_blank" rel="noreferrer">
-                Open final review URL
+                Open job posting URL
               </a>
             </Button>
           </div>
@@ -180,7 +268,44 @@ export default async function ApplicationRunDetailPage({
               {detail.logs.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell className="uppercase">{log.level}</TableCell>
-                  <TableCell>{log.message}</TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      <p>{log.message}</p>
+                      {(() => {
+                        const details = parseLogDetails(log.detailsJson);
+                        if (!details) {
+                          return null;
+                        }
+
+                        if (
+                          typeof details.questionLabel === 'string' &&
+                          typeof details.classification === 'string'
+                        ) {
+                          return (
+                            <p className="text-xs text-muted-foreground">
+                              {details.questionLabel} - {details.classification}
+                            </p>
+                          );
+                        }
+
+                        if (Array.isArray(details.blockedRequiredFields) && details.blockedRequiredFields.length > 0) {
+                          const labels = details.blockedRequiredFields
+                            .map((entry) => entry?.label)
+                            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+                          if (labels.length > 0) {
+                            return (
+                              <p className="text-xs text-muted-foreground">
+                                Remaining required fields: {labels.join(', ')}
+                              </p>
+                            );
+                          }
+                        }
+
+                        return null;
+                      })()}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {log.createdAt.toLocaleString()}
                   </TableCell>

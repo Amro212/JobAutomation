@@ -30,7 +30,16 @@ export type ApplicationSiteFlowContext = {
   run: ApplicationRunRecordLike;
   session: ApplicationSession;
   logStep: (step: string, message: string, details?: Record<string, unknown>) => Promise<void>;
-  stopBeforeSubmit: (input: { step: string; reviewUrl?: string | null }) => Promise<ApplicationRunRecordLike>;
+  captureScreenshot: (input: {
+    step: string;
+    message: string;
+    details?: Record<string, unknown>;
+  }) => Promise<{ artifactId: string; storagePath: string }>;
+  stopBeforeSubmit: (input: {
+    step: string;
+    reviewUrl?: string | null;
+    details?: Record<string, unknown>;
+  }) => Promise<ApplicationRunRecordLike>;
 };
 
 export type SupportedApplicationSite = {

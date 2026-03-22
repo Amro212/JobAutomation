@@ -16,6 +16,7 @@ export type ApplyStopBeforeSubmitStep = {
   kind: 'stop';
   name: string;
   selector: string;
+  details?: Record<string, unknown>;
 };
 
 export type FormStep = ApplyFieldStep | ApplyUploadStep | ApplyStopBeforeSubmitStep;

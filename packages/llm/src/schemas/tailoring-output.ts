@@ -47,7 +47,8 @@ export const tailoringOutputJsonSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['search', 'replacement'],
+        // Strict json_schema providers require every `properties` key in `required` (optional fields use empty string).
+        required: ['search', 'replacement', 'rationale'],
         properties: {
           search: {
             type: 'string',

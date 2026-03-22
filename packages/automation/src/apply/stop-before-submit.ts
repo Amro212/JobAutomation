@@ -14,6 +14,7 @@ export async function stopBeforeSubmit(input: {
   page: Pick<Page, 'screenshot' | 'url'>;
   step: string;
   siteKey: string;
+  details?: Record<string, unknown>;
   artifactsRootDir: string;
   applicationRunsRepository: {
     update: (
@@ -86,7 +87,8 @@ export async function stopBeforeSubmit(input: {
       step: input.step,
       pageUrl: input.page.url(),
       artifactId: screenshotArtifact.id,
-      traceArtifactId: traceArtifact.id
+      traceArtifactId: traceArtifact.id,
+      ...(input.details ?? {})
     })
   });
 

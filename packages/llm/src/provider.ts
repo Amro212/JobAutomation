@@ -155,6 +155,7 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
               }
             ]
           });
+
           response = await fetchImpl(endpoint, {
             method: 'POST',
             headers: {

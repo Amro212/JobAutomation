@@ -30,7 +30,7 @@ export async function uploadArtifactFile(input: {
   }
 
   if (input.page && input.selector) {
-    await input.page.setInputFiles(input.selector, input.artifact.storagePath);
+    await input.page.locator(input.selector).first().setInputFiles(input.artifact.storagePath);
     return true;
   }
 

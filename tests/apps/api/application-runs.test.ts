@@ -80,65 +80,40 @@ describe('application run routes', () => {
               <body>
                 <main data-greenhouse-job-page>
                   <h1>Senior Platform Engineer</h1>
-                  <a id="apply_button" href="/jobs/senior-platform-engineer/apply">Apply now</a>
-                </main>
-              </body>
-            </html>
-          `);
-          return;
-        }
-
-        if (url === '/jobs/senior-platform-engineer/apply') {
-          response.writeHead(200, { 'content-type': 'text/html' });
-          response.end(`
-            <html>
-              <body>
-                <main data-greenhouse-application-page>
-                  <form id="application_form">
-                    <label>
-                      First name
-                      <input id="first_name" name="job_application[first_name]" />
-                    </label>
-                    <label>
-                      Last name
-                      <input id="last_name" name="job_application[last_name]" />
-                    </label>
-                    <label>
-                      Email
-                      <input id="email" name="job_application[email]" />
-                    </label>
-                    <label>
-                      Phone
-                      <input id="phone" name="job_application[phone]" />
-                    </label>
-                    <label>
-                      Resume
-                      <input id="resume" type="file" name="job_application[resume]" />
-                    </label>
-                    <button id="continue_to_review" type="submit">Continue to review</button>
-                  </form>
+                  <button id="apply_button" type="button">Apply</button>
+                  <section id="application_shell" hidden>
+                    <h2>Apply for this job</h2>
+                    <label for="first_name">First Name</label>
+                    <input id="first_name" aria-label="First Name" required />
+                    <label for="last_name">Last Name</label>
+                    <input id="last_name" aria-label="Last Name" required />
+                    <label for="email">Email</label>
+                    <input id="email" aria-label="Email" required />
+                    <label id="country-label" for="country">Country</label>
+                    <input id="country" role="combobox" aria-labelledby="country-label" aria-required="true" required />
+                    <label for="phone">Phone</label>
+                    <input id="phone" aria-label="Phone" required />
+                    <label for="resume">Resume/CV</label>
+                    <input id="resume" type="file" />
+                    <div>
+                      <label id="question_work_auth-label" for="question_work_auth">U.S. WORK AUTHORIZATION*</label>
+                      <input
+                        id="question_work_auth"
+                        role="combobox"
+                        aria-labelledby="question_work_auth-label"
+                        aria-required="true"
+                        required
+                      />
+                    </div>
+                    <button type="submit">Submit application</button>
+                  </section>
                   <script>
-                    document.getElementById('application_form').addEventListener('submit', (event) => {
-                      event.preventDefault();
-                      window.location.href = '/jobs/senior-platform-engineer/review';
+                    document.getElementById('apply_button').addEventListener('click', () => {
+                      const shell = document.getElementById('application_shell');
+                      shell.hidden = false;
+                      document.getElementById('first_name').focus();
                     });
                   </script>
-                </main>
-              </body>
-            </html>
-          `);
-          return;
-        }
-
-        if (url === '/jobs/senior-platform-engineer/review') {
-          response.writeHead(200, { 'content-type': 'text/html' });
-          response.end(`
-            <html>
-              <body>
-                <main data-greenhouse-review-page>
-                  <h2>Review your application</h2>
-                  <p data-final-review-ready>Everything is ready for manual review.</p>
-                  <button id="submit_application" type="submit">Submit application</button>
                 </main>
               </body>
             </html>
@@ -173,7 +148,7 @@ describe('application run routes', () => {
         fullName: 'Casey Ng',
         email: 'casey@example.com',
         phone: '+1 555 010 0101',
-        location: 'Toronto, ON',
+        location: 'Toronto, ON, Canada',
         summary: 'Automation engineer',
         reusableContext: 'Prefers inspectable browser runs.',
         linkedinUrl: 'https://www.linkedin.com/in/casey-ng',
@@ -228,9 +203,9 @@ describe('application run routes', () => {
         jobId: job.id,
         siteKey: 'greenhouse',
         status: 'paused',
-        currentStep: 'final_review',
+        currentStep: 'manual_review_required_questions',
         stopReason: 'manual_review_required',
-        reviewUrl: expect.stringContaining('/review'),
+        reviewUrl: sourceUrl,
         resumeArtifactId: resumeArtifact.id
       });
 
@@ -265,20 +240,31 @@ describe('application run routes', () => {
       expect(detailResponse.json().run).toMatchObject({
         id: runId,
         status: 'paused',
-        currentStep: 'final_review',
+        currentStep: 'manual_review_required_questions',
         stopReason: 'manual_review_required'
       });
-      expect(detailResponse.json().logs.map((log: { message: string }) => log.message)).toEqual([
-        'Started application run.',
-        'Opened Greenhouse source posting.',
-        'Filled first name.',
-        'Filled last name.',
-        'Filled email.',
-        'Filled phone.',
-        'Uploaded resume artifact.',
-        'Reached final review and stopping before submit.',
-        'Paused before final submit.'
-      ]);
+      expect(detailResponse.json().logs.map((log: { message: string }) => log.message)).toEqual(
+        expect.arrayContaining([
+          'Started application run.',
+          'Opened Greenhouse source posting.',
+          'Revealed hosted Greenhouse application form.',
+          'Filled first name.',
+          'Filled last name.',
+          'Filled email.',
+          'Filled country.',
+          'Filled phone.',
+          'Filled Greenhouse core applicant fields.',
+          'Uploaded resume artifact.',
+          'Uploaded Greenhouse application documents.',
+          'Greenhouse required field ready: Country.',
+          'Greenhouse required field needs manual review because applicant data is unavailable: U.S. WORK AUTHORIZATION.',
+          'Reached hosted Greenhouse manual review pause with unresolved required fields.',
+          'Paused before final submit.'
+        ])
+      );
+      expect(detailResponse.json().logs.some((log: { detailsJson: string | null }) => {
+        return typeof log.detailsJson === 'string' && log.detailsJson.includes('U.S. WORK AUTHORIZATION');
+      })).toBe(true);
       expect(detailResponse.json().artifacts).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
