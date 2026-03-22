@@ -95,19 +95,24 @@ function isRetryableFetchError(error: unknown): boolean {
     return false;
   }
 
-  const message = error.message.toLowerCase();
+  // AbortSignal.timeout() fires a TimeoutError (DOMException). Don't retry — the request
+  // already waited the full timeout window and retrying would multiply the wait time.
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+    return false;
+  }
+
   const cause = error.cause as
     | {
         code?: string;
         message?: string;
       }
     | undefined;
+  const message = error.message.toLowerCase();
   const code = cause?.code?.toLowerCase() ?? '';
   const causeMessage = cause?.message?.toLowerCase() ?? '';
 
   return (
     message.includes('fetch failed') ||
-    message.includes('timeout') ||
     code.includes('timeout') ||
     code.includes('econnreset') ||
     code.includes('enetunreach') ||
