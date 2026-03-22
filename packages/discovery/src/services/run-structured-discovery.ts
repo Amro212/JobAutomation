@@ -55,6 +55,7 @@ export async function runStructuredDiscovery(
   let newJobCount = 0;
   let updatedJobCount = 0;
   const failures: string[] = [];
+  let successfulSourceCount = 0;
 
   for (const source of input.sources) {
     const details = {
@@ -104,6 +105,8 @@ export async function runStructuredDiscovery(
       newJobCount += counts.newJobCount;
       updatedJobCount += counts.updatedJobCount;
 
+      successfulSourceCount += 1;
+
       await logRunEvent(
         input.logEventsRepository,
         input.run.id,
@@ -132,10 +135,17 @@ export async function runStructuredDiscovery(
     }
   }
 
+  const finalStatus =
+    failures.length === 0
+      ? 'completed'
+      : successfulSourceCount > 0
+        ? 'partial'
+        : 'failed';
+
   const finalRun = await upsertDiscoveryRun({
     runsRepository: input.runsRepository,
     runId: input.run.id,
-    status: failures.length === 0 ? 'completed' : 'failed',
+    status: finalStatus,
     jobCount,
     newJobCount,
     updatedJobCount,

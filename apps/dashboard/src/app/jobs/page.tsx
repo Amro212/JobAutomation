@@ -92,11 +92,65 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
         'message',
         `Discovery run completed: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated).`
       );
+    } else if (latestDetail?.run.status === 'partial') {
+      params.set(
+        'message',
+        `Discovery finished with some source errors: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated). Open Runs to retry failed sources.`
+      );
     } else if (latestDetail?.run.status === 'failed') {
       params.set('error', latestDetail.run.errorMessage ?? 'Discovery run failed.');
     } else {
       params.set('message', 'Discovery run queued. Counts will appear once the run completes.');
     }
+  }
+
+  const query = params.toString();
+  redirect(query.length > 0 ? `/jobs?${query}` : '/jobs');
+}
+
+async function runAllDiscoverySourcesAction(_formData: FormData): Promise<void> {
+  'use server';
+
+  const sources = await getDiscoverySources();
+  const enabledIds = sources.filter((source) => source.enabled).map((source) => source.id);
+
+  if (enabledIds.length === 0) {
+    redirect(
+      `/jobs?${new URLSearchParams({
+        error: 'Enable at least one discovery source before running all.'
+      }).toString()}`
+    );
+  }
+
+  const [run] = await runDiscoverySources({
+    sourceIds: enabledIds
+  });
+
+  const detail = await waitForDiscoveryRun(run.id, { timeoutMs: 300_000 });
+  revalidatePath('/jobs');
+  revalidatePath('/runs');
+
+  const params = new URLSearchParams();
+  const latestDetail = detail ?? (await getDiscoveryRun(run.id));
+  const sourceCount = enabledIds.length;
+
+  if (latestDetail?.run.status === 'completed') {
+    params.set(
+      'message',
+      `Ran ${sourceCount} sources: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated).`
+    );
+  } else if (latestDetail?.run.status === 'partial') {
+    params.set(
+      'message',
+      `Ran ${sourceCount} sources with some errors: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated). Open Runs to retry failed sources.`
+    );
+  } else if (latestDetail?.run.status === 'failed') {
+    params.set('error', latestDetail.run.errorMessage ?? 'Discovery run failed.');
+  } else {
+    params.set(
+      'message',
+      `Discovery run queued for ${sourceCount} sources. Counts will appear on Runs when complete.`
+    );
   }
 
   const query = params.toString();
@@ -287,6 +341,7 @@ export default async function JobsPage({
         sources={sources}
         createAction={addDiscoverySource}
         runAction={runDiscoverySourceAction}
+        runAllAction={runAllDiscoverySourcesAction}
         toggleAction={toggleDiscoverySource}
         importAction={importDiscoverySources}
       />

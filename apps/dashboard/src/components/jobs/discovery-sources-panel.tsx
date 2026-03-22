@@ -16,15 +16,18 @@ export function DiscoverySourcesPanel({
   sources,
   createAction,
   runAction,
+  runAllAction,
   toggleAction,
   importAction
 }: {
   sources: DiscoverySourceRecord[];
   createAction: (formData: FormData) => Promise<void>;
   runAction: (formData: FormData) => Promise<void>;
+  runAllAction: (formData: FormData) => Promise<void>;
   toggleAction: (formData: FormData) => Promise<void>;
   importAction: (formData: FormData) => Promise<void>;
 }) {
+  const enabledCount = sources.filter((source) => source.enabled).length;
   return (
     <section className="space-y-4 rounded-xl border bg-card p-6 shadow-sm">
       <div>
@@ -111,6 +114,28 @@ export function DiscoverySourcesPanel({
           No discovery sources configured yet.
         </div>
       ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            Run every <span className="font-medium text-foreground">enabled</span> source in one structured discovery
+            run ({enabledCount} of {sources.length}).
+          </p>
+          <form action={runAllAction}>
+            <SubmitButton
+              disabled={enabledCount === 0}
+              pendingText="Running all…"
+              title={
+                enabledCount === 0
+                  ? 'Enable at least one source to run all'
+                  : 'Queue one structured run for all enabled sources'
+              }
+            >
+              Run all
+            </SubmitButton>
+          </form>
+        </div>
+      )}
+
+      {sources.length === 0 ? null : (
         <details className="rounded-lg border" open={false}>
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground">
             Source table ({sources.length})

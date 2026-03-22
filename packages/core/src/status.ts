@@ -11,6 +11,7 @@ export const discoveryRunStatusSchema = z.enum([
   'pending',
   'running',
   'completed',
+  'partial',
   'failed'
 ]);
 

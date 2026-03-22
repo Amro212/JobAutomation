@@ -25,6 +25,8 @@ function statusVariant(status: string) {
   switch (status) {
     case 'completed':
       return 'success' as const;
+    case 'partial':
+      return 'warning' as const;
     case 'failed':
       return 'destructive' as const;
     case 'running':
@@ -32,6 +34,13 @@ function statusVariant(status: string) {
     default:
       return 'secondary' as const;
   }
+}
+
+function discoveryRunStatusLabel(status: string): string {
+  if (status === 'partial') {
+    return 'Partial success';
+  }
+  return status;
 }
 
 export function RunsTable({ runs }: { runs: DiscoveryRunRecord[] }) {
@@ -64,7 +73,7 @@ export function RunsTable({ runs }: { runs: DiscoveryRunRecord[] }) {
               <TableCell className="capitalize">{run.triggerKind}</TableCell>
               <TableCell>
                 <Badge variant={statusVariant(run.status)} className="capitalize">
-                  {run.status}
+                  {discoveryRunStatusLabel(run.status)}
                 </Badge>
               </TableCell>
               <TableCell>{run.newJobCount}</TableCell>

@@ -117,7 +117,7 @@ describe('runStructuredDiscovery', () => {
     const { jobs } = await jobsRepository.list();
     const logs = await logEventsRepository.listByDiscoveryRun(run.id);
 
-    expect(finalRun.status).toBe('failed');
+    expect(finalRun.status).toBe('partial');
     expect(finalRun.newJobCount).toBe(1);
     expect(finalRun.updatedJobCount).toBe(0);
     expect(jobs).toHaveLength(1);

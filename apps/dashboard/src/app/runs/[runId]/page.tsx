@@ -142,7 +142,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
                 }
                 className="capitalize"
               >
-                {detail.run.status}
+                {detail.run.status === 'partial' ? 'Partial success' : detail.run.status}
               </Badge>
             </dd>
           </div>
