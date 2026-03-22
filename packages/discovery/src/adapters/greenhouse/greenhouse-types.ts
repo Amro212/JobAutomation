@@ -1,8 +1,16 @@
 import { z } from 'zod';
 
+/** Greenhouse sometimes returns `value` as an array (e.g. multi-select custom fields). */
+const greenhouseMetadataValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.unknown())
+]);
+
 const greenhouseMetadataEntrySchema = z.object({
   name: z.string().default(''),
-  value: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
+  value: greenhouseMetadataValueSchema.nullable().optional(),
   value_type: z.string().optional().default('')
 });
 

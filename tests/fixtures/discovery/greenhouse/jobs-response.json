@@ -19,6 +19,11 @@
           "name": "Employment Type",
           "value": "Full-time",
           "value_type": "string"
+        },
+        {
+          "name": "Locations",
+          "value": ["Remote", "Hybrid"],
+          "value_type": "multi_value"
         }
       ],
       "offices": [
