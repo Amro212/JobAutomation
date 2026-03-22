@@ -1,6 +1,7 @@
 import type { ApplicantProfile } from '@jobautomation/core';
 
 import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
+import { PhoneField } from '@/components/setup/phone-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SubmitButton } from '@/components/submit-button';
@@ -43,10 +44,12 @@ export function ApplicantProfileForm({
           <span className="font-medium">Email</span>
           <Input name="email" defaultValue={current.email} />
         </label>
-        <label className="space-y-2 text-sm">
-          <span className="font-medium">Phone</span>
-          <Input name="phone" defaultValue={current.phone} />
-        </label>
+        <div className="space-y-2 text-sm">
+          <label className="font-medium" htmlFor="applicant-phone">
+            Phone
+          </label>
+          <PhoneField id="applicant-phone" name="phone" defaultValue={current.phone} />
+        </div>
         <label className="space-y-2 text-sm">
           <span className="font-medium">Location</span>
           <Input name="location" defaultValue={current.location} />
