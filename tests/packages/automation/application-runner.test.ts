@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import type { ApplicantProfile } from '../../../packages/core/src/applicant-profile';
+import { minimalAutofillProfileSchema } from '../../../packages/core/src/autofill-profile';
 import type { ArtifactRecord } from '../../../packages/core/src/artifact';
 import type { JobRecord } from '../../../packages/core/src/job';
 import { runApplication } from '../../../packages/automation/src/apply/application-runner';
@@ -51,6 +52,7 @@ const baseApplicant = (overrides: Partial<ApplicantProfile> = {}): ApplicantProf
     negative_keywords: ['Sales']
   },
   jobKeywordProfileGeneratedAt: new Date('2026-03-13T09:00:00.000Z'),
+  autofillProfile: minimalAutofillProfileSchema.parse({}),
   updatedAt: new Date('2026-03-13T09:00:00.000Z'),
   ...overrides
 });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { ApplicantProfile } from '../../../packages/core/src/applicant-profile';
+import { minimalAutofillProfileSchema } from '../../../packages/core/src/autofill-profile';
 import type { JobKeywordProfile } from '../../../packages/core/src/job-keyword-profile';
 import {
   prefilterContextFromApplicant,
@@ -206,6 +207,7 @@ describe('prefilterContextFromApplicant', () => {
       preferredCountries: ['CA'],
       jobKeywordProfile: profile({ seniority: 'mid', positive_keywords: ['rust'] }),
       jobKeywordProfileGeneratedAt: null,
+      autofillProfile: minimalAutofillProfileSchema.parse({}),
       updatedAt: new Date()
     } satisfies ApplicantProfile;
 

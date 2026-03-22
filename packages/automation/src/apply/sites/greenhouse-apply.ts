@@ -1,5 +1,12 @@
 import type { Locator, Page } from 'playwright';
 
+import type { MinimalAutofillProfile } from '@jobautomation/core';
+
+import {
+  classifyApplicationQuestionLabel,
+  resolveAutofillAnswer,
+  type AutofillProfileContext
+} from '../autofill-question-map';
 import type { SupportedApplicationSite } from '../contracts';
 import { uploadArtifactFile } from '../file-upload';
 import type {
@@ -20,6 +27,11 @@ export type GreenhouseApplicant = {
   websiteUrl?: string | null;
   location?: string | null;
   country?: string | null;
+  autofillProfile?: MinimalAutofillProfile | null;
+  profileContext?: {
+    summary: string;
+    reusableContext: string;
+  };
 };
 
 export type GreenhouseRequiredFieldClassification =
@@ -445,11 +457,112 @@ function classifyRequiredField(
       : 'blocked_missing_profile_data';
   }
 
+  const category = classifyApplicationQuestionLabel(field.label);
+  const autofillCtx = buildAutofillContext(applicant);
+  if (autofillCtx && resolveAutofillAnswer(category, autofillCtx) !== null) {
+    return 'blocked_unknown_required';
+  }
+
   if (missingProfileQuestionPatterns.some((pattern) => pattern.test(field.label))) {
     return 'blocked_missing_profile_data';
   }
 
   return 'blocked_unknown_required';
+}
+
+function buildAutofillContext(applicant: GreenhouseApplicant): AutofillProfileContext | null {
+  if (!applicant.autofillProfile) {
+    return null;
+  }
+  return {
+    autofill: applicant.autofillProfile,
+    summary: applicant.profileContext?.summary ?? '',
+    reusableContext: applicant.profileContext?.reusableContext ?? ''
+  };
+}
+
+function autofillStepSlug(label: string): string {
+  const slug = normalizeForComparison(label).replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return (slug.length > 0 ? slug : 'autofill').slice(0, 72);
+}
+
+async function tryAutofillLabeledField(input: {
+  page: Page;
+  helpers: GreenhouseApplyHelpers;
+  label: string;
+  value: string;
+  selectorHint: string | null;
+}): Promise<boolean> {
+  const snippet = normalizeLabel(input.label).slice(0, 160);
+  if (!snippet) {
+    return false;
+  }
+
+  const labelPattern = new RegExp(
+    snippet
+      .split(/\s+/)
+      .map((word) => escapeRegExp(word))
+      .join('\\s+'),
+    'i'
+  );
+
+  let locator = input.page.getByLabel(labelPattern).first();
+  if (!(await locatorVisible(locator)) && input.selectorHint) {
+    locator = input.page.locator(input.selectorHint).first();
+  }
+
+  if (!(await locatorVisible(locator))) {
+    return false;
+  }
+
+  const selector = (await buildSelector(locator)) ?? input.selectorHint;
+  if (!selector) {
+    return false;
+  }
+
+  await input.helpers.mapField({
+    name: `autofill_${autofillStepSlug(input.label)}`,
+    kind: 'field',
+    selector,
+    value: input.value
+  });
+
+  return true;
+}
+
+async function runDeterministicAutofillPass(input: {
+  page: Page;
+  helpers: GreenhouseApplyHelpers;
+  applicant: GreenhouseApplicant;
+}): Promise<void> {
+  const ctx = buildAutofillContext(input.applicant);
+  if (!ctx) {
+    return;
+  }
+
+  const fields = await collectRequiredFields(input.page);
+  for (const field of fields) {
+    if (field.filled) {
+      continue;
+    }
+    if (resolveExpectedApplicantValue(field.label, input.applicant) !== undefined) {
+      continue;
+    }
+
+    const category = classifyApplicationQuestionLabel(field.label);
+    const value = resolveAutofillAnswer(category, ctx);
+    if (!value?.trim()) {
+      continue;
+    }
+
+    await tryAutofillLabeledField({
+      page: input.page,
+      helpers: input.helpers,
+      label: field.label,
+      value: value.trim(),
+      selectorHint: field.selector
+    });
+  }
 }
 
 function requiredFieldMessage(classification: GreenhouseRequiredFieldClassification, label: string): string {
@@ -583,6 +696,12 @@ export async function runGreenhouseApply(input: {
     }
   });
 
+  await runDeterministicAutofillPass({
+    page: input.page,
+    helpers: input.helpers,
+    applicant: input.applicant
+  });
+
   const requiredFields = await collectRequiredFields(input.page);
   const evaluations = requiredFields.map((field) => ({
     field,
@@ -706,7 +825,14 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           fieldLocation: context.fieldMapping.location ?? null
         }),
         resumePath: resume.storagePath,
-        coverLetterPath: context.artifacts.coverLetter?.storagePath ?? null
+        coverLetterPath: context.artifacts.coverLetter?.storagePath ?? null,
+        autofillProfile: context.applicantProfile?.autofillProfile ?? null,
+        profileContext: context.applicantProfile
+          ? {
+              summary: context.applicantProfile.summary,
+              reusableContext: context.applicantProfile.reusableContext
+            }
+          : undefined
       },
       helpers: {
         mapField: async (step) => {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { ApplicantProfile } from '../../../packages/core/src/applicant-profile';
+import { minimalAutofillProfileSchema } from '../../../packages/core/src/autofill-profile';
 import { generateJobKeywordProfile } from '../../../packages/discovery/src/services/generate-job-keyword-profile';
 
 const baseApplicant = (overrides: Partial<ApplicantProfile> = {}): ApplicantProfile => ({
@@ -18,6 +19,7 @@ const baseApplicant = (overrides: Partial<ApplicantProfile> = {}): ApplicantProf
   preferredCountries: [],
   jobKeywordProfile: null,
   jobKeywordProfileGeneratedAt: null,
+  autofillProfile: minimalAutofillProfileSchema.parse({}),
   updatedAt: new Date('2026-03-15T10:00:00.000Z'),
   ...overrides
 });

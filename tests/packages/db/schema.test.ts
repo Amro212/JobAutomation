@@ -35,6 +35,7 @@ describe('database schema', () => {
     expect(runColumns.scheduleId).toBeDefined();
     expect(applicantColumns.baseResumeFileName).toBeDefined();
     expect(applicantColumns.baseResumeTex).toBeDefined();
+    expect(applicantColumns.autofillProfileJson).toBeDefined();
   });
 
   test('keeps application run and evidence linkage explicit', () => {

@@ -1,5 +1,6 @@
-import type { ApplicantProfile } from '@jobautomation/core';
+import { defaultMinimalAutofillProfile, type ApplicantProfile } from '@jobautomation/core';
 
+import { MinimalAutofillFields } from '@/components/setup/minimal-autofill-fields';
 import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
 import { PhoneField } from '@/components/setup/phone-field';
 import { Input } from '@/components/ui/input';
@@ -20,7 +21,8 @@ const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
   baseResumeTex: '',
   preferredCountries: [],
   jobKeywordProfile: null,
-  jobKeywordProfileGeneratedAt: null
+  jobKeywordProfileGeneratedAt: null,
+  autofillProfile: defaultMinimalAutofillProfile
 };
 
 export function ApplicantProfileForm({
@@ -111,6 +113,8 @@ export function ApplicantProfileForm({
           className="font-mono text-xs"
         />
       </label>
+
+      <MinimalAutofillFields profile={current.autofillProfile} />
 
       <input type="hidden" name="id" value={current.id} />
 
