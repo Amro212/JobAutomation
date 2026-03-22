@@ -2,44 +2,39 @@ import type { ApplicantProfile, JobRecord } from '@jobautomation/core';
 
 import { escapeLatex } from '../tokens/escape-latex';
 
-function linkedinDisplay(url: string): string {
-  const trimmed = url.trim();
-  const match = trimmed.match(/linkedin\.com\/in\/([^/?#]+)/i);
-  if (match) {
-    try {
-      const handle = decodeURIComponent(match[1]!);
-      return `linkedin.com/in/${handle}`;
-    } catch {
-      return `linkedin.com/in/${match[1]}`;
-    }
-  }
-  try {
-    const parsed = new URL(trimmed);
-    return parsed.host.replace(/^www\./, '') || trimmed.slice(0, 56);
-  } catch {
-    return trimmed.slice(0, 56);
-  }
-}
-
-function portfolioDisplay(url: string): string {
-  try {
-    const parsed = new URL(url.trim());
-    const path = parsed.pathname.replace(/\/$/, '');
-    const host = parsed.host.replace(/^www\./, '');
-    return path && path !== '/' ? `${host}${path}` : host;
-  } catch {
-    return url.trim().slice(0, 64);
-  }
-}
-
 function telHref(phone: string): string {
   const normalized = phone.replace(/[^\d+]/g, '');
   return normalized.length > 0 ? `tel:${normalized}` : '';
 }
 
+/** North American 10-digit display: (xxx)-xxx-xxxx; otherwise return trimmed input. */
+function formatPhoneDisplay(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  let areaRest: string | null = null;
+  if (digits.length === 10) {
+    areaRest = digits;
+  } else if (digits.length === 11 && digits.startsWith('1')) {
+    areaRest = digits.slice(1);
+  }
+  if (areaRest) {
+    return `(${areaRest.slice(0, 3)})-${areaRest.slice(3, 6)}-${areaRest.slice(6)}`;
+  }
+  return phone.trim();
+}
+
 /** URL wrapped for `\detokenize{...}` (no `}` inside URL). */
 function urlForDetokenize(url: string): string {
   return url.includes('}') ? url.replaceAll('}', '') : url;
+}
+
+/** Ensure PDF links resolve (hyperref expects an absolute URL for web targets). */
+function webHrefTarget(url: string): string {
+  const t = url.trim();
+  if (t.length === 0) return t;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t)) {
+    return urlForDetokenize(t);
+  }
+  return urlForDetokenize(`https://${t.replace(/^\/+/, '')}`);
 }
 
 /**
@@ -58,23 +53,22 @@ export function buildCoverLetterContactRow(profile: ApplicantProfile): string {
 
   const linkedin = profile.linkedinUrl.trim();
   if (linkedin) {
-    const display = linkedinDisplay(linkedin);
     parts.push(
-      String.raw`\href{\detokenize{${urlForDetokenize(linkedin)}}}{\faLinkedinIn\enspace ${escapeLatex(display)}}`
+      String.raw`\href{\detokenize{${webHrefTarget(linkedin)}}}{\faLinkedinIn\enspace ${escapeLatex('LinkedIn')}}`
     );
   }
 
   const phone = profile.phone.trim();
   const tel = telHref(phone);
   if (tel) {
-    parts.push(String.raw`\href{\detokenize{${tel}}}{\faPhone\enspace ${escapeLatex(phone)}}`);
+    const phoneDisplay = formatPhoneDisplay(phone);
+    parts.push(String.raw`\href{\detokenize{${tel}}}{\faPhone\enspace ${escapeLatex(phoneDisplay)}}`);
   }
 
   const website = profile.websiteUrl.trim();
   if (website) {
-    const display = portfolioDisplay(website);
     parts.push(
-      String.raw`\href{\detokenize{${urlForDetokenize(website)}}}{\faGlobe\enspace ${escapeLatex(display)}}`
+      String.raw`\href{\detokenize{${webHrefTarget(website)}}}{\faGlobe\enspace ${escapeLatex('Portfolio')}}`
     );
   }
 
@@ -86,7 +80,7 @@ export function buildCoverLetterMailingLines(job: JobRecord): string {
   const lines: string[] = [];
   const title = job.title.trim();
   if (title) {
-    lines.push(escapeLatex(`Re: ${title}`));
+    lines.push(escapeLatex(`${title}`));
   }
   const loc = job.location.trim();
   if (loc) {
