@@ -1,34 +1,58 @@
-\documentclass[11pt]{article}
-\usepackage[margin=1in]{geometry}
-\usepackage{parskip}
+% Cover letter layout (adapted for JobAutomation token pipeline; inspired by Sid Lacy letter template)
+\documentclass[12pt]{letter}
+\usepackage[utf8]{inputenc}
+\usepackage[empty]{fullpage}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{graphicx}
+\usepackage{fontawesome5}
+\usepackage{eso-pic}
+\usepackage{charter}
+
+\addtolength{\topmargin}{-0.5in}
+\addtolength{\textheight}{1.0in}
+\definecolor{gr}{RGB}{225,225,225}
 
 \begin{document}
 
-\noindent {{candidate_name}} \\
-{{candidate_email}} \\
-{{candidate_phone}} \\
-{{candidate_location}}
+% Shaded header banner
+\AddToShipoutPictureBG{%
+\color{gr}
+\AtPageUpperLeft{\rule[-1.3in]{\paperwidth}{1.3in}}
+}
 
-\vspace{12pt}
+% Header
+\begin{center}
+{\fontsize{28}{0}\selectfont\scshape {{candidate_name}}}
 
-\noindent {{date}}
+{{contact_row}}
+\end{center}
 
-\vspace{12pt}
+\vspace{0.2in}
 
-\noindent {{addressee}} \\
-{{company_name}}
+% Opening block
+{{letter_date}}\\
 
-\vspace{12pt}
+\vspace{-0.1in}{{recipient_line}}\\
+{{company_line}}\\
+{{mailing_lines}}
 
-\noindent Dear {{addressee}},
+\vspace{-0.1in}{{greeting_line}}\\
 
-\vspace{6pt}
+% Body
+\vspace{-0.1in}\setlength\parindent{24pt}
+\noindent {{cover_letter_body}}
 
-{{cover_letter_body}}
+% Closer
+\vspace{0.1in}
+\vfill
 
-\vspace{12pt}
+\begin{flushright}
+{{closer_line}},
 
-\noindent Sincerely, \\
-{{candidate_name}}
+\vspace{0.15in}
+{{signoff_name}}\\
+{{signoff_title}}
+\end{flushright}
 
 \end{document}
