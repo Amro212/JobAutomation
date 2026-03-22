@@ -36,17 +36,22 @@ const selectClassName =
 export function JobFilters({
   filters,
   resetHref,
-  companyOptions
+  companyOptions,
+  showMatchScope,
+  matchScopeLinks
 }: {
   filters: JobListFilters;
   resetHref: string;
   companyOptions: string[];
+  showMatchScope?: boolean;
+  matchScopeLinks?: { meHref: string; allHref: string };
 }) {
   return (
     <form
       method="get"
       className="rounded-xl border bg-card p-6 shadow-sm"
     >
+      <input type="hidden" name="matchProfile" value={filters.matchProfile ?? 'all'} />
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -55,6 +60,34 @@ export function JobFilters({
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Filter persisted discovery results without leaving the current workflow.
           </p>
+          {showMatchScope && matchScopeLinks ? (
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              <span className="font-medium text-foreground">Scope:</span>{' '}
+              <Link
+                href={matchScopeLinks.meHref}
+                className={
+                  filters.matchProfile === 'me'
+                    ? 'font-medium text-foreground'
+                    : 'text-primary underline-offset-4 hover:underline'
+                }
+              >
+                My matches
+              </Link>
+              <span className="mx-2 text-muted-foreground" aria-hidden>
+                ·
+              </span>
+              <Link
+                href={matchScopeLinks.allHref}
+                className={
+                  filters.matchProfile === 'all'
+                    ? 'font-medium text-foreground'
+                    : 'text-primary underline-offset-4 hover:underline'
+                }
+              >
+                All jobs
+              </Link>
+            </p>
+          ) : null}
         </div>
         <Button variant="ghost" size="sm" asChild>
           <Link href={resetHref}>Reset</Link>

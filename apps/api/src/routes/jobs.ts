@@ -1,9 +1,13 @@
 import {
   JOB_LIST_DEFAULT_PAGE_SIZE,
   jobListFiltersSchema,
-  jobListQuerySchema
+  jobListQuerySchema,
+  prefilterContextFromApplicant,
+  prefilterMatchesMeaningful
 } from '@jobautomation/core';
 import type { FastifyPluginAsync } from 'fastify';
+
+import { recomputeJobPrefilterMatches } from '../services/job-prefilter-recompute';
 
 function getQueryValue(query: Record<string, unknown>, key: string): string | undefined {
   const value = query[key];
@@ -23,6 +27,11 @@ function getQueryArray(query: Record<string, unknown>, key: string): string[] | 
 }
 
 export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
+  app.post('/jobs/recompute-prefilter-matches', async () => {
+    const profile = await app.repositories.applicantProfile.get();
+    return recomputeJobPrefilterMatches(app.repositories.jobs, profile);
+  });
+
   app.get('/jobs', async (request) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
     const parsed = jobListQuerySchema.parse({
@@ -32,9 +41,15 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
       title: getQueryValue(query, 'title'),
       location: getQueryValue(query, 'location'),
       companyName: getQueryValue(query, 'companyName'),
+      matchProfile: getQueryValue(query, 'matchProfile'),
       page: getQueryValue(query, 'page'),
       pageSize: getQueryValue(query, 'pageSize')
     });
+
+    const applicant = await app.repositories.applicantProfile.get();
+    const meaningful = prefilterMatchesMeaningful(prefilterContextFromApplicant(applicant));
+    const matchProfile =
+      parsed.matchProfile === 'me' && meaningful ? ('me' as const) : ('all' as const);
 
     const filters = jobListFiltersSchema.parse({
       sourceKind: parsed.sourceKind,
@@ -43,12 +58,20 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
       title: parsed.title,
       location: parsed.location,
       companyName: parsed.companyName,
-      locationCountries: getQueryArray(query, 'country')
+      locationCountries: getQueryArray(query, 'country'),
+      matchProfile
     });
 
     const usePagination = parsed.page !== undefined || parsed.pageSize !== undefined;
     const page = parsed.page ?? 1;
     const pageSize = parsed.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
+
+    if (matchProfile === 'me' && meaningful) {
+      const { jobCount, nullPrefilterCount } = await app.repositories.jobs.prefilterCacheStats();
+      if (jobCount > 0 && nullPrefilterCount === jobCount) {
+        await recomputeJobPrefilterMatches(app.repositories.jobs, applicant);
+      }
+    }
 
     const { jobs, total } = usePagination
       ? await app.repositories.jobs.listSummary(filters, { page, pageSize })
@@ -59,13 +82,32 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/jobs/distinct-companies', async (request) => {
     const query = (request.query ?? {}) as Record<string, unknown>;
-    const filters = jobListFiltersSchema.parse({
+    const parsed = jobListQuerySchema.parse({
       sourceKind: getQueryValue(query, 'sourceKind'),
       status: getQueryValue(query, 'status'),
       remoteType: getQueryValue(query, 'remoteType'),
       title: getQueryValue(query, 'title'),
       location: getQueryValue(query, 'location'),
-      locationCountries: getQueryArray(query, 'country')
+      companyName: getQueryValue(query, 'companyName'),
+      matchProfile: getQueryValue(query, 'matchProfile'),
+      page: getQueryValue(query, 'page'),
+      pageSize: getQueryValue(query, 'pageSize')
+    });
+
+    const applicant = await app.repositories.applicantProfile.get();
+    const meaningful = prefilterMatchesMeaningful(prefilterContextFromApplicant(applicant));
+    const matchProfile =
+      parsed.matchProfile === 'me' && meaningful ? ('me' as const) : ('all' as const);
+
+    const filters = jobListFiltersSchema.parse({
+      sourceKind: parsed.sourceKind,
+      status: parsed.status,
+      remoteType: parsed.remoteType,
+      title: parsed.title,
+      location: parsed.location,
+      companyName: parsed.companyName,
+      locationCountries: getQueryArray(query, 'country'),
+      matchProfile
     });
 
     const companies = await app.repositories.jobs.distinctCompanyNames(filters);

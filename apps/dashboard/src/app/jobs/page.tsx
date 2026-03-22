@@ -172,7 +172,12 @@ function getSearchParamArray(
   return arr.length > 0 ? arr : undefined;
 }
 
-function buildJobsListHref(query: JobListQuery, page: number, pageSize: number): string {
+function buildJobsListHref(
+  query: JobListQuery,
+  page: number,
+  pageSize: number,
+  meaningfulMatchScope: boolean
+): string {
   const params = new URLSearchParams();
   if (query.sourceKind) params.set('sourceKind', query.sourceKind);
   if (query.status) params.set('status', query.status);
@@ -184,6 +189,11 @@ function buildJobsListHref(query: JobListQuery, page: number, pageSize: number):
     for (const code of query.locationCountries) {
       params.append('country', code);
     }
+  }
+  if (query.matchProfile === 'me') {
+    params.set('matchProfile', 'me');
+  } else if (query.matchProfile === 'all' && meaningfulMatchScope) {
+    params.set('matchProfile', 'all');
   }
   params.set('page', String(page));
   params.set('pageSize', String(pageSize));
@@ -197,6 +207,12 @@ export default async function JobsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
+  const { profile } = await getApplicantProfile();
+
+  const meaningfulMatchScope =
+    profile != null &&
+    (profile.jobKeywordProfile != null || profile.preferredCountries.length > 0);
+
   const query = jobListQuerySchema.parse({
     sourceKind: getSearchParamValue(resolvedSearchParams.sourceKind),
     status: getSearchParamValue(resolvedSearchParams.status),
@@ -205,33 +221,49 @@ export default async function JobsPage({
     location: getSearchParamValue(resolvedSearchParams.location),
     companyName: getSearchParamValue(resolvedSearchParams.companyName),
     locationCountries: getSearchParamArray(resolvedSearchParams.country),
+    matchProfile: getSearchParamValue(resolvedSearchParams.matchProfile),
     page: getSearchParamValue(resolvedSearchParams.page),
     pageSize: getSearchParamValue(resolvedSearchParams.pageSize)
   });
-  const parsedFilters = jobListFiltersSchema.parse(query);
+
+  const explicitMatch = query.matchProfile;
+  const matchProfile: 'me' | 'all' =
+    explicitMatch === 'me' || explicitMatch === 'all'
+      ? explicitMatch
+      : meaningfulMatchScope
+        ? 'me'
+        : 'all';
+
+  let filters = jobListFiltersSchema.parse({
+    sourceKind: query.sourceKind,
+    status: query.status,
+    remoteType: query.remoteType,
+    title: query.title,
+    location: query.location,
+    companyName: query.companyName,
+    locationCountries: query.locationCountries,
+    matchProfile
+  });
+
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
 
   const hasExplicitCountry = resolvedSearchParams.country !== undefined;
-  let filters = parsedFilters;
-
   if (!hasExplicitCountry && (!filters.locationCountries || filters.locationCountries.length === 0)) {
-    const { profile } = await getApplicantProfile();
     if (profile && profile.preferredCountries.length > 0) {
       filters = { ...filters, locationCountries: profile.preferredCountries };
     }
   }
 
+  const listQuery: JobListQuery = {
+    ...query,
+    matchProfile,
+    locationCountries: filters.locationCountries
+  };
+
   const [{ jobs, total }, companyOptions, sources] = await Promise.all([
     getJobs(filters, { page, pageSize }),
-    getDistinctCompanyNames({
-      sourceKind: filters.sourceKind,
-      status: filters.status,
-      remoteType: filters.remoteType,
-      title: filters.title,
-      location: filters.location,
-      locationCountries: filters.locationCountries
-    }),
+    getDistinctCompanyNames(filters),
     getDiscoverySources()
   ]);
 
@@ -245,6 +277,10 @@ export default async function JobsPage({
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Structured discovery is live for Greenhouse, Lever, and Ashby, and browser fallback can
           now onboard persisted Playwright sources when a public jobs page has no supported feed.
+          When you have a job filter profile or preferred countries on Setup, this list defaults to{' '}
+          <span className="font-medium text-foreground">My matches</span> so off-target roles stay
+          out of the way—use <span className="font-medium text-foreground">All jobs</span> to see the
+          full discovery pool.
         </p>
       </div>
       <DiscoverySourcesPanel
@@ -254,16 +290,31 @@ export default async function JobsPage({
         toggleAction={toggleDiscoverySource}
         importAction={importDiscoverySources}
       />
-      <JobFilters filters={filters} resetHref="/jobs" companyOptions={companyOptions} />
+      <JobFilters
+        filters={filters}
+        resetHref="/jobs"
+        companyOptions={companyOptions}
+        showMatchScope={meaningfulMatchScope}
+        matchScopeLinks={{
+          meHref: buildJobsListHref({ ...listQuery, matchProfile: 'me' }, 1, pageSize, meaningfulMatchScope),
+          allHref: buildJobsListHref({ ...listQuery, matchProfile: 'all' }, 1, pageSize, meaningfulMatchScope)
+        }}
+      />
       <JobsTable
         jobs={jobs}
-        emptyMessage="No jobs matched the current filters."
+        emptyMessage={
+          filters.matchProfile === 'me' && total === 0
+            ? 'No jobs match your Setup filter profile with the current filters. Try All jobs, relax filters, or adjust your profile on Setup.'
+            : 'No jobs matched the current filters.'
+        }
         footer={
           <JobsPagination
             currentPage={page}
             pageSize={pageSize}
             total={total}
-            hrefForPage={(nextPage) => buildJobsListHref(query, nextPage, pageSize)}
+            hrefForPage={(nextPage) =>
+              buildJobsListHref(listQuery, nextPage, pageSize, meaningfulMatchScope)
+            }
           />
         }
       />

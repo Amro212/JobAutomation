@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
+import type { ApplicantProfile } from '../../../packages/core/src/applicant-profile';
 import type { JobKeywordProfile } from '../../../packages/core/src/job-keyword-profile';
-import { prefilterJob, prefilterJobs } from '../../../packages/core/src/job-prefilter';
+import {
+  prefilterContextFromApplicant,
+  prefilterJob,
+  prefilterJobs,
+  prefilterMatchesMeaningful
+} from '../../../packages/core/src/job-prefilter';
 
 const baseJob = {
   title: 'Software Engineer',
@@ -180,5 +186,60 @@ describe('prefilterJobs', () => {
     expect(kept).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reasons).toContain('title_negative');
+  });
+});
+
+describe('prefilterContextFromApplicant', () => {
+  test('maps stored applicant fields into pre-filter context', () => {
+    const applicant = {
+      id: 'default',
+      fullName: 'A',
+      email: '',
+      phone: '',
+      location: '',
+      summary: '',
+      reusableContext: '',
+      linkedinUrl: '',
+      websiteUrl: '',
+      baseResumeFileName: '',
+      baseResumeTex: '',
+      preferredCountries: ['CA'],
+      jobKeywordProfile: profile({ seniority: 'mid', positive_keywords: ['rust'] }),
+      jobKeywordProfileGeneratedAt: null,
+      updatedAt: new Date()
+    } satisfies ApplicantProfile;
+
+    const ctx = prefilterContextFromApplicant(applicant);
+    expect(ctx.preferredCountries).toEqual(['CA']);
+    expect(ctx.jobKeywordProfile?.positive_keywords).toContain('rust');
+  });
+});
+
+describe('prefilterMatchesMeaningful', () => {
+  test('is false when there is no keyword profile and no countries', () => {
+    expect(
+      prefilterMatchesMeaningful({
+        jobKeywordProfile: null,
+        preferredCountries: []
+      })
+    ).toBe(false);
+  });
+
+  test('is true when preferred countries are set', () => {
+    expect(
+      prefilterMatchesMeaningful({
+        jobKeywordProfile: null,
+        preferredCountries: ['US']
+      })
+    ).toBe(true);
+  });
+
+  test('is true when a keyword profile exists', () => {
+    expect(
+      prefilterMatchesMeaningful({
+        jobKeywordProfile: profile({ seniority: 'mid' }),
+        preferredCountries: []
+      })
+    ).toBe(true);
   });
 });

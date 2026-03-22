@@ -103,6 +103,7 @@ export async function getJobs(
         title: filters.title,
         location: filters.location,
         companyName: filters.companyName,
+        matchProfile: filters.matchProfile === 'me' ? 'me' : undefined,
         ...(pagination
           ? {
               page: String(pagination.page),
@@ -128,7 +129,9 @@ export async function getDistinctCompanyNames(
         status: filters.status,
         remoteType: filters.remoteType,
         title: filters.title,
-        location: filters.location
+        location: filters.location,
+        companyName: filters.companyName,
+        matchProfile: filters.matchProfile === 'me' ? 'me' : undefined
       },
       filters.locationCountries && filters.locationCountries.length > 0
         ? { country: filters.locationCountries }

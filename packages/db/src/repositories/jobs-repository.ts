@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, count, desc, eq, like, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, isNull, like, or, sql } from 'drizzle-orm';
 
 import {
   buildLocationLikePatterns,
   jobListItemSchema,
   jobRecordSchema,
+  prefilterJob,
   type JobListFilters,
   type JobListItem,
   type JobRecord,
   type JobReviewPatch,
-  type JobStatus
+  type JobStatus,
+  type PrefilterContext
 } from '@jobautomation/core';
 
 import type { JobAutomationDatabase } from '../client';
@@ -19,6 +21,8 @@ import { jobsTable } from '../schema';
 export type UpsertJobInput = Omit<
   JobRecord,
   | 'id'
+  | 'prefilterPass'
+  | 'prefilterReasonsJson'
   | 'reviewNotes'
   | 'reviewSummary'
   | 'reviewScore'
@@ -90,7 +94,71 @@ export class JobsRepository {
       conditions.push(like(jobsTable.companyName, `%${filters.companyName}%`));
     }
 
+    if (filters.matchProfile === 'me') {
+      conditions.push(eq(jobsTable.prefilterPass, 1));
+    }
+
     return conditions.length > 0 ? and(...conditions) : undefined;
+  }
+
+  async clearAllPrefilterResults(): Promise<void> {
+    await this.db
+      .update(jobsTable)
+      .set({ prefilterPass: null, prefilterReasonsJson: null });
+  }
+
+  /** Jobs with no cached pre-filter result yet (e.g. new row or invalidated). */
+  async prefilterCacheStats(): Promise<{ jobCount: number; nullPrefilterCount: number }> {
+    const [{ total: jobCount }] = await this.db.select({ total: count() }).from(jobsTable);
+    const [{ total: nullPrefilterCount }] = await this.db
+      .select({ total: count() })
+      .from(jobsTable)
+      .where(isNull(jobsTable.prefilterPass));
+
+    return { jobCount, nullPrefilterCount };
+  }
+
+  async recomputePrefilterForAllJobs(ctx: PrefilterContext): Promise<number> {
+    const PAGE = 300;
+    let offset = 0;
+    let evaluated = 0;
+
+    for (;;) {
+      const rows = await this.db
+        .select({
+          id: jobsTable.id,
+          title: jobsTable.title,
+          location: jobsTable.location,
+          remoteType: jobsTable.remoteType,
+          descriptionText: jobsTable.descriptionText
+        })
+        .from(jobsTable)
+        .orderBy(jobsTable.id)
+        .limit(PAGE)
+        .offset(offset);
+
+      if (rows.length === 0) {
+        break;
+      }
+
+      await this.db.transaction(async (tx) => {
+        for (const row of rows) {
+          const result = prefilterJob(row, ctx);
+          await tx
+            .update(jobsTable)
+            .set({
+              prefilterPass: result.pass ? 1 : 0,
+              prefilterReasonsJson: JSON.stringify(result.reasons)
+            })
+            .where(eq(jobsTable.id, row.id));
+          evaluated += 1;
+        }
+      });
+
+      offset += PAGE;
+    }
+
+    return evaluated;
   }
 
   async list(
@@ -214,6 +282,18 @@ export class JobsRepository {
       discoveredAt: input.discoveredAt,
       updatedAt: input.updatedAt
     };
+
+    const prefilterFieldsChanged =
+      existing &&
+      (existing.title !== input.title ||
+        existing.location !== input.location ||
+        existing.remoteType !== input.remoteType ||
+        existing.descriptionText !== input.descriptionText);
+
+    if (prefilterFieldsChanged) {
+      updateSet.prefilterPass = null;
+      updateSet.prefilterReasonsJson = null;
+    }
 
     if ('reviewNotes' in input) {
       updateSet.reviewNotes = reviewNotes;

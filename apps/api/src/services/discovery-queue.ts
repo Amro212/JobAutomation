@@ -25,6 +25,8 @@ export type DiscoveryQueueServiceInput = {
   leverBaseUrl: string;
   ashbyBaseUrl: string;
   concurrency?: number;
+  /** After a successful discovery run, refresh cached job pre-filter results (best-effort). */
+  afterDiscoveryRun?: () => Promise<void>;
 };
 
 export class DiscoveryQueueService {
@@ -61,6 +63,12 @@ export class DiscoveryQueueService {
               leverBaseUrl: this.input.leverBaseUrl,
               ashbyBaseUrl: this.input.ashbyBaseUrl
             });
+          }
+
+          try {
+            await this.input.afterDiscoveryRun?.();
+          } catch {
+            // Match cache refresh is auxiliary; discovery already succeeded.
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown discovery queue error.';

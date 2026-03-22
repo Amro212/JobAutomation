@@ -6,6 +6,8 @@ import { randomUUID } from 'node:crypto';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterEach, describe, expect, test } from 'vitest';
 
+import type { PrefilterContext } from '@jobautomation/core';
+
 import {
   ApplicantProfileRepository,
   ApplicationRunsRepository,
@@ -104,6 +106,134 @@ describe('repositories', () => {
     expect(total).toBe(1);
     expect(jobs[0]?.title).toBe('Senior Platform Engineer');
     expect(jobs[0]?.status).toBe('reviewing');
+  });
+
+  test('listSummary matchProfile=me uses cached prefilter_pass', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, {
+      migrationsFolder
+    });
+
+    const repository = new JobsRepository(db);
+    const discoveredAt = new Date('2026-03-13T10:00:00.000Z');
+    const updatedAt = new Date('2026-03-13T10:00:00.000Z');
+    const base = {
+      sourceKind: 'greenhouse' as const,
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/x',
+      companyName: 'Example Corp',
+      location: 'Remote',
+      remoteType: 'remote' as const,
+      employmentType: 'full-time' as const,
+      compensationText: null as string | null,
+      descriptionText: 'Role description',
+      rawPayload: null as string | null,
+      discoveryRunId: null as string | null,
+      status: 'discovered' as const,
+      discoveredAt,
+      updatedAt
+    };
+
+    await repository.upsert({
+      ...base,
+      sourceId: 'job-a',
+      title: 'Software Engineer'
+    });
+    await repository.upsert({
+      ...base,
+      sourceId: 'job-b',
+      title: 'Line Cook'
+    });
+
+    const ctx: PrefilterContext = {
+      jobKeywordProfile: {
+        seniority: 'mid',
+        target_titles: [],
+        positive_keywords: ['software'],
+        negative_keywords: []
+      },
+      preferredCountries: []
+    };
+
+    await repository.recomputePrefilterForAllJobs(ctx);
+
+    const all = await repository.listSummary({ matchProfile: 'all' });
+    const me = await repository.listSummary({ matchProfile: 'me' });
+
+    expect(all.total).toBe(2);
+    expect(me.total).toBe(1);
+    expect(me.jobs[0]?.title).toBe('Software Engineer');
+  });
+
+  test('upsert clears prefilter cache when title or location changes', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, {
+      migrationsFolder
+    });
+
+    const repository = new JobsRepository(db);
+    const discoveredAt = new Date('2026-03-13T10:00:00.000Z');
+    const updatedAt = new Date('2026-03-13T10:00:00.000Z');
+
+    await repository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-xyz',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/xyz',
+      companyName: 'Example Corp',
+      title: 'Software Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Build things',
+      rawPayload: null,
+      discoveryRunId: null,
+      status: 'discovered',
+      discoveredAt,
+      updatedAt
+    });
+
+    const ctx: PrefilterContext = {
+      jobKeywordProfile: {
+        seniority: 'mid',
+        target_titles: [],
+        positive_keywords: ['software'],
+        negative_keywords: []
+      },
+      preferredCountries: []
+    };
+    await repository.recomputePrefilterForAllJobs(ctx);
+
+    let row = await repository.findById(
+      (await repository.findBySource('greenhouse', 'job-xyz'))!.id
+    );
+    expect(row?.prefilterPass).toBe(true);
+
+    await repository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-xyz',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/xyz',
+      companyName: 'Example Corp',
+      title: 'Line Cook',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Build things',
+      rawPayload: null,
+      discoveryRunId: null,
+      status: 'discovered',
+      discoveredAt,
+      updatedAt: new Date('2026-03-13T11:00:00.000Z')
+    });
+
+    row = await repository.findById(
+      (await repository.findBySource('greenhouse', 'job-xyz'))!.id
+    );
+    expect(row?.prefilterPass).toBeNull();
   });
 
   test('stores applicant setup data including the base latex resume source', async () => {

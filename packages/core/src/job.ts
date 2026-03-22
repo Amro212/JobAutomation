@@ -23,6 +23,19 @@ const optionalStatusFilterSchema = z
     return value;
   });
 
+function prefilterPassFromDb(value: unknown): boolean | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (value === true || value === 1) {
+    return true;
+  }
+  if (value === false || value === 0) {
+    return false;
+  }
+  return null;
+}
+
 export const jobRecordSchema = z.object({
   id: z.string().min(1),
   sourceKind: z.string().min(1),
@@ -45,8 +58,20 @@ export const jobRecordSchema = z.object({
   reviewUpdatedAt: z.date().nullable(),
   reviewScoreUpdatedAt: z.date().nullable(),
   discoveredAt: z.date(),
-  updatedAt: z.date()
+  updatedAt: z.date(),
+  prefilterPass: z.preprocess(prefilterPassFromDb, z.boolean().nullable()),
+  prefilterReasonsJson: z.string().nullable()
 });
+
+const optionalMatchProfileSchema = z.preprocess((val) => {
+  if (val === 'me' || val === 'all') {
+    return val;
+  }
+  if (val === '' || val === null || val === undefined) {
+    return undefined;
+  }
+  return undefined;
+}, z.enum(['me', 'all']).optional());
 
 const optionalCountryCodesSchema = z.preprocess((val) => {
   if (val === undefined || val === null || val === '') {
@@ -71,7 +96,9 @@ export const jobListFiltersSchema = z.object({
   title: filterTextSchema,
   location: filterTextSchema,
   companyName: filterTextSchema,
-  locationCountries: optionalCountryCodesSchema
+  locationCountries: optionalCountryCodesSchema,
+  /** When `me`, list only jobs that pass the applicant pre-filter (requires cached `prefilter_pass` on rows). */
+  matchProfile: optionalMatchProfileSchema
 });
 
 const optionalPageInt = z.preprocess((val) => {
