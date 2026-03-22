@@ -35,6 +35,39 @@ function getGenerateMessage(mode: 'both' | 'resume' | 'cover-letter'): string {
   return 'Generated tailored resume and cover letter.';
 }
 
+/** Latest resume-variant version has TeX/log but no PDF (Tectonic did not produce a PDF). */
+function latestResumeVariantVersionWithoutPdf(artifacts: ArtifactRecord[]): number | null {
+  const resume = artifacts.filter((a) => a.kind === 'resume-variant');
+  if (resume.length === 0) return null;
+  const maxVersion = Math.max(...resume.map((a) => a.version));
+  const atLatest = resume.filter((a) => a.version === maxVersion);
+  if (atLatest.some((a) => a.format === 'pdf')) return null;
+  if (atLatest.some((a) => a.format === 'tex' || a.format === 'log')) {
+    return maxVersion;
+  }
+  return null;
+}
+
+function appendResumePdfMissingWarning(
+  mode: 'both' | 'resume' | 'cover-letter',
+  generatedArtifacts: ArtifactRecord[],
+  prior: string[]
+): string[] {
+  if (mode !== 'both' && mode !== 'resume') return prior;
+  const resume = generatedArtifacts.filter((a) => a.kind === 'resume-variant');
+  if (resume.length === 0) return prior;
+  const maxVersion = Math.max(...resume.map((a) => a.version));
+  const atLatest = resume.filter((a) => a.version === maxVersion);
+  if (atLatest.some((a) => a.format === 'pdf')) return prior;
+  if (!atLatest.some((a) => a.format === 'tex') && !atLatest.some((a) => a.format === 'log')) {
+    return prior;
+  }
+  return [
+    ...prior,
+    `Resume v${maxVersion}: no PDF was produced (LaTeX compile failed). Open resume-variant tectonic.log in the table below.`
+  ];
+}
+
 function buildArtifactUrl(artifactId: string, download = false): string {
   const baseUrl = getApiBaseUrl();
   const search = download ? '?download=1' : '';
@@ -80,8 +113,13 @@ export default async function JobArtifactsPage({
       const result = await generateJobArtifacts(jobId, { mode: payloadMode });
       revalidatePath(`/jobs/${jobId}/artifacts`);
       revalidatePath(`/jobs/${jobId}`);
-      if (result.warnings?.length) {
-        warningText = ` (warnings: ${result.warnings.join('; ')})`;
+      const merged = appendResumePdfMissingWarning(
+        payloadMode,
+        result.artifacts,
+        result.warnings ?? []
+      );
+      if (merged.length > 0) {
+        warningText = ` (warnings: ${merged.join('; ')})`;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate artifacts.';
@@ -102,6 +140,8 @@ export default async function JobArtifactsPage({
       }
       return accumulator;
     }, {});
+
+  const resumeMissingPdfVersion = latestResumeVariantVersionWithoutPdf(artifacts);
 
   // Read but don't display flash params - FlashToast handles them
   void resolvedSearchParams;
@@ -179,7 +219,7 @@ export default async function JobArtifactsPage({
         ) : null}
       </div>
 
-      {Object.keys(latestPdfArtifacts).length > 0 ? (
+      {Object.keys(latestPdfArtifacts).length > 0 || resumeMissingPdfVersion != null ? (
         <div className="rounded-xl border bg-card p-6 shadow-sm">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -190,41 +230,51 @@ export default async function JobArtifactsPage({
               These are the compiled outputs served by the API. Open or download the latest version
               for each artifact kind.
             </p>
+            {resumeMissingPdfVersion != null ? (
+              <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                Latest tailored resume (v{resumeMissingPdfVersion}) has no PDF—only LaTeX and/or a
+                compile log were saved. The resume is omitted from this grid until Tectonic succeeds;
+                check the <span className="font-medium">tectonic.log</span> row for{' '}
+                <span className="font-medium">resume-variant</span> below.
+              </p>
+            ) : null}
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
-            {Object.values(latestPdfArtifacts).map((artifact) => (
-              <article key={artifact.id} className="rounded-lg border bg-muted/50 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                      {artifact.kind}
-                    </p>
-                    <h4 className="mt-1 text-sm font-semibold">
-                      v{artifact.version} - {artifact.fileName}
-                    </h4>
+          {Object.keys(latestPdfArtifacts).length > 0 ? (
+            <div className="mt-6 grid gap-6 xl:grid-cols-2">
+              {Object.values(latestPdfArtifacts).map((artifact) => (
+                <article key={artifact.id} className="rounded-lg border bg-muted/50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                        {artifact.kind}
+                      </p>
+                      <h4 className="mt-1 text-sm font-semibold">
+                        v{artifact.version} - {artifact.fileName}
+                      </h4>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                        <a href={buildArtifactUrl(artifact.id)} target="_blank" rel="noreferrer">
+                          Open PDF
+                        </a>
+                      </Button>
+                      <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                        <a href={buildArtifactUrl(artifact.id, true)} target="_blank" rel="noreferrer">
+                          Download PDF
+                        </a>
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                      <a href={buildArtifactUrl(artifact.id)} target="_blank" rel="noreferrer">
-                        Open PDF
-                      </a>
-                    </Button>
-                    <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                      <a href={buildArtifactUrl(artifact.id, true)} target="_blank" rel="noreferrer">
-                        Download PDF
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-                <iframe
-                  title={`${artifact.kind} preview`}
-                  src={buildArtifactUrl(artifact.id)}
-                  className="mt-4 h-[28rem] w-full rounded-lg border bg-card"
-                />
-              </article>
-            ))}
-          </div>
+                  <iframe
+                    title={`${artifact.kind} preview`}
+                    src={buildArtifactUrl(artifact.id)}
+                    className="mt-4 h-[28rem] w-full rounded-lg border bg-card"
+                  />
+                </article>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

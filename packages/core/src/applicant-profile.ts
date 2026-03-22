@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { minimalAutofillProfileSchema } from './autofill-profile';
 import { jobKeywordProfileSchema } from './job-keyword-profile';
 
 export const applicantProfileSchema = z.object({
@@ -17,6 +18,7 @@ export const applicantProfileSchema = z.object({
   preferredCountries: z.array(z.string().length(2)).default([]),
   jobKeywordProfile: jobKeywordProfileSchema.nullable().default(null),
   jobKeywordProfileGeneratedAt: z.coerce.date().nullable().default(null),
+  autofillProfile: minimalAutofillProfileSchema,
   updatedAt: z.date()
 });
 
@@ -26,7 +28,8 @@ export const applicantProfileInputSchema = applicantProfileSchema
   })
   .extend({
     jobKeywordProfile: jobKeywordProfileSchema.nullable().optional(),
-    jobKeywordProfileGeneratedAt: z.coerce.date().nullable().optional()
+    jobKeywordProfileGeneratedAt: z.coerce.date().nullable().optional(),
+    autofillProfile: minimalAutofillProfileSchema.optional()
   });
 
 export type ApplicantProfile = z.infer<typeof applicantProfileSchema>;

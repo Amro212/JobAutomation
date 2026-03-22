@@ -92,11 +92,65 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
         'message',
         `Discovery run completed: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated).`
       );
+    } else if (latestDetail?.run.status === 'partial') {
+      params.set(
+        'message',
+        `Discovery finished with some source errors: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated). Open Runs to retry failed sources.`
+      );
     } else if (latestDetail?.run.status === 'failed') {
       params.set('error', latestDetail.run.errorMessage ?? 'Discovery run failed.');
     } else {
       params.set('message', 'Discovery run queued. Counts will appear once the run completes.');
     }
+  }
+
+  const query = params.toString();
+  redirect(query.length > 0 ? `/jobs?${query}` : '/jobs');
+}
+
+async function runAllDiscoverySourcesAction(_formData: FormData): Promise<void> {
+  'use server';
+
+  const sources = await getDiscoverySources();
+  const enabledIds = sources.filter((source) => source.enabled).map((source) => source.id);
+
+  if (enabledIds.length === 0) {
+    redirect(
+      `/jobs?${new URLSearchParams({
+        error: 'Enable at least one discovery source before running all.'
+      }).toString()}`
+    );
+  }
+
+  const [run] = await runDiscoverySources({
+    sourceIds: enabledIds
+  });
+
+  const detail = await waitForDiscoveryRun(run.id, { timeoutMs: 300_000 });
+  revalidatePath('/jobs');
+  revalidatePath('/runs');
+
+  const params = new URLSearchParams();
+  const latestDetail = detail ?? (await getDiscoveryRun(run.id));
+  const sourceCount = enabledIds.length;
+
+  if (latestDetail?.run.status === 'completed') {
+    params.set(
+      'message',
+      `Ran ${sourceCount} sources: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated).`
+    );
+  } else if (latestDetail?.run.status === 'partial') {
+    params.set(
+      'message',
+      `Ran ${sourceCount} sources with some errors: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated). Open Runs to retry failed sources.`
+    );
+  } else if (latestDetail?.run.status === 'failed') {
+    params.set('error', latestDetail.run.errorMessage ?? 'Discovery run failed.');
+  } else {
+    params.set(
+      'message',
+      `Discovery run queued for ${sourceCount} sources. Counts will appear on Runs when complete.`
+    );
   }
 
   const query = params.toString();
@@ -172,7 +226,12 @@ function getSearchParamArray(
   return arr.length > 0 ? arr : undefined;
 }
 
-function buildJobsListHref(query: JobListQuery, page: number, pageSize: number): string {
+function buildJobsListHref(
+  query: JobListQuery,
+  page: number,
+  pageSize: number,
+  meaningfulMatchScope: boolean
+): string {
   const params = new URLSearchParams();
   if (query.sourceKind) params.set('sourceKind', query.sourceKind);
   if (query.status) params.set('status', query.status);
@@ -184,6 +243,11 @@ function buildJobsListHref(query: JobListQuery, page: number, pageSize: number):
     for (const code of query.locationCountries) {
       params.append('country', code);
     }
+  }
+  if (query.matchProfile === 'me') {
+    params.set('matchProfile', 'me');
+  } else if (query.matchProfile === 'all' && meaningfulMatchScope) {
+    params.set('matchProfile', 'all');
   }
   params.set('page', String(page));
   params.set('pageSize', String(pageSize));
@@ -197,6 +261,12 @@ export default async function JobsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
+  const { profile } = await getApplicantProfile();
+
+  const meaningfulMatchScope =
+    profile != null &&
+    (profile.jobKeywordProfile != null || profile.preferredCountries.length > 0);
+
   const query = jobListQuerySchema.parse({
     sourceKind: getSearchParamValue(resolvedSearchParams.sourceKind),
     status: getSearchParamValue(resolvedSearchParams.status),
@@ -205,33 +275,49 @@ export default async function JobsPage({
     location: getSearchParamValue(resolvedSearchParams.location),
     companyName: getSearchParamValue(resolvedSearchParams.companyName),
     locationCountries: getSearchParamArray(resolvedSearchParams.country),
+    matchProfile: getSearchParamValue(resolvedSearchParams.matchProfile),
     page: getSearchParamValue(resolvedSearchParams.page),
     pageSize: getSearchParamValue(resolvedSearchParams.pageSize)
   });
-  const parsedFilters = jobListFiltersSchema.parse(query);
+
+  const explicitMatch = query.matchProfile;
+  const matchProfile: 'me' | 'all' =
+    explicitMatch === 'me' || explicitMatch === 'all'
+      ? explicitMatch
+      : meaningfulMatchScope
+        ? 'me'
+        : 'all';
+
+  let filters = jobListFiltersSchema.parse({
+    sourceKind: query.sourceKind,
+    status: query.status,
+    remoteType: query.remoteType,
+    title: query.title,
+    location: query.location,
+    companyName: query.companyName,
+    locationCountries: query.locationCountries,
+    matchProfile
+  });
+
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
 
   const hasExplicitCountry = resolvedSearchParams.country !== undefined;
-  let filters = parsedFilters;
-
   if (!hasExplicitCountry && (!filters.locationCountries || filters.locationCountries.length === 0)) {
-    const { profile } = await getApplicantProfile();
     if (profile && profile.preferredCountries.length > 0) {
       filters = { ...filters, locationCountries: profile.preferredCountries };
     }
   }
 
+  const listQuery: JobListQuery = {
+    ...query,
+    matchProfile,
+    locationCountries: filters.locationCountries
+  };
+
   const [{ jobs, total }, companyOptions, sources] = await Promise.all([
     getJobs(filters, { page, pageSize }),
-    getDistinctCompanyNames({
-      sourceKind: filters.sourceKind,
-      status: filters.status,
-      remoteType: filters.remoteType,
-      title: filters.title,
-      location: filters.location,
-      locationCountries: filters.locationCountries
-    }),
+    getDistinctCompanyNames(filters),
     getDiscoverySources()
   ]);
 
@@ -245,25 +331,45 @@ export default async function JobsPage({
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Structured discovery is live for Greenhouse, Lever, and Ashby, and browser fallback can
           now onboard persisted Playwright sources when a public jobs page has no supported feed.
+          When you have a job filter profile or preferred countries on Setup, this list defaults to{' '}
+          <span className="font-medium text-foreground">My matches</span> so off-target roles stay
+          out of the way—use <span className="font-medium text-foreground">All jobs</span> to see the
+          full discovery pool.
         </p>
       </div>
       <DiscoverySourcesPanel
         sources={sources}
         createAction={addDiscoverySource}
         runAction={runDiscoverySourceAction}
+        runAllAction={runAllDiscoverySourcesAction}
         toggleAction={toggleDiscoverySource}
         importAction={importDiscoverySources}
       />
-      <JobFilters filters={filters} resetHref="/jobs" companyOptions={companyOptions} />
+      <JobFilters
+        filters={filters}
+        resetHref="/jobs"
+        companyOptions={companyOptions}
+        showMatchScope={meaningfulMatchScope}
+        matchScopeLinks={{
+          meHref: buildJobsListHref({ ...listQuery, matchProfile: 'me' }, 1, pageSize, meaningfulMatchScope),
+          allHref: buildJobsListHref({ ...listQuery, matchProfile: 'all' }, 1, pageSize, meaningfulMatchScope)
+        }}
+      />
       <JobsTable
         jobs={jobs}
-        emptyMessage="No jobs matched the current filters."
+        emptyMessage={
+          filters.matchProfile === 'me' && total === 0
+            ? 'No jobs match your Setup filter profile with the current filters. Try All jobs, relax filters, or adjust your profile on Setup.'
+            : 'No jobs matched the current filters.'
+        }
         footer={
           <JobsPagination
             currentPage={page}
             pageSize={pageSize}
             total={total}
-            hrefForPage={(nextPage) => buildJobsListHref(query, nextPage, pageSize)}
+            hrefForPage={(nextPage) =>
+              buildJobsListHref(listQuery, nextPage, pageSize, meaningfulMatchScope)
+            }
           />
         }
       />

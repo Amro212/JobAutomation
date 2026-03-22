@@ -30,8 +30,26 @@ describe('database schema', () => {
     expect(jobColumns.sourceKind).toBeDefined();
     expect(jobColumns.sourceId).toBeDefined();
     expect(jobColumns.discoveryRunId).toBeDefined();
+    expect(jobColumns.prefilterPass).toBeDefined();
+    expect(jobColumns.prefilterReasonsJson).toBeDefined();
     expect(runColumns.scheduleId).toBeDefined();
     expect(applicantColumns.baseResumeFileName).toBeDefined();
     expect(applicantColumns.baseResumeTex).toBeDefined();
+    expect(applicantColumns.autofillProfileJson).toBeDefined();
+  });
+
+  test('keeps application run and evidence linkage explicit', () => {
+    const applicationRunColumns = getTableColumns(applicationRunsTable);
+    const artifactColumns = getTableColumns(artifactsTable);
+    const logEventColumns = getTableColumns(logEventsTable);
+
+    expect(applicationRunColumns.siteKey).toBeDefined();
+    expect(applicationRunColumns.currentStep).toBeDefined();
+    expect(applicationRunColumns.prefilterReasonsJson).toBeDefined();
+    expect(applicationRunColumns.resumeArtifactId).toBeDefined();
+    expect(applicationRunColumns.coverLetterArtifactId).toBeDefined();
+    expect(applicationRunColumns.updatedAt).toBeDefined();
+    expect(artifactColumns.applicationRunId).toBeDefined();
+    expect(logEventColumns.applicationRunId).toBeDefined();
   });
 });

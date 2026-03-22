@@ -35,6 +35,7 @@ export async function saveJobKeywordProfileAction(raw: unknown): Promise<void> {
     baseResumeFileName: existing.baseResumeFileName,
     baseResumeTex: existing.baseResumeTex,
     preferredCountries: existing.preferredCountries,
+    autofillProfile: existing.autofillProfile,
     jobKeywordProfile: parsed.data,
     jobKeywordProfileGeneratedAt: existing.jobKeywordProfileGeneratedAt ?? new Date()
   });

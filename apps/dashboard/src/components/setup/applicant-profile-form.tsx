@@ -1,6 +1,8 @@
-import type { ApplicantProfile } from '@jobautomation/core';
+import { defaultMinimalAutofillProfile, type ApplicantProfile } from '@jobautomation/core';
 
+import { MinimalAutofillFields } from '@/components/setup/minimal-autofill-fields';
 import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
+import { PhoneField } from '@/components/setup/phone-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SubmitButton } from '@/components/submit-button';
@@ -19,7 +21,8 @@ const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
   baseResumeTex: '',
   preferredCountries: [],
   jobKeywordProfile: null,
-  jobKeywordProfileGeneratedAt: null
+  jobKeywordProfileGeneratedAt: null,
+  autofillProfile: defaultMinimalAutofillProfile
 };
 
 export function ApplicantProfileForm({
@@ -43,10 +46,12 @@ export function ApplicantProfileForm({
           <span className="font-medium">Email</span>
           <Input name="email" defaultValue={current.email} />
         </label>
-        <label className="space-y-2 text-sm">
-          <span className="font-medium">Phone</span>
-          <Input name="phone" defaultValue={current.phone} />
-        </label>
+        <div className="space-y-2 text-sm">
+          <label className="font-medium" htmlFor="applicant-phone">
+            Phone
+          </label>
+          <PhoneField id="applicant-phone" name="phone" defaultValue={current.phone} />
+        </div>
         <label className="space-y-2 text-sm">
           <span className="font-medium">Location</span>
           <Input name="location" defaultValue={current.location} />
@@ -108,6 +113,8 @@ export function ApplicantProfileForm({
           className="font-mono text-xs"
         />
       </label>
+
+      <MinimalAutofillFields profile={current.autofillProfile} />
 
       <input type="hidden" name="id" value={current.id} />
 

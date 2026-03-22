@@ -6,15 +6,25 @@ export const tailoringResumeEditSchema = z.object({
   rationale: z.string().trim().max(400).optional().default('')
 });
 
+const lenientResumeEditSchema = z.object({
+  search: z.string().trim().max(500).default(''),
+  replacement: z.string().trim().max(600).default(''),
+  rationale: z.string().trim().max(400).optional().default('')
+});
+
 export const tailoringOutputSchema = z.object({
   resumeKeywords: z
     .array(z.string().trim().min(1).max(60))
     .default([])
     .transform((arr) => arr.slice(0, 15)),
   resumeEdits: z
-    .array(tailoringResumeEditSchema)
+    .array(lenientResumeEditSchema)
     .default([])
-    .transform((arr) => arr.slice(0, 12))
+    .transform((arr) =>
+      arr
+        .filter((edit) => edit.search.length > 0 && edit.replacement.length > 0)
+        .slice(0, 12)
+    )
 });
 
 export type TailoringOutput = z.infer<typeof tailoringOutputSchema>;
@@ -37,7 +47,8 @@ export const tailoringOutputJsonSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['search', 'replacement'],
+        // Strict json_schema providers require every `properties` key in `required` (optional fields use empty string).
+        required: ['search', 'replacement', 'rationale'],
         properties: {
           search: {
             type: 'string',

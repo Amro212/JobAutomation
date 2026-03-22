@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { JobReviewPanel } from '@/components/jobs/job-review-panel';
 import {
   addJobToShortlist,
+  createApplicationRun,
   getJob,
   getJobReviewCapabilities,
   removeJobFromShortlist,
@@ -114,6 +115,25 @@ export default async function JobDetailPage({
     redirect(buildJobDetailHref(jobId, { message: 'Summary and score updated.' }));
   }
 
+  async function startApplicationRunAction(): Promise<void> {
+    'use server';
+
+    let runId = '';
+    try {
+      const result = await createApplicationRun({ jobId });
+      runId = result.run.id;
+      revalidatePath('/applications');
+      revalidatePath(`/applications/${runId}`);
+      revalidatePath(`/jobs/${jobId}`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to start the application run.';
+      redirect(buildJobDetailHref(jobId, { error: message }));
+    }
+
+    redirect(`/applications/${runId}`);
+  }
+
   return (
     <section className="space-y-6">
       <div className="rounded-xl border bg-card p-6 shadow-sm">
@@ -129,6 +149,11 @@ export default async function JobDetailPage({
             <Button variant="outline" size="sm" asChild>
               <Link href={`/jobs/${jobId}/artifacts`}>View artifacts</Link>
             </Button>
+            <form action={startApplicationRunAction}>
+              <Button variant="default" size="sm" type="submit">
+                Start application run
+              </Button>
+            </form>
             <Button variant="outline" size="sm" asChild>
               <a href={job.sourceUrl} target="_blank" rel="noreferrer">
                 Open source posting

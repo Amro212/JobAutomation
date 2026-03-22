@@ -1,5 +1,6 @@
 export * from './client';
 export * from './migrate';
+export * from './repositories/application-runs-repository';
 export * from './repositories/applicant-profile-repository';
 export * from './repositories/artifacts-repository';
 export * from './repositories/discovery-runs-repository';

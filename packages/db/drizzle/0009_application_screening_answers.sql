@@ -1,0 +1,1 @@
+ALTER TABLE `applicant_profile` ADD `application_screening_json` text DEFAULT '{}' NOT NULL;

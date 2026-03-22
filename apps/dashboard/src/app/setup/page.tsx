@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { Badge } from '@/components/ui/badge';
 import { ApplicantProfileForm } from '@/components/setup/applicant-profile-form';
 import { JobKeywordProfileSection } from '@/components/setup/job-keyword-profile-section';
+import { parseMinimalAutofillFormData } from '@/lib/minimal-autofill-form';
 import { getApplicantProfile, saveApplicantProfile } from '@/lib/api';
 
 async function saveSetup(formData: FormData): Promise<void> {
@@ -34,11 +35,21 @@ async function saveSetup(formData: FormData): Promise<void> {
       : String(formData.get('baseResumeFileName') ?? ''),
     baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? ''),
     preferredCountries,
+    autofillProfile: parseMinimalAutofillFormData(formData),
     jobKeywordProfile: existing?.jobKeywordProfile ?? null,
     jobKeywordProfileGeneratedAt: existing?.jobKeywordProfileGeneratedAt ?? null
   });
 
   revalidatePath('/setup');
+}
+
+function applicantProfileFormKey(profile: { id: string; updatedAt: Date | string } | null): string {
+  if (!profile) {
+    return 'applicant-setup-new';
+  }
+  const stamp =
+    profile.updatedAt instanceof Date ? profile.updatedAt.toISOString() : String(profile.updatedAt);
+  return `${profile.id}-${stamp}`;
 }
 
 export default async function SetupPage() {
@@ -90,7 +101,11 @@ export default async function SetupPage() {
           </div>
         </div>
       </div>
-      <ApplicantProfileForm action={saveSetup} profile={profile} />
+      <ApplicantProfileForm
+        key={applicantProfileFormKey(profile)}
+        action={saveSetup}
+        profile={profile}
+      />
       <JobKeywordProfileSection profile={profile} />
     </section>
   );

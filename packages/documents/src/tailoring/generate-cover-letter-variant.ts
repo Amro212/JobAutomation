@@ -14,6 +14,10 @@ import { storeArtifact } from '../artifacts/store-artifact';
 import { compileLatexDocument } from '../compiler/tectonic';
 import { escapeLatex } from '../tokens/escape-latex';
 import { buildTailoringInput } from './build-tailoring-input';
+import {
+  buildCoverLetterContactRow,
+  buildCoverLetterMailingLines
+} from './cover-letter-tokens';
 import { loadApplicantContext } from './load-applicant-context';
 import { loadBaseResume } from './load-base-resume';
 
@@ -120,16 +124,19 @@ export async function generateCoverLetterVariant(
     'utf8'
   );
 
+  const addressee = 'Hiring Manager';
   const tokens: Record<string, string> = {
-    '{{date}}': escapeLatex(dateStr),
-    '{{addressee}}': escapeLatex('Hiring Manager'),
-    '{{company_name}}': escapeLatex(input.job.companyName),
-    '{{position_title}}': escapeLatex(input.job.title),
     '{{candidate_name}}': escapeLatex(input.applicantProfile.fullName || 'Applicant'),
-    '{{candidate_email}}': escapeLatex(input.applicantProfile.email || ''),
-    '{{candidate_phone}}': escapeLatex(input.applicantProfile.phone || ''),
-    '{{candidate_location}}': escapeLatex(input.applicantProfile.location || ''),
-    '{{cover_letter_body}}': body
+    '{{contact_row}}': buildCoverLetterContactRow(input.applicantProfile),
+    '{{letter_date}}': escapeLatex(dateStr),
+    '{{recipient_line}}': escapeLatex(addressee),
+    '{{company_line}}': escapeLatex(input.job.companyName),
+    '{{mailing_lines}}': buildCoverLetterMailingLines(input.job),
+    '{{greeting_line}}': escapeLatex(`Dear ${addressee},`),
+    '{{cover_letter_body}}': body,
+    '{{closer_line}}': escapeLatex('Sincerely'),
+    '{{signoff_name}}': escapeLatex(input.applicantProfile.fullName || 'Applicant'),
+    '{{signoff_title}}': ''
   };
 
   let coverLetterTex = coverLetterTemplate;

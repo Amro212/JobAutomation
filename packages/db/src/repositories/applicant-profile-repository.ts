@@ -2,9 +2,11 @@ import {
   applicantProfileInputSchema,
   applicantProfileSchema,
   jobKeywordProfileSchema,
+  minimalAutofillProfileSchema,
   type ApplicantProfile,
   type ApplicantProfileInput,
-  type JobKeywordProfile
+  type JobKeywordProfile,
+  type MinimalAutofillProfile
 } from '@jobautomation/core';
 import { eq } from 'drizzle-orm';
 
@@ -36,6 +38,20 @@ function parseJobKeywordProfileJson(raw: string | null | undefined): JobKeywordP
   }
 }
 
+function parseAutofillProfileJson(raw: string | null | undefined): MinimalAutofillProfile {
+  if (raw == null || raw.trim() === '') {
+    return minimalAutofillProfileSchema.parse({});
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const result = minimalAutofillProfileSchema.safeParse(parsed);
+    return result.success ? result.data : minimalAutofillProfileSchema.parse({});
+  } catch {
+    return minimalAutofillProfileSchema.parse({});
+  }
+}
+
 function mapApplicantProfile(record: typeof applicantProfileTable.$inferSelect): ApplicantProfile {
   return applicantProfileSchema.parse({
     id: record.id,
@@ -52,6 +68,7 @@ function mapApplicantProfile(record: typeof applicantProfileTable.$inferSelect):
     preferredCountries: parseCountriesJson(record.preferredCountries),
     jobKeywordProfile: parseJobKeywordProfileJson(record.jobKeywordProfileJson),
     jobKeywordProfileGeneratedAt: record.jobKeywordProfileGeneratedAt ?? null,
+    autofillProfile: parseAutofillProfileJson(record.autofillProfileJson),
     updatedAt: record.updatedAt
   });
 }
@@ -84,8 +101,16 @@ export class ApplicantProfileRepository {
         ? parsed.jobKeywordProfileGeneratedAt
         : existing?.jobKeywordProfileGeneratedAt ?? null;
 
+    const mergedAutofill =
+      parsed.autofillProfile !== undefined
+        ? minimalAutofillProfileSchema.parse(parsed.autofillProfile)
+        : existing
+          ? parseAutofillProfileJson(existing.autofillProfileJson)
+          : minimalAutofillProfileSchema.parse({});
+
     const countriesJson = JSON.stringify(parsed.preferredCountries ?? []);
     const keywordJson = mergedKeywordProfile ? JSON.stringify(mergedKeywordProfile) : null;
+    const autofillJson = JSON.stringify(mergedAutofill);
     const now = new Date();
 
     const row = {
@@ -103,6 +128,7 @@ export class ApplicantProfileRepository {
       preferredCountries: countriesJson,
       jobKeywordProfileJson: keywordJson,
       jobKeywordProfileGeneratedAt: mergedKeywordGeneratedAt,
+      autofillProfileJson: autofillJson,
       updatedAt: now
     };
 
@@ -122,6 +148,7 @@ export class ApplicantProfileRepository {
         preferredCountries: row.preferredCountries,
         jobKeywordProfileJson: row.jobKeywordProfileJson,
         jobKeywordProfileGeneratedAt: row.jobKeywordProfileGeneratedAt,
+        autofillProfileJson: row.autofillProfileJson,
         updatedAt: row.updatedAt
       }
     });
@@ -132,6 +159,7 @@ export class ApplicantProfileRepository {
       preferredCountries: parsed.preferredCountries ?? [],
       jobKeywordProfile: mergedKeywordProfile,
       jobKeywordProfileGeneratedAt: mergedKeywordGeneratedAt,
+      autofillProfile: mergedAutofill,
       updatedAt: now
     });
   }

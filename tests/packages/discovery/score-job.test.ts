@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import type { ApplicantProfile } from '@jobautomation/core';
+import type { ApplicantProfile } from '../../../packages/core/src/applicant-profile';
+import { minimalAutofillProfileSchema } from '../../../packages/core/src/autofill-profile';
 
 import { createDatabaseClient, JobsRepository } from '../../../packages/db/src';
 import { JobScoreError, scoreJob } from '../../../packages/discovery/src/services/score-job';
@@ -246,6 +247,7 @@ describe('scoreJob', () => {
       preferredCountries: [],
       jobKeywordProfile: null,
       jobKeywordProfileGeneratedAt: null,
+      autofillProfile: minimalAutofillProfileSchema.parse({}),
       updatedAt: new Date('2026-03-15T10:00:00.000Z')
     };
 
@@ -347,6 +349,7 @@ describe('scoreJob', () => {
         seniority: 'senior'
       },
       jobKeywordProfileGeneratedAt: new Date('2026-03-15T10:00:00.000Z'),
+      autofillProfile: minimalAutofillProfileSchema.parse({}),
       updatedAt: new Date('2026-03-15T10:00:00.000Z')
     };
 

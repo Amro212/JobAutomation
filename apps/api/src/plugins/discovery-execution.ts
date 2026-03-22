@@ -6,6 +6,7 @@ import { logEventRecordSchema } from '@jobautomation/core';
 
 import { DiscoveryQueueService } from '../services/discovery-queue';
 import { DiscoverySchedulerService } from '../services/discovery-scheduler';
+import { recomputeJobPrefilterMatches } from '../services/job-prefilter-recompute';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -24,7 +25,11 @@ export const registerDiscoveryExecutionPlugin = fp(async (app) => {
     greenhouseBaseUrl: app.config.GREENHOUSE_API_BASE_URL,
     leverBaseUrl: app.config.LEVER_API_BASE_URL,
     ashbyBaseUrl: app.config.ASHBY_API_BASE_URL,
-    concurrency: app.config.DISCOVERY_QUEUE_CONCURRENCY
+    concurrency: app.config.DISCOVERY_QUEUE_CONCURRENCY,
+    afterDiscoveryRun: async () => {
+      const profile = await app.repositories.applicantProfile.get();
+      await recomputeJobPrefilterMatches(app.repositories.jobs, profile);
+    }
   });
 
   const scheduler = new DiscoverySchedulerService({

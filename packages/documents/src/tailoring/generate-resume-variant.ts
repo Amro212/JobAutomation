@@ -8,6 +8,7 @@ import { buildResumeTailoringPrompt, tailoringOutputJsonSchema, tailoringOutputS
 import { storeArtifact } from '../artifacts/store-artifact';
 import { compileLatexDocument } from '../compiler/tectonic';
 import { renderTemplate } from '../tokens/render-template';
+import { balanceResumeSubHeadingLists } from './balance-resume-subheading-lists';
 import { buildTailoringInput } from './build-tailoring-input';
 import { loadApplicantContext } from './load-applicant-context';
 import { loadBaseResume } from './load-base-resume';
@@ -125,7 +126,7 @@ export async function generateResumeVariant(
   const jobDir = join(outputRoot, 'artifacts', input.job.id, 'resume-variant', `v${version}`);
   const texPath = join(jobDir, 'resume.tex');
   const pdfPath = join(jobDir, 'resume.pdf');
-  const tailoredResumeTex = applyTargetedResumeEdits(
+  let tailoredResumeTex = applyTargetedResumeEdits(
     renderTemplate(baseResume.baseResumeTex, {
       job_title: input.job.title,
       company_name: input.job.companyName,
@@ -136,6 +137,8 @@ export async function generateResumeVariant(
     }),
     llmOutput
   );
+
+  tailoredResumeTex = balanceResumeSubHeadingLists(tailoredResumeTex).tex;
 
   await mkdir(jobDir, { recursive: true });
   await writeFile(texPath, tailoredResumeTex, 'utf8');

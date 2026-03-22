@@ -21,7 +21,11 @@ export async function storeApplicantContext(
     linkedinUrl: input.profile?.linkedinUrl ?? '',
     websiteUrl: input.profile?.websiteUrl ?? '',
     baseResumeFileName: input.profile?.baseResumeFileName ?? '',
-    baseResumeTex: input.profile?.baseResumeTex ?? ''
+    baseResumeTex: input.profile?.baseResumeTex ?? '',
+    preferredCountries: input.profile?.preferredCountries ?? [],
+    autofillProfile: input.profile?.autofillProfile,
+    jobKeywordProfile: input.profile?.jobKeywordProfile ?? null,
+    jobKeywordProfileGeneratedAt: input.profile?.jobKeywordProfileGeneratedAt ?? null
   };
 
   return input.applicantProfileRepository.save(profile);

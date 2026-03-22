@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 
 import { Toaster } from '@/components/ui/sonner';
 import { FlashToast } from '@/components/flash-toast';
+import { HeaderBackButton } from '@/components/header-back-button';
 import { NavLink } from '@/components/nav-link';
 
 import './globals.css';
@@ -31,12 +32,15 @@ export default function RootLayout({
       <body>
         <div className="min-h-screen">
           <header className="sticky top-0 z-50 border-b bg-card">
-            <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                  JobAutomation
-                </p>
-                <h1 className="text-lg font-semibold text-foreground">Control Panel</h1>
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
+              <div className="flex min-w-0 items-center gap-2">
+                <HeaderBackButton />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                    JobAutomation
+                  </p>
+                  <h1 className="text-lg font-semibold text-foreground">Control Panel</h1>
+                </div>
               </div>
               <nav className="flex gap-1" aria-label="Primary">
                 {navItems.map((item) => (

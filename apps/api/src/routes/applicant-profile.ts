@@ -2,6 +2,8 @@ import { applicantProfileInputSchema } from '@jobautomation/core';
 import { generateJobKeywordProfile, JobKeywordProfileError } from '@jobautomation/discovery';
 import type { FastifyPluginAsync } from 'fastify';
 
+import { recomputeJobPrefilterMatches } from '../services/job-prefilter-recompute';
+
 type ApplicantProfileReadiness = {
   hasBaseResume: boolean;
   hasReusableContext: boolean;
@@ -28,8 +30,19 @@ export const registerApplicantProfileRoutes: FastifyPluginAsync = async (app) =>
   });
 
   app.put('/applicant-profile', async (request) => {
+    const before = await app.repositories.applicantProfile.get();
     const input = applicantProfileInputSchema.parse(request.body ?? {});
     const profile = await app.repositories.applicantProfile.save(input);
+
+    const countriesChanged =
+      JSON.stringify(before?.preferredCountries ?? []) !== JSON.stringify(profile.preferredCountries);
+    const keywordChanged =
+      JSON.stringify(before?.jobKeywordProfile ?? null) !== JSON.stringify(profile.jobKeywordProfile ?? null);
+
+    if (countriesChanged || keywordChanged) {
+      await recomputeJobPrefilterMatches(app.repositories.jobs, profile);
+    }
+
     return { profile, readiness: buildReadiness(profile) };
   });
 
@@ -56,6 +69,7 @@ export const registerApplicantProfileRoutes: FastifyPluginAsync = async (app) =>
       });
 
       const profile = await app.repositories.applicantProfile.saveJobKeywordProfile(keywordProfile);
+      await recomputeJobPrefilterMatches(app.repositories.jobs, profile);
       return { profile, readiness: buildReadiness(profile) };
     } catch (error) {
       if (error instanceof JobKeywordProfileError) {
