@@ -186,7 +186,9 @@ export class JobsRepository {
   }
 
   async distinctCompanyNames(filters: JobListFilters = {}): Promise<string[]> {
-    const whereClause = this.buildWhereClause(filters);
+    // Do not apply companyName here: the list populates the company filter UI;
+    // including it would narrow distinct names to the current selection only.
+    const whereClause = this.buildWhereClause({ ...filters, companyName: undefined });
     const base = this.db
       .selectDistinct({ companyName: jobsTable.companyName })
       .from(jobsTable);

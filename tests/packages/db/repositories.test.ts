@@ -108,6 +108,52 @@ describe('repositories', () => {
     expect(jobs[0]?.status).toBe('reviewing');
   });
 
+  test('distinctCompanyNames ignores companyName so filter dropdown stays broad', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, {
+      migrationsFolder
+    });
+
+    const repository = new JobsRepository(db);
+    const discoveredAt = new Date('2026-03-13T10:00:00.000Z');
+    const updatedAt = new Date('2026-03-13T10:00:00.000Z');
+    const base = {
+      sourceKind: 'greenhouse' as const,
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/x',
+      location: 'Remote',
+      remoteType: 'remote' as const,
+      employmentType: 'full-time' as const,
+      compensationText: null as string | null,
+      descriptionText: 'Role',
+      rawPayload: null as string | null,
+      discoveryRunId: null as string | null,
+      status: 'discovered' as const,
+      discoveredAt,
+      updatedAt
+    };
+
+    await repository.upsert({
+      ...base,
+      sourceId: 'job-alpha',
+      companyName: 'Alpha Inc',
+      title: 'Engineer'
+    });
+    await repository.upsert({
+      ...base,
+      sourceId: 'job-beta',
+      companyName: 'Beta LLC',
+      title: 'Engineer'
+    });
+
+    const listFiltered = await repository.listSummary({ companyName: 'Alpha' });
+    const distinctWithCompanyFilter = await repository.distinctCompanyNames({ companyName: 'Alpha' });
+
+    expect(listFiltered.total).toBe(1);
+    expect(distinctWithCompanyFilter).toEqual(['Alpha Inc', 'Beta LLC']);
+  });
+
   test('listSummary matchProfile=me uses cached prefilter_pass', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);

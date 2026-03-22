@@ -130,7 +130,6 @@ export async function getDistinctCompanyNames(
         remoteType: filters.remoteType,
         title: filters.title,
         location: filters.location,
-        companyName: filters.companyName,
         matchProfile: filters.matchProfile === 'me' ? 'me' : undefined
       },
       filters.locationCountries && filters.locationCountries.length > 0
