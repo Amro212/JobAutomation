@@ -26,6 +26,13 @@ export type GenerateCoverLetterVariantInput = {
   applicantProfile: ApplicantProfile;
   artifactsRepository: ArtifactsRepository;
   outputRoot?: string;
+  /**
+   * Job-specific tailored resume TeX (same content as the resume variant PDF). When set, the model
+   * uses this as the factual source instead of the canonical profile resume, keeping letter and resume aligned.
+   */
+  resumeTexForCoverLetter?: string | null;
+  /** When true, prompts indicate the resume text is the tailored variant for this job. */
+  coverLetterResumeIsTailoredVariant?: boolean;
   openRouter?: {
     generateStructuredObject(input: {
       schemaName: string;
@@ -38,11 +45,19 @@ export type GenerateCoverLetterVariantInput = {
 
 async function generateCoverLetterContent(
   input: ReturnType<typeof buildTailoringInput>,
-  openRouter?: GenerateCoverLetterVariantInput['openRouter']
+  openRouter: GenerateCoverLetterVariantInput['openRouter'],
+  options?: {
+    resumeTexOverride?: string | null;
+    resumeIsTailoredVariant?: boolean;
+  }
 ): Promise<CoverLetterOutput | null> {
   if (!openRouter) {
     return null;
   }
+
+  const override = options?.resumeTexOverride;
+  const resumeTex =
+    typeof override === 'string' && override.trim().length > 0 ? override : input.baseResumeTex;
 
   const prompt = buildCoverLetterPrompt({
     jobTitle: input.job.title,
@@ -52,7 +67,8 @@ async function generateCoverLetterContent(
     applicantSummary: input.applicantProfile.summary,
     applicantContext: input.applicantContext,
     baseResumeFileName: input.baseResumeFileName,
-    baseResumeTex: input.baseResumeTex
+    baseResumeTex: resumeTex,
+    coverLetterResumeIsTailoredVariant: Boolean(options?.resumeIsTailoredVariant)
   });
 
   const raw = await openRouter.generateStructuredObject({
@@ -100,7 +116,22 @@ export async function generateCoverLetterVariant(
     job: input.job,
     applicantProfile: input.applicantProfile
   });
-  const draft = await generateCoverLetterContent(tailoringInput, input.openRouter ?? null);
+  const letterOpts: {
+    resumeTexOverride?: string;
+    resumeIsTailoredVariant?: boolean;
+  } = {};
+  if (typeof input.resumeTexForCoverLetter === 'string' && input.resumeTexForCoverLetter.trim().length > 0) {
+    letterOpts.resumeTexOverride = input.resumeTexForCoverLetter;
+  }
+  if (input.coverLetterResumeIsTailoredVariant === true) {
+    letterOpts.resumeIsTailoredVariant = true;
+  }
+
+  const draft = await generateCoverLetterContent(
+    tailoringInput,
+    input.openRouter ?? null,
+    Object.keys(letterOpts).length > 0 ? letterOpts : undefined
+  );
   const outputRoot = resolve(input.outputRoot ?? 'output');
   const version = await input.artifactsRepository.nextVersionForJobAndKind(
     input.job.id,

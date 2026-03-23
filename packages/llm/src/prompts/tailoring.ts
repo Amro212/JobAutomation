@@ -10,6 +10,11 @@ export type TailoringPromptInput = {
   /** Optional short tokens from deterministic job/profile extraction; use as hints only. */
   jobKeywordHints?: string[];
   hiringManagerName?: string;
+  /**
+   * When true, `baseResumeTex` is the job-specific tailored resume (same facts as the resume PDF).
+   * The model must stay consistent with that text and must not invent experiences beyond it.
+   */
+  coverLetterResumeIsTailoredVariant?: boolean;
 };
 
 /** Strip common HTML job-board markup so the model sees clean requirements text. */
@@ -117,7 +122,7 @@ export function buildCoverLetterPrompt(input: TailoringPromptInput): {
 
   const systemPrompt = [
     'You write natural, human-sounding cover letters for software engineering roles.',
-    'The writing must feel like it was written by a thoughtful college-level candidate, not AI.',
+    'The voice is honest, down-to-earth, and humble: a real person, not a brochure or an AI.',
     'Rules you MUST follow:',
     '1. Write 220-320 words total across 3-5 paragraphs.',
     '2. NEVER use em dashes. Use commas, periods, or semicolons instead.',
@@ -125,22 +130,34 @@ export function buildCoverLetterPrompt(input: TailoringPromptInput): {
     '4. Vary sentence length and rhythm. Mix short and longer sentences to avoid uniformity.',
     '5. Avoid predictable or cliché openings like "I am excited to apply". Start in a more direct, specific way.',
     '6. Use slightly conversational phrasing where appropriate, but remain professional.',
-    '7. Make direct, specific references to the job posting, including technologies, responsibilities, or team goals.',
-    '8. Highlight 1-2 relevant experiences with concrete technical detail and realistic impact.',
-    '9. Show clear alignment between past work and what the team is building.',
+    '7. Weave in what the role involves (tools, problems, scale) as plain facts about the work, the way a human would.',
+    '   Do NOT use meta-phrases about documents: never say "job description", "the posting", "as mentioned/stated in",',
+    '   "per the requirements", "technical requirements at [company]", "this role asks for", or similar.',
+    '   Do NOT say you are "matching" or "aligning with" a document; show overlap through concrete stories instead.',
+    '8. Highlight 1-2 relevant experiences with concrete technical detail and realistic impact, drawn only from the resume and context provided.',
+    '9. Be strictly honest: do NOT fabricate skills, employers, projects, or metrics. If the employer cares about something you have not done yet,',
+    '   say so briefly and positively (e.g. eager to go deeper, willing to learn, building on adjacent experience).',
+    '   Relate the closest real experience you do have without exaggerating overlap.',
     '10. Avoid filler phrases and generic statements. Every sentence should add meaningful information.',
     '11. Avoid repetitive sentence structures. Do NOT start every sentence or paragraph the same way.',
     '12. Use strong but natural action verbs. Avoid exaggerated or buzzword-heavy language.',
     '13. Do NOT over-explain or sound overly formal. Slight imperfection in phrasing is acceptable if it improves realism.',
-    '14. Be honest. Do NOT fabricate skills or experiences.',
-    '15. Keep the closing short, confident, and not overly enthusiastic.',
-    '16. Do NOT mention any file names, LaTeX, or internal tooling.',
-    '17. Do NOT mention how the letter was generated.',
-    '18. Return ONLY plain text paragraphs. No markdown or special formatting.',
-    '19. Return strict JSON matching the schema. No commentary.'
+    '14. Keep the closing short, warm, and sincere; not salesy or over-enthusiastic.',
+    '15. Do NOT mention any file names, LaTeX, or internal tooling.',
+    '16. Do NOT mention how the letter was generated.',
+    '17. Return ONLY plain text paragraphs. No markdown or special formatting.',
+    '18. Return strict JSON matching the schema. No commentary.'
   ].join(' ');
 
   const plainJobDescription = toPlainJobDescription(input.descriptionText);
+
+  const resumeBlockTitle = input.coverLetterResumeIsTailoredVariant
+    ? '--- APPLICANT RESUME (tailored for this role; source of truth for facts—do NOT mention LaTeX or file names) ---'
+    : '--- APPLICANT RESUME (source of truth for facts—do NOT mention LaTeX or file names) ---';
+
+  const resumeConsistencyNote = input.coverLetterResumeIsTailoredVariant
+    ? 'This resume text is the same job-specific version the applicant is using for this application. Name the same skills, projects, and outcomes; do not add claims that are not supported there.'
+    : 'Ground every technical claim in the resume and context; do not invent experience.';
 
   const prompt = [
     `Job title: ${input.jobTitle}`,
@@ -149,7 +166,7 @@ export function buildCoverLetterPrompt(input: TailoringPromptInput): {
     `Addressee: ${addressee}`,
     `Date: ${dateStr}`,
     '',
-    '--- JOB DESCRIPTION (plain text) ---',
+    '--- ROLE AND EMPLOYER (plain text from the listing; use for substance, not for quoting the listing) ---',
     plainJobDescription,
     '',
     '--- APPLICANT BACKGROUND ---',
@@ -158,18 +175,20 @@ export function buildCoverLetterPrompt(input: TailoringPromptInput): {
     '--- APPLICANT CONTEXT ---',
     input.applicantContext,
     '',
-    '--- APPLICANT RESUME CONTENT (for reference only, do NOT mention LaTeX or file names) ---',
+    resumeBlockTitle,
     input.baseResumeTex,
     '',
     '--- TASK ---',
     `Write a cover letter body for the ${input.jobTitle} position at ${input.companyName}.`,
     `The letter is addressed to "${addressee}" and dated ${dateStr}.`,
+    resumeConsistencyNote,
     'Write 3-5 paragraphs (200-350 words total).',
-    'The first paragraph should express interest in the specific role and company.',
-    'The middle paragraphs should connect the applicant\'s real experience to the job requirements with specific examples.',
-    'The final paragraph should express enthusiasm and invite further conversation.',
+    'The first paragraph should express genuine interest in the role and company without formulaic openers.',
+    'Middle paragraphs: concrete stories from the resume/context that fit the kind of work described for the role.',
+    'If something in the listing is newer to the applicant, acknowledge learning interest and tie to the closest real experience—never fake it.',
+    'The final paragraph should be a simple, human closing and openness to talk further.',
     'Return the paragraphs in the coverLetterParagraphs array.',
-    'Remember: no em dashes, no file references, no fabricated experience, simple vocabulary, sincere tone.'
+    'Remember: no em dashes; no references to "job description", postings, or requirements documents; no fabricated experience; humble, sincere tone.'
   ].join('\n');
 
   return { systemPrompt, prompt };

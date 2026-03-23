@@ -1,4 +1,5 @@
 import {
+  type ArtifactRecord,
   artifactRecordSchema,
   applicantProfileSchema,
   jobRecordSchema
@@ -37,6 +38,28 @@ function buildOpenRouterClient(
     baseUrl: app.config.OPENROUTER_API_BASE_URL,
     model: app.config.OPENROUTER_JOB_SUMMARY_MODEL || DEFAULT_OPENROUTER_JOB_SUMMARY_MODEL
   });
+}
+
+async function readResumeVariantTexFromArtifacts(artifacts: ArtifactRecord[]): Promise<string | null> {
+  const texArtifact = artifacts.find((a) => a.kind === 'resume-variant' && a.format === 'tex');
+  if (!texArtifact || !existsSync(texArtifact.storagePath)) {
+    return null;
+  }
+  return readFile(texArtifact.storagePath, 'utf8');
+}
+
+async function readLatestResumeVariantTexForJob(
+  jobId: string,
+  artifactsRepository: {
+    listByJobAndKind(jobId: string, kind: string): Promise<ArtifactRecord[]>;
+  }
+): Promise<string | null> {
+  const rows = await artifactsRepository.listByJobAndKind(jobId, 'resume-variant');
+  const texArtifact = rows.find((a) => a.format === 'tex');
+  if (!texArtifact || !existsSync(texArtifact.storagePath)) {
+    return null;
+  }
+  return readFile(texArtifact.storagePath, 'utf8');
 }
 
 export const registerArtifactsRoutes: FastifyPluginAsync = async (app) => {
@@ -120,16 +143,26 @@ export const registerArtifactsRoutes: FastifyPluginAsync = async (app) => {
     }> = [];
     const errors: string[] = [];
 
+    let resumeTexForCoverLetter: string | null = null;
+    let coverLetterUsesTailoredResume = false;
+
     if (mode === 'both' || mode === 'resume') {
       try {
-        generatedArtifacts.push(
-          ...(await generateResumeVariant({
-            job,
-            applicantProfile: profile,
-            artifactsRepository: app.repositories.artifacts,
-            openRouter
-          }))
-        );
+        const resumeArtifacts = await generateResumeVariant({
+          job,
+          applicantProfile: profile,
+          artifactsRepository: app.repositories.artifacts,
+          openRouter
+        });
+        generatedArtifacts.push(...resumeArtifacts);
+
+        if (mode === 'both') {
+          const tex = await readResumeVariantTexFromArtifacts(resumeArtifacts);
+          if (tex) {
+            resumeTexForCoverLetter = tex;
+            coverLetterUsesTailoredResume = true;
+          }
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Resume generation failed.';
         app.log.error({ err: error, jobId }, 'Resume variant generation failed');
@@ -138,13 +171,23 @@ export const registerArtifactsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     if (mode === 'both' || mode === 'cover-letter') {
+      if (mode === 'cover-letter') {
+        const tex = await readLatestResumeVariantTexForJob(jobId, app.repositories.artifacts);
+        if (tex) {
+          resumeTexForCoverLetter = tex;
+          coverLetterUsesTailoredResume = true;
+        }
+      }
+
       try {
         generatedArtifacts.push(
           ...(await generateCoverLetterVariant({
             job,
             applicantProfile: profile,
             artifactsRepository: app.repositories.artifacts,
-            openRouter
+            openRouter,
+            resumeTexForCoverLetter,
+            coverLetterResumeIsTailoredVariant: coverLetterUsesTailoredResume
           }))
         );
       } catch (error) {
