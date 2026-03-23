@@ -7,58 +7,80 @@ export type TailoringPromptInput = {
   applicantContext: string;
   baseResumeFileName: string;
   baseResumeTex: string;
+  /** Optional short tokens from deterministic job/profile extraction; use as hints only. */
+  jobKeywordHints?: string[];
   hiringManagerName?: string;
 };
+
+/** Strip common HTML job-board markup so the model sees clean requirements text. */
+export function toPlainJobDescription(descriptionText: string): string {
+  const raw = descriptionText.trim();
+  if (!raw.includes('<') && !raw.includes('&')) {
+    return raw;
+  }
+
+  return raw
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|ul|ol|tr)>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, '\n- ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
 
 export function buildResumeTailoringPrompt(input: TailoringPromptInput): {
   systemPrompt: string;
   prompt: string;
 } {
+  const plainJobDescription = toPlainJobDescription(input.descriptionText);
+
   const systemPrompt = [
-    'You are an ATS optimization specialist and technical resume editor.',
-    'Your task is to produce a small set of precise LaTeX text replacements that improve resume-to-job-description alignment without changing facts or damaging formatting.',
-    'Think like an expert editor, not a resume generator: make selective, high-value wording changes only.',
-  
-    'Core objective:',
-    'Improve ATS keyword alignment, technical specificity, and recruiter readability by revising existing LaTeX resume content using terminology supported by both the resume and the job posting.',
-    'Do not rewrite broadly. Do not invent. Do not over-optimize.',
-  
-    'Strict edit constraints:',
-    '1. Every resumeEdit.search must be an EXACT substring from the source LaTeX resume.',
-    '2. Every resumeEdit.replacement must be valid LaTeX and structurally compatible with the replaced text.',
-    '3. Preserve all required LaTeX macros, list boundaries, and closing tags.',
-    '4. Never create malformed environments or unbalanced macros.',
-    '5. Never add new bullets, sections, roles, projects, or achievements.',
-    '6. Never fabricate skills, tools, metrics, responsibilities, or experience.',
-    '7. Never overstate the candidate’s level, ownership, or impact.',
-    '8. Only make edits that are truthful, natural, and materially beneficial.',
-  
-    'Edit priority:',
-    '9. Prioritize Experience bullets, Project bullets, and Technical Skills.',
-    '10. Target content with the strongest potential match to the job posting.',
-    '11. Prefer edits that improve keyword relevance, technical clarity, and action-oriented phrasing.',
-    '12. Avoid cosmetic edits with little ATS or readability value.',
-  
-    'Writing quality rules:',
-    '13. Use natural, professional language.',
-    '14. Integrate keywords only where they fit credibly.',
-    '15. Avoid keyword stuffing, awkward phrasing, and AI-sounding language.',
-    '16. Keep edits concise and high-signal.',
-  
-    'Output constraints:',
-    '17. Return 3-6 edits total.',
-    '18. Return strict JSON only.',
-    '19. No markdown, no prose, no explanations outside the schema.',
-    '20. Ensure JSON escaping is correct and LaTeX remains valid.'
+    'You are a surgical resume editor for ATS and recruiters: small, honest wording and ordering changes only—never a new story.',
+    'Infer high-signal phrases from THIS job description, then place them only where they match the candidate’s real expertise (Applicant Summary, Applicant Context, and existing resume text).',
+    'Rules:',
+    '1. Each resumeEdit.search MUST be an EXACT substring from the LaTeX resume (character-for-character inside \\begin{document}...\\end{document}).',
+    '2. Each resumeEdit.replacement MUST be valid LaTeX and preserve the same structure (no extra blank lines, no new \\par, no new \\\\ line breaks).',
+    '3. Do NOT add new bullets, sections, jobs, projects, employers, dates, or fabricated experience.',
+    '4. Preserve every concrete detail already in the resume: proper nouns, product names, tools, workflows, outcomes, and ALL numbers (counts, percentages, dollar amounts, dates, durations). Do not remove or rewrite metrics; you may only add JD-aligned wording around them.',
+    '5. Default to phrase-level edits (roughly 4-12 words) so the line still reads naturally. Avoid swapping an entire \\resumeItem{...} unless you retain almost all of the original wording and only tune a short clause.',
+    '6. Each replacement must be NO SHORTER than its search string (character count). Prefer ADDING a short JD-aligned phrase beside existing facts rather than deleting nuance.',
+    '7. Do NOT remove \\resumeItem lines, merge bullets, or reduce the number of bullets in any section.',
+    '8. PRIMARY TARGETS (in this order): (A) the Technical Skills block—reorder, group, or add comma-separated tokens that Applicant Context or the resume already substantiates; (B) Projects section bullets—seamlessly weave JD terms that clearly match what each project already describes.',
+    '9. EXPERIENCE SECTION: use at most 1–2 edits total, and only for tight in-bounds tweaks (e.g. naming an API style or stack you already used). Do NOT reframe jobs to sound like a different domain (no injecting AI/ML, labeling, annotation, “AI applications,” model training, etc.) unless Applicant Context or that bullet already establishes that work.',
+    '10. At least half of your resumeEdits (round up) MUST target the Technical Skills area and/or Projects (e.g. \\section{Technical Skills} content or \\resumeItem lines under Projects). The rest may include at most the allowed Experience tweaks.',
+    '11. Technical Skills: reorder lists so JD-relevant tools appear early; add a skill only when the same family of tech is already implied (coursework, shipped project, or internship stack in Context/resume). Never invent tools you cannot defend in an interview.',
+    '12. resumeKeywords: return 10-15 items, ordered most-important-first—exact tool names and short phrases drawn from the posting’s requirements and responsibilities.',
+    '13. Seamless bar: after edits, a reader should feel “polished for this role,” not “keyword-stuffed.” Same underlying expertise; clearer overlap with the posting.',
+    '14. Make AT LEAST 4 edits and at most 9.',
+    '15. Do not add vague buzzwords or domain jumps (e.g. stuffing “AI,” “annotation,” “large-scale ML”) where the source material is CMS, IT support, or generic web work unless Context explicitly ties that role to those topics.',
+    '16. Return strict JSON only, no markdown or commentary.'
   ].join(' ');
+
+  const hintBlock =
+    input.jobKeywordHints && input.jobKeywordHints.length > 0
+      ? ['', '--- KEYWORD HINTS (deterministic; verify against job + resume) ---', input.jobKeywordHints.join(', ')].join(
+          '\n'
+        )
+      : '';
 
   const prompt = [
     `Job title: ${input.jobTitle}`,
     `Company: ${input.companyName}`,
     `Location: ${input.location}`,
+    hintBlock,
     '',
-    '--- JOB DESCRIPTION ---',
-    input.descriptionText,
+    '--- JOB DESCRIPTION (plain text) ---',
+    plainJobDescription,
     '',
     '--- APPLICANT SUMMARY ---',
     input.applicantSummary,
@@ -70,11 +92,11 @@ export function buildResumeTailoringPrompt(input: TailoringPromptInput): {
     input.baseResumeTex,
     '',
     '--- TASK ---',
-    'Analyze the job description and identify keywords, technologies, and phrases that an ATS would scan for.',
-    'Then look at the resume above and find bullet points or skill lines that could be reworded to include those keywords naturally.',
-    'Provide search/replacement pairs. The "search" field must be copied EXACTLY from the resume above, character for character, including LaTeX commands.',
-    'The "replacement" field should be the improved version with better keyword alignment for this specific job.',
-    'Also list the top ATS keywords from the job description in resumeKeywords.',
+    '1) Read the job description plus Applicant Summary and Applicant Context; list resumeKeywords (10-15) for this employer only.',
+    '2) Plan edits that are mostly Technical Skills (ordering/substantiated additions) and Projects (short phrase tweaks). Keep Experience edits minimal and never reframed.',
+    '3) Every new keyword or skill must trace to the candidate’s stated expertise: same stack, same project domain, or explicit note in Context—otherwise skip it.',
+    '4) Use SHORT search spans by default; each "search" copied EXACTLY from the resume. Each "replacement" keeps the same LaTeX structure and must be at least as long as "search".',
+    '5) Do not delete metrics, named APIs, or distinctive technical phrases to make room for buzzwords.',
     'Return only the JSON object.'
   ].join('\n');
 
@@ -118,6 +140,8 @@ export function buildCoverLetterPrompt(input: TailoringPromptInput): {
     '19. Return strict JSON matching the schema. No commentary.'
   ].join(' ');
 
+  const plainJobDescription = toPlainJobDescription(input.descriptionText);
+
   const prompt = [
     `Job title: ${input.jobTitle}`,
     `Company: ${input.companyName}`,
@@ -125,8 +149,8 @@ export function buildCoverLetterPrompt(input: TailoringPromptInput): {
     `Addressee: ${addressee}`,
     `Date: ${dateStr}`,
     '',
-    '--- JOB DESCRIPTION ---',
-    input.descriptionText,
+    '--- JOB DESCRIPTION (plain text) ---',
+    plainJobDescription,
     '',
     '--- APPLICANT BACKGROUND ---',
     `Name: ${input.applicantSummary}`,

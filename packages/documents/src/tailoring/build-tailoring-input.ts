@@ -27,7 +27,24 @@ const STOP_WORDS = new Set([
   'job',
   'resume',
   'experience',
-  'company'
+  'company',
+  'you',
+  'our',
+  'are',
+  'will',
+  'has',
+  'have',
+  'all',
+  'not',
+  'may',
+  'can',
+  'any',
+  'per',
+  'including',
+  'such',
+  'more',
+  'most',
+  'other'
 ]);
 
 function extractResumeBullets(baseResumeTex: string): string[] {
@@ -43,7 +60,7 @@ function extractKeywords(text: string): string[] {
     .map((word) => word.trim())
     .filter((word) => word.length > 2 && !STOP_WORDS.has(word));
 
-  return Array.from(new Set(words)).slice(0, 12);
+  return Array.from(new Set(words)).slice(0, 24);
 }
 
 export function buildTailoringInput(input: {

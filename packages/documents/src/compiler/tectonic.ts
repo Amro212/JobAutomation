@@ -92,6 +92,25 @@ export async function compileLatexDocument(
     const rawTex = await readFile(input.texPath, 'utf8');
     const sanitized = sanitizeForTectonic(rawTex);
     if (sanitized !== rawTex) {
+      // #region agent log
+      fetch('http://127.0.0.1:7523/ingest/f8ff69c0-aa7e-4d26-8e6f-026a796070cc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b525c0' },
+        body: JSON.stringify({
+          sessionId: 'b525c0',
+          runId: 'pre-fix',
+          hypothesisId: 'H5',
+          location: 'tectonic.ts:sanitizeForTectonic',
+          message: 'tectonic rewrote tex for compat (line comment)',
+          data: {
+            texPath: input.texPath,
+            rawLineCount: rawTex.split(/\r?\n/).length,
+            sanitizedLineCount: sanitized.split(/\r?\n/).length
+          },
+          timestamp: Date.now()
+        })
+      }).catch(() => {});
+      // #endregion
       await writeFile(input.texPath, sanitized, 'utf8');
     }
   } catch {

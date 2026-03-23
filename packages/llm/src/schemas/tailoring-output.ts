@@ -2,13 +2,13 @@ import { z } from 'zod';
 
 export const tailoringResumeEditSchema = z.object({
   search: z.string().trim().min(1).max(500),
-  replacement: z.string().trim().min(1).max(600),
+  replacement: z.string().trim().min(1).max(2000),
   rationale: z.string().trim().max(400).optional().default('')
 });
 
 const lenientResumeEditSchema = z.object({
   search: z.string().trim().max(500).default(''),
-  replacement: z.string().trim().max(600).default(''),
+  replacement: z.string().trim().max(2000).default(''),
   rationale: z.string().trim().max(400).optional().default('')
 });
 
@@ -58,7 +58,7 @@ export const tailoringOutputJsonSchema = {
           replacement: {
             type: 'string',
             minLength: 1,
-            maxLength: 600
+            maxLength: 2000
           },
           rationale: {
             type: 'string',

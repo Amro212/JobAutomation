@@ -62,7 +62,14 @@ export function ApplicantProfileForm({
         </label>
         <label className="space-y-2 text-sm">
           <span className="font-medium">Website URL</span>
-          <Input name="websiteUrl" defaultValue={current.websiteUrl} />
+          <Input
+            name="websiteUrl"
+            defaultValue={current.websiteUrl}
+            placeholder="yoursite.com or https://yoursite.com"
+          />
+          <span className="text-xs text-muted-foreground">
+            Bare domains are saved as https automatically.
+          </span>
         </label>
       </div>
 

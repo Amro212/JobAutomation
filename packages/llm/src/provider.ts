@@ -1,5 +1,3 @@
-import { formatOpenRouterHttpError } from './open-router-http-error';
-
 export type OpenRouterConfig = {
   apiKey: string;
   baseUrl: string;
@@ -95,24 +93,19 @@ function isRetryableFetchError(error: unknown): boolean {
     return false;
   }
 
-  // AbortSignal.timeout() fires a TimeoutError (DOMException). Don't retry — the request
-  // already waited the full timeout window and retrying would multiply the wait time.
-  if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-    return false;
-  }
-
+  const message = error.message.toLowerCase();
   const cause = error.cause as
     | {
         code?: string;
         message?: string;
       }
     | undefined;
-  const message = error.message.toLowerCase();
   const code = cause?.code?.toLowerCase() ?? '';
   const causeMessage = cause?.message?.toLowerCase() ?? '';
 
   return (
     message.includes('fetch failed') ||
+    message.includes('timeout') ||
     code.includes('timeout') ||
     code.includes('econnreset') ||
     code.includes('enetunreach') ||
@@ -133,29 +126,6 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
 
       for (let attempt = 1; attempt <= OPENROUTER_MAX_FETCH_ATTEMPTS; attempt += 1) {
         try {
-          const requestBody = JSON.stringify({
-            model: config.model,
-            plugins: [{ id: 'response-healing' }],
-            response_format: {
-              type: 'json_schema',
-              json_schema: {
-                name: input.schemaName,
-                strict: true,
-                schema: input.schema
-              }
-            },
-            messages: [
-              {
-                role: 'system',
-                content: input.systemPrompt
-              },
-              {
-                role: 'user',
-                content: input.prompt
-              }
-            ]
-          });
-
           response = await fetchImpl(endpoint, {
             method: 'POST',
             headers: {
@@ -163,7 +133,22 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
               'content-type': 'application/json'
             },
             signal: AbortSignal.timeout(OPENROUTER_REQUEST_TIMEOUT_MS),
-            body: requestBody
+            body: JSON.stringify({
+              model: config.model,
+              response_format: {
+                type: 'json_object'
+              },
+              messages: [
+                {
+                  role: 'system',
+                  content: input.systemPrompt
+                },
+                {
+                  role: 'user',
+                  content: input.prompt
+                }
+              ]
+            })
           });
           break;
         } catch (error) {
@@ -188,17 +173,19 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
       }
 
       if (!response.ok) {
-        const errorText = await response.text();
-        let providerMessage = '';
+        let details = '';
 
         try {
-          const errorPayload = JSON.parse(errorText) as OpenRouterErrorResponse;
-          providerMessage = errorPayload.error?.message?.trim() ?? '';
+          const errorPayload = (await response.json()) as OpenRouterErrorResponse;
+          const message = errorPayload.error?.message?.trim();
+          if (message) {
+            details = `: ${message}`;
+          }
         } catch {
-          providerMessage = '';
+          details = '';
         }
 
-        throw new Error(formatOpenRouterHttpError(response.status, providerMessage));
+        throw new Error(`OpenRouter request failed with status ${response.status}${details}.`);
       }
 
       const payload = (await response.json()) as OpenRouterResponse;

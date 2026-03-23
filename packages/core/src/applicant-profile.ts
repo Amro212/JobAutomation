@@ -3,6 +3,27 @@ import { z } from 'zod';
 import { minimalAutofillProfileSchema } from './autofill-profile';
 import { jobKeywordProfileSchema } from './job-keyword-profile';
 
+/**
+ * Trim; empty stays empty. If there is no `scheme:` prefix, prepend `https://` so bare hosts
+ * (e.g. `itsamro.me`) satisfy `.url()`.
+ */
+export function normalizeOptionalHttpUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return '';
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+    return trimmed;
+  }
+  return `https://${trimmed.replace(/^\/+/, '')}`;
+}
+
+const optionalHttpUrlField = z
+  .string()
+  .default('')
+  .transform(normalizeOptionalHttpUrl)
+  .pipe(z.union([z.string().url(), z.literal('')]));
+
 export const applicantProfileSchema = z.object({
   id: z.string().default('default'),
   fullName: z.string().min(1).default(''),
@@ -11,8 +32,8 @@ export const applicantProfileSchema = z.object({
   location: z.string().default(''),
   summary: z.string().default(''),
   reusableContext: z.string().default(''),
-  linkedinUrl: z.string().url().or(z.literal('')).default(''),
-  websiteUrl: z.string().url().or(z.literal('')).default(''),
+  linkedinUrl: optionalHttpUrlField,
+  websiteUrl: optionalHttpUrlField,
   baseResumeFileName: z.string().default(''),
   baseResumeTex: z.string().default(''),
   preferredCountries: z.array(z.string().length(2)).default([]),
