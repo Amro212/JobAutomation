@@ -11,7 +11,11 @@ const TECTONIC_INCOMPATIBLE_LINES = [
 ];
 
 function sanitizeForTectonic(texContent: string): string {
-  return texContent
+  // "\\&" in prose is a common LLM typo: "\\" is a line break, then "&" becomes a misplaced
+  // alignment tab (Tectonic: "Misplaced alignment tab character &"). Literal "&" must be "\&".
+  const ampersandTypoFixed = texContent.replace(/\\\\&/g, '\\&');
+
+  return ampersandTypoFixed
     .split(/\r?\n/)
     .map((line) => {
       for (const pattern of TECTONIC_INCOMPATIBLE_LINES) {
