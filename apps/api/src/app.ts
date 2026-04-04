@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerApplicantProfileRoutes } from './routes/applicant-profile';
 import { registerArtifactsRoutes } from './routes/artifacts';
-import { registerApplicationRunRoutes } from './routes/application-runs.ts';
+import { registerApplicationRunRoutes } from './routes/application-runs';
 import { registerDiscoveryRunRoutes } from './routes/discovery-runs';
 import { registerDiscoveryScheduleRoutes } from './routes/discovery-schedules';
 import { registerDiscoverySourceRoutes } from './routes/discovery-sources';

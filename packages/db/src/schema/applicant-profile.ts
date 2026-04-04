@@ -17,5 +17,7 @@ export const applicantProfileTable = sqliteTable('applicant_profile', {
   jobKeywordProfileGeneratedAt: integer('job_keyword_profile_generated_at', { mode: 'timestamp_ms' }),
   /** Minimal autofill profile JSON (SQLite column: application_screening_json). */
   autofillProfileJson: text('application_screening_json').notNull().default('{}'),
+  /** Extended profile JSON with education, experience, skills, demographic, legal fields. */
+  extendedProfileJson: text('extended_profile_json').notNull().default('null'),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
 });

@@ -5,6 +5,7 @@ export * from './artifact';
 export * from './discovery-schedule';
 export * from './discovery-run';
 export * from './discovery-source';
+export * from './extended-profile';
 export * from './job';
 export * from './job-keyword-profile';
 export * from './job-prefilter';

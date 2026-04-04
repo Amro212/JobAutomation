@@ -16,6 +16,7 @@ export type ApplicationSession = {
   browser: Browser;
   context: BrowserContext;
   page: Page;
+  cdpUrl?: string;
   close: () => Promise<void>;
   finalizeTrace: () => Promise<string>;
 };
@@ -36,6 +37,11 @@ export type ApplicationSiteFlowContext = {
     details?: Record<string, unknown>;
   }) => Promise<{ artifactId: string; storagePath: string }>;
   stopBeforeSubmit: (input: {
+    step: string;
+    reviewUrl?: string | null;
+    details?: Record<string, unknown>;
+  }) => Promise<ApplicationRunRecordLike>;
+  completeAfterSubmit: (input: {
     step: string;
     reviewUrl?: string | null;
     details?: Record<string, unknown>;

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { minimalAutofillProfileSchema } from './autofill-profile';
 import { jobKeywordProfileSchema } from './job-keyword-profile';
+import { extendedProfileSchema } from './extended-profile';
 
 /**
  * Trim; empty stays empty. If there is no `scheme:` prefix, prepend `https://` so bare hosts
@@ -40,6 +41,7 @@ export const applicantProfileSchema = z.object({
   jobKeywordProfile: jobKeywordProfileSchema.nullable().default(null),
   jobKeywordProfileGeneratedAt: z.coerce.date().nullable().default(null),
   autofillProfile: minimalAutofillProfileSchema,
+  extendedProfile: extendedProfileSchema.nullable().default(null),
   updatedAt: z.date()
 });
 
@@ -50,7 +52,8 @@ export const applicantProfileInputSchema = applicantProfileSchema
   .extend({
     jobKeywordProfile: jobKeywordProfileSchema.nullable().optional(),
     jobKeywordProfileGeneratedAt: z.coerce.date().nullable().optional(),
-    autofillProfile: minimalAutofillProfileSchema.optional()
+    autofillProfile: minimalAutofillProfileSchema.optional(),
+    extendedProfile: extendedProfileSchema.nullable().optional()
   });
 
 export type ApplicantProfile = z.infer<typeof applicantProfileSchema>;

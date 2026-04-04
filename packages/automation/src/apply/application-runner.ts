@@ -95,6 +95,83 @@ function sanitizeSegment(value: string): string {
   return value.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
 }
 
+function resolveApplicationCdpPort(): number {
+  const raw = process.env.JOBAUTOMATION_APPLICATION_CDP_PORT?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : 9222;
+
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+    return 9222;
+  }
+
+  return parsed;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function resolveApplicationCdpWebSocketUrl(input: {
+  cdpPort: number;
+  maxAttempts?: number;
+  delayMs?: number;
+}): Promise<string | undefined> {
+  const configuredUrl = process.env.JOBAUTOMATION_APPLICATION_CDP_URL?.trim();
+  if (configuredUrl) {
+    if (configuredUrl.startsWith('ws://') || configuredUrl.startsWith('wss://')) {
+      return configuredUrl;
+    }
+
+    const sanitizedBase = configuredUrl
+      .replace(/\/json\/version\/?$/i, '')
+      .replace(/\/$/, '');
+
+    const response = await fetch(`${sanitizedBase}/json/version`);
+    if (!response.ok) {
+      return undefined;
+    }
+
+    const payload = (await response.json()) as {
+      webSocketDebuggerUrl?: string;
+    };
+
+    return payload.webSocketDebuggerUrl;
+  }
+
+  const maxAttempts = input.maxAttempts ?? 20;
+  const delayMs = input.delayMs ?? 200;
+  const versionUrl = `http://127.0.0.1:${input.cdpPort}/json/version`;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch(versionUrl);
+      if (!response.ok) {
+        if (attempt < maxAttempts) {
+          await sleep(delayMs);
+          continue;
+        }
+
+        return undefined;
+      }
+
+      const payload = (await response.json()) as {
+        webSocketDebuggerUrl?: string;
+      };
+
+      if (payload.webSocketDebuggerUrl) {
+        return payload.webSocketDebuggerUrl;
+      }
+    } catch {
+      // Best-effort retry while Chrome CDP boots.
+    }
+
+    if (attempt < maxAttempts) {
+      await sleep(delayMs);
+    }
+  }
+
+  return undefined;
+}
+
 function pickLatestPdfArtifact(artifacts: ArtifactRecord[]): ArtifactRecord | null {
   return artifacts
     .filter((artifact) => artifact.format === 'pdf')
@@ -241,18 +318,45 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     }
   });
 
+  const applicationCdpPort = resolveApplicationCdpPort();
+
   const browser = await (
     input.createBrowser ??
     (() =>
       createDiscoveryBrowser({
-        headless: process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED !== '1'
+        headless: process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED !== '1',
+        args: [`--remote-debugging-port=${applicationCdpPort}`]
       }))
   )();
+
+  const applicationCdpUrl = input.createBrowser
+    ? undefined
+    : await resolveApplicationCdpWebSocketUrl({
+        cdpPort: applicationCdpPort
+      });
+
+  if (!applicationCdpUrl) {
+    await logRunEvent(input.logEventsRepository, {
+      applicationRunId: runningRun.id,
+      jobId: job.id,
+      level: 'warn',
+      message:
+        'Could not resolve a CDP websocket URL for the application browser; Stagehand fallback may be skipped for unresolved fields.',
+      details: {
+        applicationRunId: runningRun.id,
+        siteKey: siteFlow.siteKey,
+        step: 'cdp_resolution',
+        cdpPort: applicationCdpPort
+      }
+    });
+  }
+
   const session = await (input.createSession ?? createApplicationSession)({
     browser,
     runId: runningRun.id,
     artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
-    startUrl: job.sourceUrl
+    startUrl: job.sourceUrl,
+    ...(applicationCdpUrl ? { cdpUrl: applicationCdpUrl } : {})
   });
 
   let finalTraceStopped = false;
@@ -362,6 +466,38 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
             });
           }
         });
+      },
+      completeAfterSubmit: async ({ step, reviewUrl, details = {} }) => {
+        const finalUrl = reviewUrl ?? session.page.url();
+
+        await logRunEvent(input.logEventsRepository, {
+          applicationRunId: runningRun.id,
+          jobId: job.id,
+          level: 'info',
+          message: 'Completed application run after automated submit.',
+          details: {
+            applicationRunId: runningRun.id,
+            siteKey: siteFlow.siteKey,
+            step,
+            pageUrl: finalUrl,
+            ...details
+          }
+        });
+
+        const completedRun = await input.applicationRunsRepository.update(runningRun.id, {
+          status: 'completed',
+          currentStep: step,
+          stopReason: null,
+          reviewUrl: finalUrl,
+          completedAt: new Date(),
+          updatedAt: new Date()
+        });
+
+        if (!completedRun) {
+          throw new Error(`Application run ${runningRun.id} was not found for completion update.`);
+        }
+
+        return completedRun;
       }
     });
 

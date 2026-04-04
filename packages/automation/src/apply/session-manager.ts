@@ -10,6 +10,7 @@ export async function createApplicationSession(input: {
   runId: string;
   artifactsRootDir: string;
   startUrl?: string;
+  cdpUrl?: string;
 }): Promise<ApplicationSession> {
   const context = await input.browser.newContext({
     locale: 'en-US'
@@ -33,6 +34,7 @@ export async function createApplicationSession(input: {
     browser: input.browser,
     context,
     page,
+    ...(input.cdpUrl ? { cdpUrl: input.cdpUrl } : {}),
     async finalizeTrace() {
       await mkdir(traceDir, { recursive: true });
       await context.tracing.stop({

@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ApplicantProfileForm } from '@/components/setup/applicant-profile-form';
 import { JobKeywordProfileSection } from '@/components/setup/job-keyword-profile-section';
 import { parseMinimalAutofillFormData } from '@/lib/minimal-autofill-form';
+import { parseExtendedProfileFromFormData } from '@/lib/extended-profile-form';
 import { getApplicantProfile, saveApplicantProfile } from '@/lib/api';
 
 async function saveSetup(formData: FormData): Promise<void> {
@@ -36,6 +37,7 @@ async function saveSetup(formData: FormData): Promise<void> {
     baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? ''),
     preferredCountries,
     autofillProfile: parseMinimalAutofillFormData(formData),
+    extendedProfile: parseExtendedProfileFromFormData(formData),
     jobKeywordProfile: existing?.jobKeywordProfile ?? null,
     jobKeywordProfileGeneratedAt: existing?.jobKeywordProfileGeneratedAt ?? null
   });

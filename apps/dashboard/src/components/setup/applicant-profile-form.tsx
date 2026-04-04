@@ -1,6 +1,11 @@
 import { defaultMinimalAutofillProfile, type ApplicantProfile } from '@jobautomation/core';
 
 import { MinimalAutofillFields } from '@/components/setup/minimal-autofill-fields';
+import { EducationFields } from '@/components/setup/education-fields';
+import { ExperienceFields } from '@/components/setup/experience-fields';
+import { SkillsFields } from '@/components/setup/skills-fields';
+import { DemographicFields } from '@/components/setup/demographic-fields';
+import { LegalFields } from '@/components/setup/legal-fields';
 import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
 import { PhoneField } from '@/components/setup/phone-field';
 import { Input } from '@/components/ui/input';
@@ -22,7 +27,8 @@ const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
   preferredCountries: [],
   jobKeywordProfile: null,
   jobKeywordProfileGeneratedAt: null,
-  autofillProfile: defaultMinimalAutofillProfile
+  autofillProfile: defaultMinimalAutofillProfile,
+  extendedProfile: null
 };
 
 export function ApplicantProfileForm({
@@ -122,6 +128,22 @@ export function ApplicantProfileForm({
       </label>
 
       <MinimalAutofillFields profile={current.autofillProfile} />
+
+      {/* Extended Profile Fields */}
+      <div className="space-y-8 rounded-xl border bg-card/50 p-6">
+        <div>
+          <h2 className="text-lg font-semibold">Extended Profile (Optional)</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Add detailed education, experience, skills, and other information to enhance application automation and document generation.
+          </p>
+        </div>
+
+        <EducationFields defaultEntries={current.extendedProfile?.education ?? []} />
+        <ExperienceFields defaultEntries={current.extendedProfile?.experience ?? []} />
+        <SkillsFields defaultSkills={current.extendedProfile?.skills} />
+        <DemographicFields defaultProfile={current.extendedProfile?.demographic} />
+        <LegalFields defaultProfile={current.extendedProfile?.legal} />
+      </div>
 
       <input type="hidden" name="id" value={current.id} />
 

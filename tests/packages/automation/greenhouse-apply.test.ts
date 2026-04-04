@@ -31,7 +31,6 @@ describe('greenhouse apply site flow', () => {
 
   let server: ReturnType<typeof createServer> | null = null;
   let baseUrl = '';
-  let currentUrl = '';
 
   beforeEach(async () => {
     writeFileSync(resumePath, Buffer.from('%PDF-1.4\n% greenhouse apply test resume\n'));
@@ -59,7 +58,7 @@ describe('greenhouse apply site flow', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test('fills a hosted inline Greenhouse form and stops before submit on the same page', async () => {
+  test('fills a hosted inline Greenhouse form and submits on the same page when no blockers remain', async () => {
     server = createServer((request, response) => {
       const url = request.url ?? '/';
 
@@ -164,6 +163,10 @@ describe('greenhouse apply site flow', () => {
 
     const captureScreenshot = vi.fn(async ({ step }: { step: string }) => {
       callLog.push(`screenshot:${step}`);
+      return {
+        artifactId: `artifact-${step}`,
+        storagePath: `/tmp/${step}.png`
+      };
     });
 
     const logRequiredField = vi.fn(async ({ label, classification }: { label: string; classification: string }) => {
@@ -172,7 +175,6 @@ describe('greenhouse apply site flow', () => {
 
     const stopBeforeSubmit = vi.fn(async (step: ApplyStopBeforeSubmitStep & { details?: Record<string, unknown> }) => {
       callLog.push(`stop:${step.name}`);
-      currentUrl = page.url();
     });
 
     const helpers: GreenhouseApplyHelpers = {
@@ -205,7 +207,8 @@ describe('greenhouse apply site flow', () => {
       applicationUrl: `${baseUrl}/jobs/senior-platform-engineer`,
       finalReviewUrl: `${baseUrl}/jobs/senior-platform-engineer`,
       pageMode: 'hosted-inline',
-      stoppedBeforeSubmit: true
+      stoppedBeforeSubmit: false,
+      submitted: true
     });
 
     expect(callLog).toEqual([
@@ -226,23 +229,12 @@ describe('greenhouse apply site flow', () => {
       'required:filled:Email',
       'required:filled:Country',
       'required:filled:Phone',
-      'stop:final_review'
+      'screenshot:submitted'
     ]);
 
-    expect(stopBeforeSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'final_review',
-        selector: '#submit_application',
-        details: expect.objectContaining({
-          pageMode: 'hosted-inline',
-          blockedRequiredFields: [],
-          reviewUrlSessionNote: expect.any(String)
-        })
-      })
-    );
-    expect(await page.evaluate(() => (window as Window & { __finalSubmitClicks?: number }).__finalSubmitClicks ?? 0)).toBe(0);
+    expect(stopBeforeSubmit).not.toHaveBeenCalled();
+    expect(await page.evaluate(() => (window as Window & { __finalSubmitClicks?: number }).__finalSubmitClicks ?? 0)).toBe(1);
     expect(page.url()).toBe(`${baseUrl}/jobs/senior-platform-engineer`);
-    expect(currentUrl).toBe(`${baseUrl}/jobs/senior-platform-engineer`);
     await context.close();
     await browser.close();
   }, 30000);
@@ -328,11 +320,9 @@ describe('greenhouse apply site flow', () => {
     });
 
     const logRequiredField = vi.fn();
-    const stopBeforeSubmit = vi.fn(async (_step: ApplyStopBeforeSubmitStep & { details?: Record<string, unknown> }) => {
-      currentUrl = page.url();
-    });
+    const stopBeforeSubmit = vi.fn(async (_step: ApplyStopBeforeSubmitStep & { details?: Record<string, unknown> }) => {});
 
-    await runGreenhouseApply({
+    const result = await runGreenhouseApply({
       page,
       sourceUrl: `${baseUrl}/jobs/associate-software-engineer`,
       applicant: {
@@ -357,6 +347,11 @@ describe('greenhouse apply site flow', () => {
       }
     });
 
+    expect(result).toMatchObject({
+      stoppedBeforeSubmit: false,
+      submitted: true
+    });
+
     expect(logRequiredField).toHaveBeenCalledWith(
       expect.objectContaining({
         label: 'Will you require sponsorship from Example for employment now or in the future?',
@@ -364,17 +359,7 @@ describe('greenhouse apply site flow', () => {
         filled: true
       })
     );
-    expect(stopBeforeSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'final_review',
-        details: expect.objectContaining({
-          pageMode: 'hosted-inline',
-          reviewUrlSessionNote: expect.any(String),
-          blockedRequiredFields: []
-        })
-      })
-    );
-    expect(currentUrl).toBe(`${baseUrl}/jobs/associate-software-engineer`);
+    expect(stopBeforeSubmit).not.toHaveBeenCalled();
 
     await context.close();
     await browser.close();
@@ -461,11 +446,9 @@ describe('greenhouse apply site flow', () => {
     });
 
     const logRequiredField = vi.fn();
-    const stopBeforeSubmit = vi.fn(async (_step: ApplyStopBeforeSubmitStep & { details?: Record<string, unknown> }) => {
-      currentUrl = page.url();
-    });
+    const stopBeforeSubmit = vi.fn(async (_step: ApplyStopBeforeSubmitStep & { details?: Record<string, unknown> }) => {});
 
-    await runGreenhouseApply({
+    const result = await runGreenhouseApply({
       page,
       sourceUrl: `${baseUrl}/jobs/associate-software-engineer`,
       applicant: {
@@ -486,6 +469,11 @@ describe('greenhouse apply site flow', () => {
         logRequiredField,
         stopBeforeSubmit
       }
+    });
+
+    expect(result).toMatchObject({
+      stoppedBeforeSubmit: true,
+      submitted: false
     });
 
     expect(logRequiredField).toHaveBeenCalledWith(

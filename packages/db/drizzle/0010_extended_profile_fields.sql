@@ -1,0 +1,1 @@
+ALTER TABLE `applicant_profile` ADD `extended_profile_json` text DEFAULT 'null' NOT NULL;

@@ -1,6 +1,11 @@
 import type { Locator, Page } from 'playwright';
 
-import type { MinimalAutofillProfile } from '@jobautomation/core';
+import {
+  defaultExtendedProfile,
+  parseWorkAuthorizationCountriesCsv,
+  type ExtendedProfile,
+  type MinimalAutofillProfile
+} from '@jobautomation/core';
 
 import {
   classifyApplicationQuestionLabel,
@@ -9,6 +14,11 @@ import {
 } from '../autofill-question-map';
 import type { SupportedApplicationSite } from '../contracts';
 import { uploadArtifactFile } from '../file-upload';
+import {
+  runStagehandFieldHandler,
+  type StagehandTargetField,
+  type StagehandFieldHandlerResult
+} from '../stagehand-field-handler';
 import type {
   ApplyFieldStep,
   ApplyStopBeforeSubmitStep,
@@ -28,10 +38,12 @@ export type GreenhouseApplicant = {
   location?: string | null;
   country?: string | null;
   autofillProfile?: MinimalAutofillProfile | null;
+  extendedProfile?: ExtendedProfile | null;
   profileContext?: {
     summary: string;
     reusableContext: string;
   };
+  jobDescription?: string | null;
 };
 
 export type GreenhouseRequiredFieldClassification =
@@ -69,6 +81,9 @@ export type GreenhouseApplyHelpers = {
     required: boolean;
     classification: GreenhouseRequiredFieldClassification;
   }) => Promise<void>;
+  logStagehandAutomation?: (input: {
+    result: StagehandFieldHandlerResult;
+  }) => Promise<void>;
 };
 
 export type GreenhouseApplyResult = {
@@ -76,7 +91,13 @@ export type GreenhouseApplyResult = {
   applicationUrl: string;
   finalReviewUrl: string;
   pageMode: 'hosted-inline';
-  stoppedBeforeSubmit: true;
+  stoppedBeforeSubmit: boolean;
+  submitted: boolean;
+  stagehandAutomation?: {
+    attempted: number;
+    succeeded: number;
+    failed: number;
+  };
 };
 
 const greenhouseSelectors = {
@@ -309,7 +330,10 @@ async function findSubmitButton(page: Page): Promise<{ selector: string; locator
   };
 }
 
-async function collectRequiredFields(page: Page): Promise<GreenhouseRequiredFieldSnapshot[]> {
+async function collectFormFields(
+  page: Page,
+  options?: { requiredOnly?: boolean }
+): Promise<GreenhouseRequiredFieldSnapshot[]> {
   const fieldLocators = page.locator('input, select, textarea');
   const fieldCount = await fieldLocators.count();
   const seenRadioNames = new Set<string>();
@@ -371,7 +395,8 @@ async function collectRequiredFields(page: Page): Promise<GreenhouseRequiredFiel
       (await field.getAttribute('aria-required')) === 'true' ||
       (await field.getAttribute('required')) !== null;
     const required = explicitRequired || /\*/.test(rawLabel);
-    if (!required) {
+    const requiredOnly = options?.requiredOnly ?? true;
+    if (requiredOnly && !required) {
       continue;
     }
 
@@ -540,7 +565,7 @@ async function runDeterministicAutofillPass(input: {
     return;
   }
 
-  const fields = await collectRequiredFields(input.page);
+  const fields = await collectFormFields(input.page, { requiredOnly: true });
   for (const field of fields) {
     if (field.filled) {
       continue;
@@ -578,11 +603,106 @@ function requiredFieldMessage(classification: GreenhouseRequiredFieldClassificat
   }
 }
 
+function parsePhoneNumber(value: string): ExtendedProfile['personal']['phone'] {
+  const match = value.match(/^(\+\d{1,3})\s*(.*)$/);
+  if (match) {
+    return {
+      countryCode: match[1] ?? '+1',
+      number: match[2] ?? ''
+    };
+  }
+
+  return {
+    countryCode: '+1',
+    number: value
+  };
+}
+
+function mapRequiresVisaSponsorship(
+  value: MinimalAutofillProfile['requiresSponsorship']
+): boolean | null {
+  if (value === 'yes') {
+    return true;
+  }
+
+  if (value === 'no') {
+    return false;
+  }
+
+  return null;
+}
+
+function mapWillingToRelocate(value: MinimalAutofillProfile['relocation']): boolean | null {
+  if (value === 'yes') {
+    return true;
+  }
+
+  if (value === 'no') {
+    return false;
+  }
+
+  return null;
+}
+
+function mapSecurityClearance(
+  value: MinimalAutofillProfile['clearanceStatus']
+): ExtendedProfile['autofill']['securityClearance'] {
+  if (value === 'none') {
+    return 'None / never held';
+  }
+
+  return '';
+}
+
+function buildStagehandProfile(applicant: GreenhouseApplicant): ExtendedProfile | null {
+  const fullName = `${applicant.firstName} ${applicant.lastName}`.trim();
+  if (!fullName || !applicant.email.trim()) {
+    return null;
+  }
+
+  const seed = applicant.extendedProfile ?? defaultExtendedProfile;
+  const autofill = applicant.autofillProfile;
+
+  return {
+    ...seed,
+    personal: {
+      ...seed.personal,
+      fullName,
+      email: applicant.email,
+      phone: parsePhoneNumber(applicant.phone),
+      location: applicant.location ?? seed.personal.location,
+      linkedin: applicant.linkedinUrl ?? seed.personal.linkedin,
+      website: applicant.websiteUrl ?? seed.personal.website
+    },
+    professionalSummary: applicant.profileContext?.summary ?? seed.professionalSummary,
+    applicantContext: applicant.profileContext?.reusableContext ?? seed.applicantContext,
+    autofill: {
+      ...seed.autofill,
+      workAuthorization: autofill?.workAuthorization || seed.autofill.workAuthorization,
+      authorizedCountries: autofill
+        ? parseWorkAuthorizationCountriesCsv(autofill.workAuthorizationCountriesCsv)
+        : seed.autofill.authorizedCountries,
+      requiresVisaSponsorship: autofill
+        ? mapRequiresVisaSponsorship(autofill.requiresSponsorship)
+        : seed.autofill.requiresVisaSponsorship,
+      securityClearance: autofill
+        ? mapSecurityClearance(autofill.clearanceStatus)
+        : seed.autofill.securityClearance,
+      willingToRelocate: autofill
+        ? mapWillingToRelocate(autofill.relocation)
+        : seed.autofill.willingToRelocate,
+      workPreference: autofill?.workPreference || seed.autofill.workPreference,
+      earliestStartDate: autofill?.startDate || seed.autofill.earliestStartDate
+    }
+  };
+}
+
 export async function runGreenhouseApply(input: {
   page: Page;
   sourceUrl: string;
   applicant: GreenhouseApplicant;
   helpers: GreenhouseApplyHelpers;
+  cdpUrl?: string;
 }): Promise<GreenhouseApplyResult> {
   /** Hosted boards with many custom questions: label resolution does many round-trips; avoid default 30s timeouts. */
   input.page.setDefaultTimeout(120_000);
@@ -702,7 +822,7 @@ export async function runGreenhouseApply(input: {
     applicant: input.applicant
   });
 
-  const requiredFields = await collectRequiredFields(input.page);
+  const requiredFields = await collectFormFields(input.page, { requiredOnly: true });
   const evaluations = requiredFields.map((field) => ({
     field,
     classification: classifyRequiredField(field, input.applicant)
@@ -717,7 +837,7 @@ export async function runGreenhouseApply(input: {
     )
   );
 
-  const blockedRequiredFields: Array<{
+  const remainingRequiredFields: Array<{
     label: string;
     selector: string | null;
     controlType: string;
@@ -726,7 +846,7 @@ export async function runGreenhouseApply(input: {
 
   for (const { field, classification } of evaluations) {
     if (classification !== 'filled') {
-      blockedRequiredFields.push({
+      remainingRequiredFields.push({
         label: field.label,
         selector: field.selector,
         controlType: field.controlType,
@@ -735,22 +855,110 @@ export async function runGreenhouseApply(input: {
     }
   }
 
+  const unresolvedFieldsForStagehand = (await collectFormFields(input.page, { requiredOnly: false }))
+    .filter((field) => !field.filled)
+    .filter((field) => field.controlType.toLowerCase() !== 'file');
+
+  let stagehandAutomationResult: StagehandFieldHandlerResult | undefined;
+
+  if (unresolvedFieldsForStagehand.length > 0) {
+    const stagehandProfile = buildStagehandProfile(input.applicant);
+    if (stagehandProfile) {
+      const targetFields: StagehandTargetField[] = unresolvedFieldsForStagehand.map((field) => ({
+        label: field.label,
+        selector: field.selector,
+        controlType: field.controlType
+      }));
+
+      stagehandAutomationResult = await runStagehandFieldHandler({
+        page: input.page,
+        targetFields,
+        profile: stagehandProfile,
+        jobContext: {
+          country: input.applicant.country ?? 'Unknown',
+          description: input.applicant.jobDescription ?? ''
+        },
+        ...(input.cdpUrl ? { cdpUrl: input.cdpUrl } : {})
+      });
+
+      await input.helpers.logStagehandAutomation?.({ result: stagehandAutomationResult });
+
+      const succeededLabels = new Set(
+        stagehandAutomationResult.results
+          .filter((r) => r.success)
+          .map((r) => r.fieldLabel)
+      );
+
+      for (let i = remainingRequiredFields.length - 1; i >= 0; i--) {
+        const remainingField = remainingRequiredFields[i];
+        if (remainingField && succeededLabels.has(remainingField.label)) {
+          remainingRequiredFields.splice(i, 1);
+        }
+      }
+    }
+  }
+
   const submitButton = await findSubmitButton(input.page);
   if (!submitButton) {
     throw new Error('Greenhouse hosted application form did not expose a visible submit button.');
   }
 
-  const stopStep = blockedRequiredFields.length > 0 ? 'manual_review_required_questions' : 'final_review';
+  if (remainingRequiredFields.length > 0) {
+    await input.helpers.stopBeforeSubmit({
+      name: 'manual_review_required_questions',
+      kind: 'stop',
+      selector: submitButton.selector,
+      details: {
+        pageMode: 'hosted-inline',
+        blockedRequiredFields: remainingRequiredFields,
+        stagehandAutomation: stagehandAutomationResult
+          ? {
+              attempted: stagehandAutomationResult.attempted,
+              succeeded: stagehandAutomationResult.succeeded,
+              failed: stagehandAutomationResult.failed
+            }
+          : undefined,
+        reviewUrlSessionNote:
+          'Stored URL is the public job posting. Greenhouse keeps answers in the automation browser tab until submit; opening the link in your default browser starts a new empty form.'
+      }
+    });
 
-  await input.helpers.stopBeforeSubmit({
-    name: stopStep,
-    kind: 'stop',
-    selector: submitButton.selector,
-    details: {
+    return {
+      sourceUrl: input.sourceUrl,
+      applicationUrl: input.page.url(),
+      finalReviewUrl: input.page.url(),
       pageMode: 'hosted-inline',
-      blockedRequiredFields,
-      reviewUrlSessionNote:
-        'Stored URL is the public job posting. Greenhouse keeps answers in the automation browser tab until submit; opening the link in your default browser starts a new empty form.'
+      stoppedBeforeSubmit: true,
+      submitted: false,
+      ...(stagehandAutomationResult
+        ? {
+            stagehandAutomation: {
+              attempted: stagehandAutomationResult.attempted,
+              succeeded: stagehandAutomationResult.succeeded,
+              failed: stagehandAutomationResult.failed
+            }
+          }
+        : {})
+    };
+  }
+
+  const preSubmitUrl = input.page.url();
+  await submitButton.locator.click();
+
+  await Promise.race([
+    input.page.waitForURL((url) => url.toString() !== preSubmitUrl, {
+      timeout: 7000
+    }),
+    input.page.waitForLoadState('networkidle', {
+      timeout: 7000
+    })
+  ]).catch(() => undefined);
+
+  await input.helpers.captureScreenshot?.({
+    step: 'submitted',
+    message: 'Submitted hosted Greenhouse application form.',
+    details: {
+      pageMode: 'hosted-inline'
     }
   });
 
@@ -759,7 +967,17 @@ export async function runGreenhouseApply(input: {
     applicationUrl: input.page.url(),
     finalReviewUrl: input.page.url(),
     pageMode: 'hosted-inline',
-    stoppedBeforeSubmit: true
+    stoppedBeforeSubmit: false,
+    submitted: true,
+    ...(stagehandAutomationResult
+      ? {
+          stagehandAutomation: {
+            attempted: stagehandAutomationResult.attempted,
+            succeeded: stagehandAutomationResult.succeeded,
+            failed: stagehandAutomationResult.failed
+          }
+        }
+      : {})
   };
 }
 
@@ -808,9 +1026,10 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       pageMode: 'hosted-inline'
     });
 
-    await runGreenhouseApply({
+    const applyResult = await runGreenhouseApply({
       page: context.session.page,
       sourceUrl: context.job.sourceUrl,
+      ...(context.session.cdpUrl ? { cdpUrl: context.session.cdpUrl } : {}),
       applicant: {
         firstName: context.fieldMapping.firstName ?? '',
         lastName: context.fieldMapping.lastName ?? '',
@@ -827,12 +1046,20 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         resumePath: resume.storagePath,
         coverLetterPath: context.artifacts.coverLetter?.storagePath ?? null,
         autofillProfile: context.applicantProfile?.autofillProfile ?? null,
-        profileContext: context.applicantProfile
+        extendedProfile: context.applicantProfile?.extendedProfile ?? null,
+        ...(context.applicantProfile
           ? {
-              summary: context.applicantProfile.summary,
-              reusableContext: context.applicantProfile.reusableContext
+              profileContext: {
+                summary: context.applicantProfile.summary,
+                reusableContext: context.applicantProfile.reusableContext
+              }
             }
-          : undefined
+          : {}),
+        ...(context.job.descriptionText
+          ? {
+              jobDescription: context.job.descriptionText
+            }
+          : {})
       },
       helpers: {
         mapField: async (step) => {
@@ -871,9 +1098,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         stopBeforeSubmit: async (step) => {
           await context.logStep(
             step.name,
-            step.name === 'final_review'
-              ? 'Reached hosted Greenhouse pre-submit review and stopping before submit.'
-              : 'Reached hosted Greenhouse manual review pause with unresolved required fields.',
+            'Reached hosted Greenhouse manual review pause with unresolved required fields.',
             {
               selector: step.selector,
               pageMode: 'hosted-inline',
@@ -891,6 +1116,30 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         }
       }
     });
+
+    if (applyResult.submitted) {
+      await context.logStep('submitted', 'Submitted hosted Greenhouse application form.', {
+        pageMode: 'hosted-inline',
+        ...(applyResult.stagehandAutomation
+          ? {
+              stagehandAutomation: applyResult.stagehandAutomation
+            }
+          : {})
+      });
+
+      return context.completeAfterSubmit({
+        step: 'submitted',
+        reviewUrl: applyResult.finalReviewUrl,
+        details: {
+          pageMode: 'hosted-inline',
+          ...(applyResult.stagehandAutomation
+            ? {
+                stagehandAutomation: applyResult.stagehandAutomation
+              }
+            : {})
+        }
+      });
+    }
 
     if (!pausedRun) {
       throw new Error('Greenhouse apply flow did not reach the shared stop-before-submit guard.');
