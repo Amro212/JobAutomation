@@ -25,7 +25,7 @@ export async function stopBeforeSubmit(input: {
   artifactsRepository: {
     create: (input: {
       jobId: string | null;
-      discoveryRunId?: string | null;
+      discoveryRunId: string | null;
       applicationRunId?: string | null;
       kind: string;
       format: string;
@@ -59,6 +59,7 @@ export async function stopBeforeSubmit(input: {
 
   const screenshotArtifact = await input.artifactsRepository.create({
     jobId: input.run.jobId,
+    discoveryRunId: null,
     applicationRunId: input.run.id,
     kind: 'application-screenshot',
     format: 'png',
@@ -68,6 +69,7 @@ export async function stopBeforeSubmit(input: {
   });
   const traceArtifact = await input.artifactsRepository.create({
     jobId: input.run.jobId,
+    discoveryRunId: null,
     applicationRunId: input.run.id,
     kind: 'application-trace',
     format: 'zip',

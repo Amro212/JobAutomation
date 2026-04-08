@@ -8,17 +8,17 @@ JobAutomation is designed to streamline the entire job search process, from disc
 
 ## Core Features
 
-- **Automated Discovery**: Efficiently identifies job postings from structured sources (Greenhouse, Lever, Ashby) and fallback scraping.
+- **Automated Discovery**: Efficiently identifies job postings from structured sources (Greenhouse, Lever, Ashby) and Playwright-backed scraping.
 - **Intelligent Tailoring**: Automatically generates job-specific resume and cover letter variants using LaTeX templates.
-- **Adaptive Browser Automation**: Uses Playwright and Stagehand (AI-powered) to navigate and complete diverse job application forms.
+- **Browser Automation Rewrite In Progress**: Uses Playwright for discovery today while the new application pipeline is being rebuilt in stages.
 - **Local-First Architecture**: Runs entirely on your local machine with SQLite for persistence and Tectonic for LaTeX compilation.
 - **Management Dashboard**: A Next.js-based interface to monitor progress, track applications, and view generated artifacts.
 
 ## Tech Stack
 
 - **Runtime**: TypeScript / Node.js
-- **Automation**: [Playwright](https://playwright.dev/) & [Stagehand](https://stagehand.dev/)
-- **Models**: [OpenRouter](https://openrouter.ai/) (Low-cost logic) & [Gemini 2.5 Flash](https://ai.google.dev/) (Browser reasoning)
+- **Automation**: [Playwright](https://playwright.dev/)
+- **Models**: [OpenRouter](https://openrouter.ai/)
 - **Database**: [SQLite](https://www.sqlite.org/) with [Drizzle ORM](https://orm.drizzle.team/)
 - **Document Pipeline**: [LaTeX](https://www.latex-project.org/) compiled via [Tectonic](https://tectonic-typesetting.org/)
 - **Backend**: [Fastify](https://www.fastify.io/)

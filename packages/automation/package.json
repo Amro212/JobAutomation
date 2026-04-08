@@ -9,7 +9,6 @@
     "test": "vitest run --root ../.. --config vitest.config.ts --project automation"
   },
   "dependencies": {
-    "@browserbasehq/stagehand": "^2.5.0",
     "@jobautomation/core": "workspace:*",
     "@jobautomation/db": "workspace:*",
     "@jobautomation/discovery": "workspace:*",

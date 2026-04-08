@@ -18,7 +18,7 @@ function parseCreateDiscoveryRunPayload(body: unknown): { sourceIds: string[] } 
   }
 
   return {
-    sourceIds
+    sourceIds: sourceIds as string[]
   };
 }
 

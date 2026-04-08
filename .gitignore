@@ -16,6 +16,9 @@ docs/
 # Artifact output (generated PDFs, LaTeX files, logs)
 output/
 apps/api/output/
+.github/
+.agents/
+.kilo/
 
 node_modules/
 .next/

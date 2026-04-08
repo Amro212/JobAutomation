@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { mkdirSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
@@ -34,7 +34,7 @@ function createArtifactsDir(): string {
   return path;
 }
 
-describe('playwright fallback discovery', () => {
+describe('playwright discovery', () => {
   const dbPath = createTestDatabasePath();
   const artifactsRootDir = createArtifactsDir();
   const db = createDatabaseClient(dbPath);
@@ -139,7 +139,7 @@ describe('playwright fallback discovery', () => {
     rmSync(artifactsRootDir, { recursive: true, force: true });
   });
 
-  test('discovers jobs through deterministic Playwright extraction and keeps the escalation seam dormant', async () => {
+  test('discovers jobs through deterministic Playwright extraction', async () => {
     const source = await sourcesRepository.upsert({
       sourceKind: 'playwright',
       sourceKey: `${baseUrl}/jobs`,
@@ -151,8 +151,6 @@ describe('playwright fallback discovery', () => {
       discoverySourceId: source.id,
       status: 'pending'
     });
-    const escalate = vi.fn().mockResolvedValue(null);
-
     const result = await runPlaywrightDiscovery({
       run,
       source,
@@ -160,11 +158,9 @@ describe('playwright fallback discovery', () => {
       runsRepository,
       logEventsRepository,
       artifactsRepository,
-      artifactsRootDir,
-      escalate
+      artifactsRootDir
     });
 
-    expect(escalate).not.toHaveBeenCalled();
     expect(result.status).toBe('completed');
 
     const { jobs } = await jobsRepository.list({
@@ -179,9 +175,7 @@ describe('playwright fallback discovery', () => {
     expect(rawPayload).toMatchObject({
       sourcePageUrl: `${baseUrl}/jobs`,
       detailPageUrl: `${baseUrl}/jobs/platform-engineer`,
-      extractorId: 'generic-listing',
-      fallbackMode: 'playwright',
-      stagehandUsed: false
+      extractorId: 'generic-listing'
     });
 
     const artifacts = await artifactsRepository.listByDiscoveryRun(run.id);
@@ -251,8 +245,7 @@ describe('playwright fallback discovery', () => {
       runsRepository,
       logEventsRepository,
       artifactsRepository,
-      artifactsRootDir,
-      escalate: vi.fn().mockResolvedValue(null)
+      artifactsRootDir
     });
 
     expect(result.status).toBe('failed');
@@ -268,7 +261,6 @@ describe('playwright fallback discovery', () => {
       label: 'Broken Careers',
       pageUrl: `${baseUrl}/jobs/broken-role`,
       extractorId: 'generic-listing',
-      fallbackMode: 'playwright',
       errorMessage: expect.stringContaining('Missing required job fields')
     });
 
@@ -351,8 +343,7 @@ describe('playwright fallback discovery', () => {
       runsRepository,
       logEventsRepository,
       artifactsRepository,
-      artifactsRootDir,
-      escalate: vi.fn().mockResolvedValue(null)
+      artifactsRootDir
     });
 
     expect(result.status).toBe('completed');
@@ -425,8 +416,7 @@ describe('playwright fallback discovery', () => {
       runsRepository,
       logEventsRepository,
       artifactsRepository,
-      artifactsRootDir,
-      escalate: vi.fn().mockResolvedValue(null)
+      artifactsRootDir
     });
 
     expect(result.status).toBe('completed');
@@ -498,8 +488,7 @@ describe('playwright fallback discovery', () => {
       runsRepository,
       logEventsRepository,
       artifactsRepository,
-      artifactsRootDir,
-      escalate: vi.fn().mockResolvedValue(null)
+      artifactsRootDir
     });
 
     expect(result.status).toBe('completed');
@@ -580,8 +569,7 @@ describe('playwright fallback discovery', () => {
       runsRepository,
       logEventsRepository,
       artifactsRepository,
-      artifactsRootDir,
-      escalate: vi.fn().mockResolvedValue(null)
+      artifactsRootDir
     });
 
     expect(result.status).toBe('completed');

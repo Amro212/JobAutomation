@@ -1,9 +1,6 @@
 import fp from 'fastify-plugin';
 import { dirname, join } from 'node:path';
 
-import type { DiscoveryRunRecord, DiscoverySourceRecord } from '@jobautomation/core';
-import { logEventRecordSchema } from '@jobautomation/core';
-
 import { DiscoveryQueueService } from '../services/discovery-queue';
 import { DiscoverySchedulerService } from '../services/discovery-scheduler';
 import { recomputeJobPrefilterMatches } from '../services/job-prefilter-recompute';

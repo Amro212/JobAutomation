@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
-import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,7 +66,7 @@ describe('application run routes', () => {
   });
 
   test(
-    'runs the Greenhouse apply flow to final review, pauses before submit, and exposes persisted evidence',
+    'fails Greenhouse application runs cleanly while the legacy flow is removed',
     async () => {
       writeFileSync(resumePath, Buffer.from('%PDF-1.4\n% api application-run test resume\n'));
 
@@ -202,10 +202,10 @@ describe('application run routes', () => {
       expect(createResponse.json().run).toMatchObject({
         jobId: job.id,
         siteKey: 'greenhouse',
-        status: 'paused',
-        currentStep: 'manual_review_required_questions',
-        stopReason: 'manual_review_required',
-        reviewUrl: sourceUrl,
+        status: 'failed',
+        currentStep: 'starting',
+        stopReason: 'automation_error',
+        reviewUrl: null,
         resumeArtifactId: resumeArtifact.id
       });
 
@@ -225,8 +225,8 @@ describe('application run routes', () => {
         expect.objectContaining({
           run: expect.objectContaining({
             id: runId,
-            status: 'paused',
-            stopReason: 'manual_review_required'
+            status: 'failed',
+            stopReason: 'automation_error'
           }),
           job: expect.objectContaining({
             id: job.id,
@@ -239,50 +239,21 @@ describe('application run routes', () => {
       expect(detailResponse.statusCode).toBe(200);
       expect(detailResponse.json().run).toMatchObject({
         id: runId,
-        status: 'paused',
-        currentStep: 'manual_review_required_questions',
-        stopReason: 'manual_review_required'
+        status: 'failed',
+        currentStep: 'starting',
+        stopReason: 'automation_error'
       });
       expect(detailResponse.json().logs.map((log: { message: string }) => log.message)).toEqual(
         expect.arrayContaining([
           'Started application run.',
-          'Opened Greenhouse source posting.',
-          'Revealed hosted Greenhouse application form.',
-          'Filled first name.',
-          'Filled last name.',
-          'Filled email.',
-          'Filled country.',
-          'Filled phone.',
-          'Filled Greenhouse core applicant fields.',
-          'Uploaded resume artifact.',
-          'Uploaded Greenhouse application documents.',
-          'Greenhouse required field ready: Country.',
-          'Greenhouse required field needs manual review because applicant data is unavailable: U.S. WORK AUTHORIZATION.',
-          'Reached hosted Greenhouse manual review pause with unresolved required fields.',
-          'Paused before final submit.'
+          'Legacy Greenhouse automation has been removed and now fails closed pending the rewrite.',
+          'Application run failed.'
         ])
       );
-      expect(detailResponse.json().logs.some((log: { detailsJson: string | null }) => {
-        return typeof log.detailsJson === 'string' && log.detailsJson.includes('U.S. WORK AUTHORIZATION');
-      })).toBe(true);
-      expect(detailResponse.json().artifacts).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            applicationRunId: runId,
-            kind: 'application-screenshot',
-            format: 'png'
-          }),
-          expect.objectContaining({
-            applicationRunId: runId,
-            kind: 'application-trace',
-            format: 'zip'
-          })
-        ])
-      );
-
-      for (const artifact of detailResponse.json().artifacts as Array<{ storagePath: string }>) {
-        expect(existsSync(artifact.storagePath)).toBe(true);
-      }
+      const failureLog = detailResponse.json().logs.find((log: { level: string }) => log.level === 'error');
+      expect(failureLog).toBeDefined();
+      expect(failureLog.detailsJson).toContain('Legacy Greenhouse application automation was removed in Stage 1');
+      expect(detailResponse.json().artifacts).toEqual([]);
     },
     30000
   );

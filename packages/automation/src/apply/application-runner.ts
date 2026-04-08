@@ -18,7 +18,6 @@ import type {
   ApplicationRunRecordLike,
   SupportedApplicationSite
 } from './contracts';
-import { buildApplicationFieldMapping } from './field-mapping';
 import { createApplicationSession } from './session-manager';
 import { stopBeforeSubmit } from './stop-before-submit';
 import { createDiscoveryBrowser } from '../playwright/browser';
@@ -55,12 +54,15 @@ type ArtifactsRepository = {
   findById: (id: string) => Promise<ArtifactRecord | null>;
   create?: (input: {
     jobId: string | null;
-    discoveryRunId?: string | null;
+    discoveryRunId: string | null;
     applicationRunId?: string | null;
+    applicantProfileId?: string | null;
+    applicantProfileUpdatedAt?: Date | null;
     kind: string;
     format: string;
     fileName: string;
     storagePath: string;
+    version?: number;
     createdAt: Date;
   }) => Promise<{ id: string; kind: string }>;
 };
@@ -262,7 +264,6 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     const result = await siteFlow.run({
       applicantProfile,
       artifacts,
-      fieldMapping: buildApplicationFieldMapping(applicantProfile),
       job,
       run: runningRun,
       session,
@@ -297,6 +298,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
 
         const artifact = await input.artifactsRepository.create({
           jobId: job.id,
+          discoveryRunId: null,
           applicationRunId: runningRun.id,
           kind: 'application-screenshot',
           format: 'png',

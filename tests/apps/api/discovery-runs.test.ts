@@ -503,9 +503,7 @@ describe('discovery run routes', () => {
       expect(JSON.parse(jobDetailResponse.json().job.rawPayload as string)).toMatchObject({
         sourcePageUrl: sourceUrl,
         detailPageUrl: `http://127.0.0.1:${address.port}/jobs/fallback-platform-engineer`,
-        extractorId: 'generic-listing',
-        fallbackMode: 'playwright',
-        stagehandUsed: false
+        extractorId: 'generic-listing'
       });
       expect(runDetailResponse.json().run.status).toBe('completed');
       expect(runDetailResponse.json().artifacts.some((artifact: { kind: string }) => artifact.kind === 'fallback-trace')).toBe(true);

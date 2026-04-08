@@ -8,19 +8,17 @@ import type {
   JobsRepository,
   LogEventsRepository
 } from '@jobautomation/db';
-import { ingestJobsIntoRun, normalizeJob, type NormalizedJob, type SourceAdapter } from '@jobautomation/discovery';
+import {
+  ingestJobsIntoRun,
+  normalizeJob,
+  type NormalizedJob,
+  type SourceAdapter
+} from '@jobautomation/discovery';
 import type { Browser, BrowserContext, Page } from 'playwright';
 
 import { createDiscoveryBrowser } from '../playwright/browser';
-import {
-  runFallbackEscalation,
-  type FallbackEscalation
-} from './fallback-escalation';
-import {
-  createGenericListingExtractor
-} from './extractors/generic-listing-extractor';
 import type { ExtractedPlaywrightJob } from './extractors/base-extractor';
-import { StagehandExtractionError } from '../stagehand/stagehand-discovery-adapter';
+import { createGenericListingExtractor } from './extractors/generic-listing-extractor';
 
 const DEFAULT_DISCOVERY_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
@@ -32,11 +30,8 @@ type PersistedArtifact = {
 
 type PlaywrightCollectedJob = {
   job: ExtractedPlaywrightJob;
-  fallbackMode: 'playwright' | 'stagehand';
-  stagehandUsed: boolean;
   extractorId: string;
   sourcePageUrl: string;
-  stagehandOutput?: unknown;
 };
 
 type PlaywrightDiscoveryAdapterInput = {
@@ -48,7 +43,6 @@ type PlaywrightDiscoveryAdapterInput = {
   artifactsRepository: ArtifactsRepository;
   artifactsRootDir: string;
   capturedAt?: Date;
-  escalate?: FallbackEscalation;
   createBrowser?: () => Promise<Browser>;
 };
 
@@ -57,8 +51,8 @@ type ArtifactWriteInput = {
   artifactsRootDir: string;
   runId: string;
   fileName: string;
-  kind: 'fallback-screenshot' | 'fallback-trace' | 'fallback-page-html' | 'fallback-stagehand-output';
-  format: 'png' | 'zip' | 'html' | 'json';
+  kind: 'fallback-screenshot' | 'fallback-trace' | 'fallback-page-html';
+  format: 'png' | 'zip' | 'html';
   content: Buffer | string;
 };
 
@@ -66,20 +60,12 @@ function sanitizeFileName(value: string): string {
   return value.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
 }
 
-function canonicalizeUrl(value: string): string {
-  const parsed = new URL(value);
-  parsed.hash = '';
-  return parsed.toString();
-}
-
 function createLogDetails(input: {
   source: DiscoverySourceRecord;
   pageUrl: string;
   extractorId: string;
-  fallbackMode: 'playwright' | 'stagehand';
   artifactIds?: string[];
   errorMessage?: string;
-  stagehandUsed?: boolean;
 }): Record<string, unknown> {
   return {
     discoverySourceId: input.source.id,
@@ -88,10 +74,8 @@ function createLogDetails(input: {
     label: input.source.label,
     pageUrl: input.pageUrl,
     extractorId: input.extractorId,
-    fallbackMode: input.fallbackMode,
     ...(input.artifactIds && input.artifactIds.length > 0 ? { artifactIds: input.artifactIds } : {}),
-    ...(input.errorMessage ? { errorMessage: input.errorMessage } : {}),
-    ...(input.stagehandUsed !== undefined ? { stagehandUsed: input.stagehandUsed } : {})
+    ...(input.errorMessage ? { errorMessage: input.errorMessage } : {})
   };
 }
 
@@ -171,10 +155,10 @@ async function persistPageEvidence(input: {
   ]);
 }
 
-function createPlaywrightSourceAdapter(source: DiscoverySourceRecord): SourceAdapter<{
+function createPlaywrightSourceAdapter(
+  source: DiscoverySourceRecord
+): SourceAdapter<{
   job: ExtractedPlaywrightJob;
-  fallbackMode: 'playwright' | 'stagehand';
-  stagehandUsed: boolean;
   extractorId: string;
   sourcePageUrl: string;
 }> {
@@ -196,9 +180,7 @@ function createPlaywrightSourceAdapter(source: DiscoverySourceRecord): SourceAda
           rawPayload: {
             sourcePageUrl: input.sourcePageUrl,
             detailPageUrl: input.job.detailPageUrl,
-            extractorId: input.extractorId,
-            fallbackMode: input.fallbackMode,
-            stagehandUsed: input.stagehandUsed
+            extractorId: input.extractorId
           }
         },
         {
@@ -223,10 +205,8 @@ async function collectJobs(input: {
   artifactsRepository: ArtifactsRepository;
   artifactsRootDir: string;
   runId: string;
-  escalate: FallbackEscalation;
   currentPageUrlRef: { value: string };
   artifactIds: string[];
-  stagehandStateRef: { used: boolean };
 }): Promise<PlaywrightCollectedJob[]> {
   const extractor = createGenericListingExtractor();
   const sourcePage = await input.context.newPage();
@@ -250,7 +230,7 @@ async function collectJobs(input: {
     throw new Error(`No candidate job detail pages were found for ${input.source.sourceKey}.`);
   }
 
-  const jobs = [];
+  const jobs: PlaywrightCollectedJob[] = [];
 
   for (const detailPageUrl of detailPageUrls) {
     const detailPage = await input.context.newPage();
@@ -261,56 +241,14 @@ async function collectJobs(input: {
         waitUntil: 'domcontentloaded'
       });
 
-      let extractedJob = await extractor.extractJob(detailPage, {
+      const extractedJob = await extractor.extractJob(detailPage, {
         sourcePageUrl: input.source.sourceKey,
         detailPageUrl,
         label: input.source.label
       });
-      let fallbackMode: 'playwright' | 'stagehand' = 'playwright';
-      let stagehandUsed = false;
-      let stagehandOutput: unknown;
 
       const validationError = validateExtractedJob(extractedJob);
       if (validationError) {
-        let escalatedJob;
-        try {
-          escalatedJob = await input.escalate({
-            page: detailPage,
-            sourcePageUrl: input.source.sourceKey,
-            detailPageUrl,
-            label: input.source.label,
-            extractorId: extractor.id,
-            partialJob: extractedJob
-          });
-        } catch (error) {
-          if (error instanceof StagehandExtractionError) {
-            input.stagehandStateRef.used = true;
-            const artifact = await persistArtifact({
-              artifactsRepository: input.artifactsRepository,
-              artifactsRootDir: input.artifactsRootDir,
-              runId: input.runId,
-              fileName: `${sanitizeFileName(input.source.label)}-${sanitizeFileName(detailPageUrl)}-stagehand-output.json`,
-              kind: 'fallback-stagehand-output',
-              format: 'json',
-              content: JSON.stringify(error.rawOutput, null, 2)
-            });
-            input.artifactIds.push(artifact.id);
-          }
-
-          throw error;
-        }
-
-        if (escalatedJob) {
-          input.stagehandStateRef.used = true;
-          extractedJob = escalatedJob.job;
-          fallbackMode = 'stagehand';
-          stagehandUsed = escalatedJob.stagehandUsed;
-          stagehandOutput = escalatedJob.rawOutput;
-        }
-      }
-
-      const finalValidationError = validateExtractedJob(extractedJob);
-      if (finalValidationError) {
         const detailArtifacts = await persistPageEvidence({
           page: detailPage,
           artifactsRepository: input.artifactsRepository,
@@ -319,16 +257,13 @@ async function collectJobs(input: {
           prefix: `${input.source.label}-${detailPageUrl}`
         });
         input.artifactIds.push(...detailArtifacts.map((artifact) => artifact.id));
-        throw new Error(finalValidationError);
+        throw new Error(validationError);
       }
 
       jobs.push({
         job: extractedJob,
-        fallbackMode,
-        stagehandUsed,
         extractorId: extractor.id,
-        sourcePageUrl: input.source.sourceKey,
-        stagehandOutput
+        sourcePageUrl: input.source.sourceKey
       });
     } finally {
       await detailPage.close();
@@ -359,11 +294,6 @@ export async function runPlaywrightDiscovery(
     updatedJobCount: 0
   };
   let errorMessage: string | null = null;
-  let completionFallbackMode: 'playwright' | 'stagehand' = 'playwright';
-  let completionStagehandUsed = false;
-  const stagehandStateRef = {
-    used: false
-  };
 
   await context.tracing.start({
     screenshots: true,
@@ -388,8 +318,7 @@ export async function runPlaywrightDiscovery(
     details: createLogDetails({
       source: input.source,
       pageUrl: input.source.sourceKey,
-      extractorId: 'generic-listing',
-      fallbackMode: 'playwright'
+      extractorId: 'generic-listing'
     })
   });
 
@@ -400,28 +329,9 @@ export async function runPlaywrightDiscovery(
       artifactsRepository: input.artifactsRepository,
       artifactsRootDir: input.artifactsRootDir,
       runId: input.run.id,
-      escalate: input.escalate ?? runFallbackEscalation,
       currentPageUrlRef,
-      artifactIds,
-      stagehandStateRef
+      artifactIds
     });
-
-    for (const job of jobs) {
-      if (job.stagehandOutput !== undefined) {
-        const stagehandArtifact = await persistArtifact({
-          artifactsRepository: input.artifactsRepository,
-          artifactsRootDir: input.artifactsRootDir,
-          runId: input.run.id,
-          fileName: `${sanitizeFileName(input.source.label)}-${sanitizeFileName(job.job.detailPageUrl)}-stagehand-output.json`,
-          kind: 'fallback-stagehand-output',
-          format: 'json',
-          content: JSON.stringify(job.stagehandOutput, null, 2)
-        });
-        artifactIds.push(stagehandArtifact.id);
-        completionFallbackMode = 'stagehand';
-        completionStagehandUsed = true;
-      }
-    }
 
     counts = await ingestJobsIntoRun({
       runId: input.run.id,
@@ -432,10 +342,6 @@ export async function runPlaywrightDiscovery(
     });
   } catch (error) {
     errorMessage = error instanceof Error ? error.message : 'Unknown Playwright discovery error.';
-    completionStagehandUsed = stagehandStateRef.used;
-    if (completionStagehandUsed) {
-      completionFallbackMode = 'stagehand';
-    }
   }
 
   try {
@@ -481,10 +387,8 @@ export async function runPlaywrightDiscovery(
         source: input.source,
         pageUrl: currentPageUrlRef.value,
         extractorId: 'generic-listing',
-        fallbackMode: completionStagehandUsed ? 'stagehand' : 'playwright',
         artifactIds,
-        errorMessage,
-        stagehandUsed: completionStagehandUsed
+        errorMessage
       })
     });
 
@@ -521,9 +425,7 @@ export async function runPlaywrightDiscovery(
         source: input.source,
         pageUrl: input.source.sourceKey,
         extractorId: 'generic-listing',
-        fallbackMode: completionFallbackMode,
-        artifactIds,
-        stagehandUsed: completionStagehandUsed || undefined
+        artifactIds
       }),
       jobCount: counts.jobCount,
       newJobCount: counts.newJobCount,

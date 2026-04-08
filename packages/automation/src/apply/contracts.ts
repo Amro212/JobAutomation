@@ -20,12 +20,9 @@ export type ApplicationSession = {
   finalizeTrace: () => Promise<string>;
 };
 
-export type ApplicationFieldMapping = Record<string, string>;
-
 export type ApplicationSiteFlowContext = {
   applicantProfile: ApplicantProfile | null;
   artifacts: ApplicationArtifacts;
-  fieldMapping: ApplicationFieldMapping;
   job: JobRecord;
   run: ApplicationRunRecordLike;
   session: ApplicationSession;

@@ -5,7 +5,6 @@ export const sourceKindSchema = z.enum([
   'lever',
   'ashby',
   'playwright',
-  'stagehand',
   'manual'
 ]);
 

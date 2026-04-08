@@ -16,7 +16,7 @@ import {
 const playwrightDatabasePath = 'C:\\VScode\\JobAutomation\\apps\\api\\data\\playwright.sqlite';
 const seedArtifactsDir = 'C:\\VScode\\JobAutomation\\apps\\api\\data\\seed-artifacts';
 
-test('starts a Greenhouse application run from the job page and shows persisted run evidence', async ({
+test('starts a Greenhouse application run from the job page and surfaces the Stage 1 failure state', async ({
   page
 }) => {
   const server = createServer((request, response) => {
@@ -157,19 +157,16 @@ test('starts a Greenhouse application run from the job page and shows persisted 
 
     await expect(page).toHaveURL(/\/applications\/.+$/, { timeout: 30000 });
     await expect(page.getByRole('heading', { name: 'Senior Platform Engineer' })).toBeVisible();
-    await expect(page.getByText('Paused at final review and waiting for a human to submit.')).toBeVisible();
-    await expect(page.getByText('Stop reason: manual_review_required')).toBeVisible();
-    await expect(page.getByText('Manual review fields: U.S. WORK AUTHORIZATION')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open job posting URL' })).toBeVisible();
+    await expect(page.getByText('Automation failed before completion.')).toBeVisible();
+    await expect(page.getByText('Stop reason: automation_error')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Open source posting' })).toBeVisible();
     await expect(
       page.getByText(
-        'Greenhouse required field needs manual review because applicant data is unavailable: U.S. WORK AUTHORIZATION.'
+        'Legacy Greenhouse application automation was removed in Stage 1 of the rewrite and has not been replaced yet.'
       )
     ).toBeVisible();
-    await expect(page.getByText('U.S. WORK AUTHORIZATION - blocked_missing_profile_data')).toBeVisible();
-    await expect(page.getByText('Paused before final submit.')).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'application-screenshot' }).first()).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'application-trace' }).first()).toBeVisible();
+    await expect(page.getByText('Legacy Greenhouse automation has been removed and now fails closed pending the rewrite.')).toBeVisible();
+    await expect(page.getByText('No run-scoped evidence artifacts have been captured for this run yet.')).toBeVisible();
 
     const pausedRunId = page.url().split('/').pop();
     if (!pausedRunId) {
