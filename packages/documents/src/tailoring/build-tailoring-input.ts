@@ -1,5 +1,7 @@
 import type { ApplicantProfile, JobRecord } from '@jobautomation/core';
 
+import { formatApplicantContext } from './load-applicant-context';
+
 export type TailoringInput = {
   job: JobRecord;
   applicantProfile: ApplicantProfile;
@@ -67,6 +69,7 @@ export function buildTailoringInput(input: {
   job: JobRecord;
   applicantProfile: ApplicantProfile;
 }): TailoringInput {
+  const applicantContext = formatApplicantContext(input.applicantProfile);
   const resumeBullets = extractResumeBullets(input.applicantProfile.baseResumeTex);
   const jobKeywords = extractKeywords(
     [
@@ -75,7 +78,7 @@ export function buildTailoringInput(input: {
       input.job.location,
       input.job.descriptionText,
       input.applicantProfile.summary,
-      input.applicantProfile.reusableContext
+      applicantContext
     ]
       .filter((value) => value.length > 0)
       .join(' ')
@@ -86,7 +89,7 @@ export function buildTailoringInput(input: {
     applicantProfile: input.applicantProfile,
     baseResumeTex: input.applicantProfile.baseResumeTex,
     baseResumeFileName: input.applicantProfile.baseResumeFileName,
-    applicantContext: input.applicantProfile.reusableContext,
+    applicantContext,
     jobKeywords,
     resumeBullets
   };

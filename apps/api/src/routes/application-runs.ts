@@ -7,7 +7,12 @@ import {
   logEventRecordSchema,
   type ApplicationRunStatus
 } from '@jobautomation/core';
-import { greenhouseApplicationSite, runApplication } from '@jobautomation/automation';
+import {
+  ashbyApplicationSite,
+  greenhouseApplicationSite,
+  leverApplicationSite,
+  runApplication
+} from '@jobautomation/automation';
 import type { FastifyPluginAsync } from 'fastify';
 
 type CreateApplicationRunPayload = {
@@ -30,7 +35,7 @@ function parseCreatePayload(body: unknown): CreateApplicationRunPayload {
 function statusMessageForRun(status: ApplicationRunStatus): string {
   switch (status) {
     case 'paused':
-      return 'Paused at final review and waiting for a human to submit.';
+      return 'Automation is paused and waiting for a human review step.';
     case 'skipped':
       return 'Automation skipped before browser work started.';
     case 'running':
@@ -110,7 +115,7 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       applicationRunsRepository: app.repositories.applicationRuns,
       artifactsRepository: app.repositories.artifacts,
       logEventsRepository: app.repositories.logEvents,
-      siteFlows: [greenhouseApplicationSite],
+      siteFlows: [greenhouseApplicationSite, leverApplicationSite, ashbyApplicationSite],
       artifactsRootDir: join(dirname(app.config.JOB_AUTOMATION_DB_PATH), 'artifacts')
     });
 

@@ -37,6 +37,12 @@ export type ApplicationSiteFlowContext = {
     reviewUrl?: string | null;
     details?: Record<string, unknown>;
   }) => Promise<ApplicationRunRecordLike>;
+  pauseForManualReview: (input: {
+    step: string;
+    message: string;
+    reviewUrl?: string | null;
+    details?: Record<string, unknown>;
+  }) => Promise<ApplicationRunRecordLike>;
 };
 
 export type SupportedApplicationSite = {

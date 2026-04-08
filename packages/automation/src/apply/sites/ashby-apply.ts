@@ -1,20 +1,20 @@
 import type { SupportedApplicationSite } from '../contracts';
 import { reachApplicationForm } from '../board-entry';
 
-export const greenhouseApplicationSite: SupportedApplicationSite = {
-  siteKey: 'greenhouse',
+export const ashbyApplicationSite: SupportedApplicationSite = {
+  siteKey: 'ashby',
   supports(job) {
-    return job.sourceKind === 'greenhouse';
+    return job.sourceKind === 'ashby';
   },
   async run(context) {
     const boardEntry = await reachApplicationForm({
       page: context.session.page,
-      board: 'greenhouse'
+      board: 'ashby'
     });
 
     await context.logStep(
       'board_entry_ready',
-      'Reached the real Greenhouse application form and stopped for Stage 2 review.',
+      'Reached the real Ashby application form and stopped for Stage 2 review.',
       {
         boardEntry
       }
@@ -22,7 +22,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
 
     return context.pauseForManualReview({
       step: 'board_entry_ready',
-      message: 'Paused after reaching the real Greenhouse application form for Stage 2 review.',
+      message: 'Paused after reaching the real Ashby application form for Stage 2 review.',
       details: {
         boardEntry
       }

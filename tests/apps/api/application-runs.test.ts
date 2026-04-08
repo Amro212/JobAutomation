@@ -66,7 +66,7 @@ describe('application run routes', () => {
   });
 
   test(
-    'fails Greenhouse application runs cleanly while the legacy flow is removed',
+    'reaches the Greenhouse application form and pauses for Stage 2 review',
     async () => {
       writeFileSync(resumePath, Buffer.from('%PDF-1.4\n% api application-run test resume\n'));
 
@@ -80,8 +80,7 @@ describe('application run routes', () => {
               <body>
                 <main data-greenhouse-job-page>
                   <h1>Senior Platform Engineer</h1>
-                  <button id="apply_button" type="button">Apply</button>
-                  <section id="application_shell" hidden>
+                  <section id="application_shell">
                     <h2>Apply for this job</h2>
                     <label for="first_name">First Name</label>
                     <input id="first_name" aria-label="First Name" required />
@@ -94,26 +93,8 @@ describe('application run routes', () => {
                     <label for="phone">Phone</label>
                     <input id="phone" aria-label="Phone" required />
                     <label for="resume">Resume/CV</label>
-                    <input id="resume" type="file" />
-                    <div>
-                      <label id="question_work_auth-label" for="question_work_auth">U.S. WORK AUTHORIZATION*</label>
-                      <input
-                        id="question_work_auth"
-                        role="combobox"
-                        aria-labelledby="question_work_auth-label"
-                        aria-required="true"
-                        required
-                      />
-                    </div>
-                    <button type="submit">Submit application</button>
+                    <input id="resume" type="file" /
                   </section>
-                  <script>
-                    document.getElementById('apply_button').addEventListener('click', () => {
-                      const shell = document.getElementById('application_shell');
-                      shell.hidden = false;
-                      document.getElementById('first_name').focus();
-                    });
-                  </script>
                 </main>
               </body>
             </html>
@@ -202,10 +183,10 @@ describe('application run routes', () => {
       expect(createResponse.json().run).toMatchObject({
         jobId: job.id,
         siteKey: 'greenhouse',
-        status: 'failed',
-        currentStep: 'starting',
-        stopReason: 'automation_error',
-        reviewUrl: null,
+        status: 'paused',
+        currentStep: 'board_entry_ready',
+        stopReason: 'manual_review_required',
+        reviewUrl: sourceUrl,
         resumeArtifactId: resumeArtifact.id
       });
 
@@ -225,8 +206,8 @@ describe('application run routes', () => {
         expect.objectContaining({
           run: expect.objectContaining({
             id: runId,
-            status: 'failed',
-            stopReason: 'automation_error'
+            status: 'paused',
+            stopReason: 'manual_review_required'
           }),
           job: expect.objectContaining({
             id: job.id,
@@ -239,21 +220,33 @@ describe('application run routes', () => {
       expect(detailResponse.statusCode).toBe(200);
       expect(detailResponse.json().run).toMatchObject({
         id: runId,
-        status: 'failed',
-        currentStep: 'starting',
-        stopReason: 'automation_error'
+        status: 'paused',
+        currentStep: 'board_entry_ready',
+        stopReason: 'manual_review_required',
+        reviewUrl: sourceUrl
       });
       expect(detailResponse.json().logs.map((log: { message: string }) => log.message)).toEqual(
         expect.arrayContaining([
           'Started application run.',
-          'Legacy Greenhouse automation has been removed and now fails closed pending the rewrite.',
-          'Application run failed.'
+          'Reached the real Greenhouse application form and stopped for Stage 2 review.',
+          'Paused after reaching the real Greenhouse application form for Stage 2 review.'
         ])
       );
-      const failureLog = detailResponse.json().logs.find((log: { level: string }) => log.level === 'error');
-      expect(failureLog).toBeDefined();
-      expect(failureLog.detailsJson).toContain('Legacy Greenhouse application automation was removed in Stage 1');
-      expect(detailResponse.json().artifacts).toEqual([]);
+      const pauseLog = detailResponse
+        .json()
+        .logs.find(
+          (log: { level: string; message: string }) =>
+            log.level === 'info' &&
+            log.message === 'Paused after reaching the real Greenhouse application form for Stage 2 review.'
+        );
+      expect(pauseLog).toBeDefined();
+      expect(pauseLog.detailsJson).toContain('"entryAction":"direct_form"');
+      expect(detailResponse.json().artifacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'application-screenshot' }),
+          expect.objectContaining({ kind: 'application-trace' })
+        ])
+      );
     },
     30000
   );

@@ -18,6 +18,7 @@ import type {
   ApplicationRunRecordLike,
   SupportedApplicationSite
 } from './contracts';
+import { pauseApplicationRun } from './pause-application-run';
 import { createApplicationSession } from './session-manager';
 import { stopBeforeSubmit } from './stop-before-submit';
 import { createDiscoveryBrowser } from '../playwright/browser';
@@ -337,6 +338,45 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           },
           step,
           siteKey: siteFlow.siteKey,
+          ...(details !== undefined ? { details } : {}),
+          artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
+          applicationRunsRepository: {
+            update: async (id, patch) => {
+              const updated = await input.applicationRunsRepository.update(id, patch);
+              if (!updated) {
+                throw new Error(`Application run ${id} was not found for pause update.`);
+              }
+              return updated;
+            }
+          },
+          artifactsRepository: {
+            create: async (artifactInput) => {
+              if (!input.artifactsRepository.create) {
+                throw new Error('Artifacts repository does not support application evidence persistence.');
+              }
+
+              return input.artifactsRepository.create(artifactInput);
+            }
+          },
+          logEventsRepository: input.logEventsRepository,
+          finalizeTrace: async (tracePath) => {
+            await session.context.tracing.stop({
+              path: tracePath
+            });
+          }
+        });
+      },
+      pauseForManualReview: async ({ step, message, reviewUrl, details }) => {
+        finalTraceStopped = true;
+        return pauseApplicationRun({
+          run: runningRun,
+          page: {
+            screenshot: session.page.screenshot.bind(session.page),
+            url: () => reviewUrl ?? session.page.url()
+          },
+          step,
+          siteKey: siteFlow.siteKey,
+          message,
           ...(details !== undefined ? { details } : {}),
           artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
           applicationRunsRepository: {
