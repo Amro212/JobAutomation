@@ -1,6 +1,7 @@
 import type { SupportedApplicationSite } from '../contracts';
 import { reachApplicationForm } from '../board-entry';
 import { scrapeApplicationFields } from '../form-scraper';
+import { generateApplicationFillPlan } from '../openrouter-answer-module';
 
 export const ashbyApplicationSite: SupportedApplicationSite = {
   siteKey: 'ashby',
@@ -16,22 +17,36 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       boardEntry
     });
+    const fillPlanResult = await generateApplicationFillPlan({
+      applicantProfile: context.applicantProfile,
+      job: context.job,
+      fields: scrapedFields,
+      openRouter: context.openRouter
+    });
 
     await context.logStep(
-      'fields_scraped_ready',
-      'Scraped the visible Ashby application fields and stopped for Stage 3 review.',
+      'fill_plan_ready',
+      'Generated an Ashby fill plan from the visible application fields and stopped for Stage 4 review.',
       {
         boardEntry,
-        scrapedFields
+        scrapedFields,
+        promptVersion: fillPlanResult.promptVersion,
+        rawResponseLength: fillPlanResult.rawResponseLength,
+        responseJson: fillPlanResult.responseJson,
+        fillPlan: fillPlanResult.fillPlan
       }
     );
 
     return context.pauseForManualReview({
-      step: 'fields_scraped_ready',
-      message: 'Paused after scraping the visible Ashby application fields for Stage 3 review.',
+      step: 'fill_plan_ready',
+      message: 'Paused after generating the Ashby fill plan for Stage 4 review.',
       details: {
         boardEntry,
-        scrapedFields
+        scrapedFields,
+        promptVersion: fillPlanResult.promptVersion,
+        rawResponseLength: fillPlanResult.rawResponseLength,
+        responseJson: fillPlanResult.responseJson,
+        fillPlan: fillPlanResult.fillPlan
       }
     });
   }

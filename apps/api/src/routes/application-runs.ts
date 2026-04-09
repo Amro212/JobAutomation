@@ -116,6 +116,13 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       artifactsRepository: app.repositories.artifacts,
       logEventsRepository: app.repositories.logEvents,
       siteFlows: [greenhouseApplicationSite, leverApplicationSite, ashbyApplicationSite],
+      openRouter: app.config.OPENROUTER_API_KEY
+        ? {
+            apiKey: app.config.OPENROUTER_API_KEY,
+            baseUrl: app.config.OPENROUTER_API_BASE_URL,
+            model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
+          }
+        : null,
       artifactsRootDir: join(dirname(app.config.JOB_AUTOMATION_DB_PATH), 'artifacts')
     });
 

@@ -12,6 +12,11 @@ export type GenerateStructuredObjectInput = {
   prompt: string;
 };
 
+export type GenerateStructuredObjectResult = {
+  object: unknown;
+  rawText: string;
+};
+
 type OpenRouterResponse = {
   choices?: Array<{
     message?: {
@@ -119,83 +124,93 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
   const fetchImpl = config.fetchImpl ?? fetch;
   const endpoint = `${trimTrailingSlash(config.baseUrl)}/chat/completions`;
 
-  return {
-    async generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown> {
-      let response: Response | null = null;
-      let lastError: unknown;
+  async function generateStructuredObjectWithMetadata(
+    input: GenerateStructuredObjectInput
+  ): Promise<GenerateStructuredObjectResult> {
+    let response: Response | null = null;
+    let lastError: unknown;
 
-      for (let attempt = 1; attempt <= OPENROUTER_MAX_FETCH_ATTEMPTS; attempt += 1) {
-        try {
-          response = await fetchImpl(endpoint, {
-            method: 'POST',
-            headers: {
-              authorization: `Bearer ${config.apiKey}`,
-              'content-type': 'application/json'
+    for (let attempt = 1; attempt <= OPENROUTER_MAX_FETCH_ATTEMPTS; attempt += 1) {
+      try {
+        response = await fetchImpl(endpoint, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${config.apiKey}`,
+            'content-type': 'application/json'
+          },
+          signal: AbortSignal.timeout(OPENROUTER_REQUEST_TIMEOUT_MS),
+          body: JSON.stringify({
+            model: config.model,
+            response_format: {
+              type: 'json_object'
             },
-            signal: AbortSignal.timeout(OPENROUTER_REQUEST_TIMEOUT_MS),
-            body: JSON.stringify({
-              model: config.model,
-              response_format: {
-                type: 'json_object'
+            messages: [
+              {
+                role: 'system',
+                content: input.systemPrompt
               },
-              messages: [
-                {
-                  role: 'system',
-                  content: input.systemPrompt
-                },
-                {
-                  role: 'user',
-                  content: input.prompt
-                }
-              ]
-            })
-          });
-          break;
-        } catch (error) {
-          lastError = error;
+              {
+                role: 'user',
+                content: input.prompt
+              }
+            ]
+          })
+        });
+        break;
+      } catch (error) {
+        lastError = error;
 
-          if (attempt === OPENROUTER_MAX_FETCH_ATTEMPTS || !isRetryableFetchError(error)) {
-            const message = error instanceof Error ? error.message : 'Unknown fetch error.';
-            const details = readFetchErrorDetails(error);
-            throw new Error(
-              `OpenRouter transport error after ${attempt} attempt(s): ${message}${details}`
-            );
-          }
-
-          await sleep(OPENROUTER_RETRY_DELAY_MS * attempt);
-        }
-      }
-
-      if (!response) {
-        const message = lastError instanceof Error ? lastError.message : 'Unknown fetch error.';
-        const details = readFetchErrorDetails(lastError);
-        throw new Error(`OpenRouter transport error: ${message}${details}`);
-      }
-
-      if (!response.ok) {
-        let details = '';
-
-        try {
-          const errorPayload = (await response.json()) as OpenRouterErrorResponse;
-          const message = errorPayload.error?.message?.trim();
-          if (message) {
-            details = `: ${message}`;
-          }
-        } catch {
-          details = '';
+        if (attempt === OPENROUTER_MAX_FETCH_ATTEMPTS || !isRetryableFetchError(error)) {
+          const message = error instanceof Error ? error.message : 'Unknown fetch error.';
+          const details = readFetchErrorDetails(error);
+          throw new Error(
+            `OpenRouter transport error after ${attempt} attempt(s): ${message}${details}`
+          );
         }
 
-        throw new Error(`OpenRouter request failed with status ${response.status}${details}.`);
+        await sleep(OPENROUTER_RETRY_DELAY_MS * attempt);
       }
+    }
 
-      const payload = (await response.json()) as OpenRouterResponse;
-      const content = readMessageContent(payload);
+    if (!response) {
+      const message = lastError instanceof Error ? lastError.message : 'Unknown fetch error.';
+      const details = readFetchErrorDetails(lastError);
+      throw new Error(`OpenRouter transport error: ${message}${details}`);
+    }
+
+    if (!response.ok) {
+      let details = '';
 
       try {
-        return JSON.parse(content) as unknown;
+        const errorPayload = (await response.json()) as OpenRouterErrorResponse;
+        const message = errorPayload.error?.message?.trim();
+        if (message) {
+          details = `: ${message}`;
+        }
       } catch {
-        throw new Error('OpenRouter returned invalid JSON.');
+        details = '';
       }
+
+      throw new Error(`OpenRouter request failed with status ${response.status}${details}.`);
+    }
+
+    const payload = (await response.json()) as OpenRouterResponse;
+    const content = readMessageContent(payload);
+
+    try {
+      return {
+        object: JSON.parse(content) as unknown,
+        rawText: content
+      };
+    } catch {
+      throw new Error('OpenRouter returned invalid JSON.');
+    }
+  }
+
+  return {
+    generateStructuredObjectWithMetadata,
+    async generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown> {
+      return (await generateStructuredObjectWithMetadata(input)).object;
     }
   };
 }

@@ -1,6 +1,7 @@
 import type { SupportedApplicationSite } from '../contracts';
 import { reachApplicationForm } from '../board-entry';
 import { scrapeApplicationFields } from '../form-scraper';
+import { generateApplicationFillPlan } from '../openrouter-answer-module';
 
 export const greenhouseApplicationSite: SupportedApplicationSite = {
   siteKey: 'greenhouse',
@@ -16,22 +17,36 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       boardEntry
     });
+    const fillPlanResult = await generateApplicationFillPlan({
+      applicantProfile: context.applicantProfile,
+      job: context.job,
+      fields: scrapedFields,
+      openRouter: context.openRouter
+    });
 
     await context.logStep(
-      'fields_scraped_ready',
-      'Scraped the visible Greenhouse application fields and stopped for Stage 3 review.',
+      'fill_plan_ready',
+      'Generated a Greenhouse fill plan from the visible application fields and stopped for Stage 4 review.',
       {
         boardEntry,
-        scrapedFields
+        scrapedFields,
+        promptVersion: fillPlanResult.promptVersion,
+        rawResponseLength: fillPlanResult.rawResponseLength,
+        responseJson: fillPlanResult.responseJson,
+        fillPlan: fillPlanResult.fillPlan
       }
     );
 
     return context.pauseForManualReview({
-      step: 'fields_scraped_ready',
-      message: 'Paused after scraping the visible Greenhouse application fields for Stage 3 review.',
+      step: 'fill_plan_ready',
+      message: 'Paused after generating the Greenhouse fill plan for Stage 4 review.',
       details: {
         boardEntry,
-        scrapedFields
+        scrapedFields,
+        promptVersion: fillPlanResult.promptVersion,
+        rawResponseLength: fillPlanResult.rawResponseLength,
+        responseJson: fillPlanResult.responseJson,
+        fillPlan: fillPlanResult.fillPlan
       }
     });
   }

@@ -4,6 +4,7 @@ import type { ApplicantProfile } from '@jobautomation/core';
 import type { ApplicationRunRecord, ApplicationRunType } from '@jobautomation/core';
 import type { ArtifactRecord } from '@jobautomation/core';
 import type { JobRecord } from '@jobautomation/core';
+import type { OpenRouterConfig } from '@jobautomation/llm';
 
 export type ApplicationRunRecordLike = ApplicationRunRecord;
 
@@ -26,6 +27,7 @@ export type ApplicationSiteFlowContext = {
   job: JobRecord;
   run: ApplicationRunRecordLike;
   session: ApplicationSession;
+  openRouter?: OpenRouterConfig | null;
   logStep: (step: string, message: string, details?: Record<string, unknown>) => Promise<void>;
   captureScreenshot: (input: {
     step: string;

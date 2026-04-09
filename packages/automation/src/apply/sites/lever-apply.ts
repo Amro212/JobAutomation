@@ -1,6 +1,7 @@
 import type { SupportedApplicationSite } from '../contracts';
 import { reachApplicationForm } from '../board-entry';
 import { scrapeApplicationFields } from '../form-scraper';
+import { generateApplicationFillPlan } from '../openrouter-answer-module';
 
 export const leverApplicationSite: SupportedApplicationSite = {
   siteKey: 'lever',
@@ -16,22 +17,36 @@ export const leverApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       boardEntry
     });
+    const fillPlanResult = await generateApplicationFillPlan({
+      applicantProfile: context.applicantProfile,
+      job: context.job,
+      fields: scrapedFields,
+      openRouter: context.openRouter
+    });
 
     await context.logStep(
-      'fields_scraped_ready',
-      'Scraped the visible Lever application fields and stopped for Stage 3 review.',
+      'fill_plan_ready',
+      'Generated a Lever fill plan from the visible application fields and stopped for Stage 4 review.',
       {
         boardEntry,
-        scrapedFields
+        scrapedFields,
+        promptVersion: fillPlanResult.promptVersion,
+        rawResponseLength: fillPlanResult.rawResponseLength,
+        responseJson: fillPlanResult.responseJson,
+        fillPlan: fillPlanResult.fillPlan
       }
     );
 
     return context.pauseForManualReview({
-      step: 'fields_scraped_ready',
-      message: 'Paused after scraping the visible Lever application fields for Stage 3 review.',
+      step: 'fill_plan_ready',
+      message: 'Paused after generating the Lever fill plan for Stage 4 review.',
       details: {
         boardEntry,
-        scrapedFields
+        scrapedFields,
+        promptVersion: fillPlanResult.promptVersion,
+        rawResponseLength: fillPlanResult.rawResponseLength,
+        responseJson: fillPlanResult.responseJson,
+        fillPlan: fillPlanResult.fillPlan
       }
     });
   }

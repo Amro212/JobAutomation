@@ -54,9 +54,22 @@ export async function pauseApplicationRun(input: {
   const filePrefix = `${sanitizeSegment(input.siteKey)}-${sanitizeSegment(input.step)}`;
   const screenshotPath = join(directoryPath, `${filePrefix}.png`);
   const tracePath = join(directoryPath, `${filePrefix}-trace.zip`);
+  const detailsPath = join(directoryPath, `${filePrefix}.json`);
   const screenshot = await input.page.screenshot({ fullPage: true });
   await writeFile(screenshotPath, screenshot);
   await input.finalizeTrace(tracePath);
+
+  const evidenceDetails = {
+    applicationRunId: input.run.id,
+    siteKey: input.siteKey,
+    step: input.step,
+    pageUrl: input.page.url(),
+    ...(input.details ?? {})
+  };
+
+  if (input.details && Object.keys(input.details).length > 0) {
+    await writeFile(detailsPath, `${JSON.stringify(evidenceDetails, null, 2)}\n`);
+  }
 
   const screenshotArtifact = await input.artifactsRepository.create({
     jobId: input.run.jobId,
@@ -78,6 +91,19 @@ export async function pauseApplicationRun(input: {
     storagePath: tracePath,
     createdAt: new Date()
   });
+  const detailsArtifact =
+    input.details && Object.keys(input.details).length > 0
+      ? await input.artifactsRepository.create({
+          jobId: input.run.jobId,
+          discoveryRunId: null,
+          applicationRunId: input.run.id,
+          kind: 'application-evidence-json',
+          format: 'json',
+          fileName: basename(detailsPath),
+          storagePath: detailsPath,
+          createdAt: new Date()
+        })
+      : null;
 
   await input.logEventsRepository.create({
     applicationRunId: input.run.id,
@@ -85,12 +111,10 @@ export async function pauseApplicationRun(input: {
     level: 'info',
     message: input.message,
     detailsJson: JSON.stringify({
-      applicationRunId: input.run.id,
-      siteKey: input.siteKey,
-      step: input.step,
-      pageUrl: input.page.url(),
+      ...evidenceDetails,
       artifactId: screenshotArtifact.id,
       traceArtifactId: traceArtifact.id,
+      ...(detailsArtifact ? { detailsArtifactId: detailsArtifact.id } : {}),
       ...(input.details ?? {})
     })
   });

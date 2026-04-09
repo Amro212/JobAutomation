@@ -11,6 +11,7 @@ import type {
   JobRecord,
   PrefilterReason
 } from '@jobautomation/core';
+import type { OpenRouterConfig } from '@jobautomation/llm';
 import type { Browser } from 'playwright';
 
 import type {
@@ -89,6 +90,7 @@ export type RunApplicationInput = {
   artifactsRepository: ArtifactsRepository;
   logEventsRepository: LogEventsRepository;
   siteFlows: SupportedApplicationSite[];
+  openRouter?: OpenRouterConfig | null;
   artifactsRootDir?: string;
   createBrowser?: () => Promise<Browser>;
   createSession?: typeof createApplicationSession;
@@ -268,6 +270,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
       job,
       run: runningRun,
       session,
+      openRouter: input.openRouter ?? null,
       logStep: async (step, message, details = {}) => {
         await logRunEvent(input.logEventsRepository, {
           applicationRunId: runningRun.id,
