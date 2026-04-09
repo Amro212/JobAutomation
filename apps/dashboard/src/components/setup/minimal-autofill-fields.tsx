@@ -60,19 +60,6 @@ export function MinimalAutofillFields({ profile }: { profile: MinimalAutofillPro
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="block space-y-2 text-sm md:col-span-2">
-          <span className="font-medium">Work authorization</span>
-          <p className="text-muted-foreground text-xs">
-            e.g. “U.S. citizen — authorized to work in the United States without restriction.”
-          </p>
-          <Textarea
-            name="autofill_workAuthorization"
-            defaultValue={profile.workAuthorization}
-            rows={3}
-            placeholder="One clear sentence you would use on work authorization questions"
-          />
-        </label>
-
         <label className="space-y-2 text-sm">
           <span className="font-medium">Requires visa sponsorship?</span>
           <select

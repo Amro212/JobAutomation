@@ -32,7 +32,6 @@ export function formatApplicantContext(profile: ApplicantProfile): string {
   const autofill = profile.autofillProfile;
   const structured: string[] = [];
 
-  appendLine(structured, 'Work authorization', autofill.workAuthorization);
   appendEnumLine(structured, 'Requires sponsorship', autofill.requiresSponsorship, {
     yes: 'Yes',
     no: 'No'

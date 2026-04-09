@@ -36,7 +36,6 @@ export function parseMinimalAutofillFormData(formData: FormData): MinimalAutofil
     : '';
 
   return minimalAutofillProfileSchema.parse({
-    workAuthorization: String(formData.get('autofill_workAuthorization') ?? '').trim(),
     workAuthorizationCountriesCsv: '',
     requiresSponsorship: String(formData.get('autofill_requiresSponsorship') ?? ''),
     requiresSponsorshipCountriesCsv: String(formData.get('autofill_requiresSponsorshipCountriesCsv') ?? '').trim(),

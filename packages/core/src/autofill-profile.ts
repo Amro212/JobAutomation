@@ -5,8 +5,6 @@ import { z } from 'zod';
  * Large per-question forms are intentionally not stored; mapping derives answers from these fields.
  */
 export const minimalAutofillProfileSchema = z.object({
-  /** Free-text work authorization (e.g. "U.S. citizen — authorized to work in the United States without restriction"). */
-  workAuthorization: z.string().default(''),
   /** Comma-separated ISO 3166-1 alpha-2 codes (e.g. "US, CA") for forms that ask country-specific authorization. */
   workAuthorizationCountriesCsv: z.string().default(''),
   requiresSponsorship: z.enum(['', 'yes', 'no']).default(''),

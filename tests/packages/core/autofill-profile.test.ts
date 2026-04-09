@@ -9,7 +9,6 @@ import {
 describe('autofill profile core schema', () => {
   test('default profile includes expanded autofill fields', () => {
     expect(defaultMinimalAutofillProfile).toMatchObject({
-      workAuthorization: '',
       workAuthorizationCountriesCsv: '',
       requiresSponsorship: '',
       requiresSponsorshipCountriesCsv: '',
@@ -45,7 +44,6 @@ describe('autofill profile core schema', () => {
 
   test('schema accepts structured job-application answers', () => {
     const parsed = minimalAutofillProfileSchema.parse({
-      workAuthorization: 'Authorized to work in Canada without restriction.',
       workAuthorizationCountriesCsv: 'CA, US',
       requiresSponsorship: 'no',
       requiresSponsorshipCountriesCsv: '',
