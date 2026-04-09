@@ -14,11 +14,13 @@ export type ApplicationBoardEntryResult = {
   finalUrl: string;
   readyFieldCount: number;
   rootSelector: string;
+  rootIndex: number;
 };
 
 type ApplicationFormSnapshot = {
   readyFieldCount: number;
   rootSelector: string;
+  rootIndex: number;
 };
 
 const BOARD_ROOT_SELECTORS: Record<SupportedApplicationBoard, string[]> = {
@@ -104,7 +106,8 @@ async function inspectApplicationForm(
       ) {
         bestMatch = {
           readyFieldCount,
-          rootSelector: selector
+          rootSelector: selector,
+          rootIndex: index
         };
       }
     }
@@ -161,7 +164,8 @@ export async function reachApplicationForm(input: {
       startUrl,
       finalUrl: input.page.url(),
       readyFieldCount: directForm.readyFieldCount,
-      rootSelector: directForm.rootSelector
+      rootSelector: directForm.rootSelector,
+      rootIndex: directForm.rootIndex
     };
   }
 
@@ -208,6 +212,7 @@ export async function reachApplicationForm(input: {
     startUrl,
     finalUrl: input.page.url(),
     readyFieldCount: postClickForm.readyFieldCount,
-    rootSelector: postClickForm.rootSelector
+    rootSelector: postClickForm.rootSelector,
+    rootIndex: postClickForm.rootIndex
   };
 }

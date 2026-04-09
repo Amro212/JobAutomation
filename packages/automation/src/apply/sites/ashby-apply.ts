@@ -1,5 +1,6 @@
 import type { SupportedApplicationSite } from '../contracts';
 import { reachApplicationForm } from '../board-entry';
+import { scrapeApplicationFields } from '../form-scraper';
 
 export const ashbyApplicationSite: SupportedApplicationSite = {
   siteKey: 'ashby',
@@ -11,20 +12,26 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       board: 'ashby'
     });
+    const scrapedFields = await scrapeApplicationFields({
+      page: context.session.page,
+      boardEntry
+    });
 
     await context.logStep(
-      'board_entry_ready',
-      'Reached the real Ashby application form and stopped for Stage 2 review.',
+      'fields_scraped_ready',
+      'Scraped the visible Ashby application fields and stopped for Stage 3 review.',
       {
-        boardEntry
+        boardEntry,
+        scrapedFields
       }
     );
 
     return context.pauseForManualReview({
-      step: 'board_entry_ready',
-      message: 'Paused after reaching the real Ashby application form for Stage 2 review.',
+      step: 'fields_scraped_ready',
+      message: 'Paused after scraping the visible Ashby application fields for Stage 3 review.',
       details: {
-        boardEntry
+        boardEntry,
+        scrapedFields
       }
     });
   }

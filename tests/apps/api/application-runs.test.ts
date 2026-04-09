@@ -66,7 +66,7 @@ describe('application run routes', () => {
   });
 
   test(
-    'reaches the Greenhouse application form and pauses for Stage 2 review',
+    'scrapes the Greenhouse application form fields and pauses for Stage 3 review',
     async () => {
       writeFileSync(resumePath, Buffer.from('%PDF-1.4\n% api application-run test resume\n'));
 
@@ -184,7 +184,7 @@ describe('application run routes', () => {
         jobId: job.id,
         siteKey: 'greenhouse',
         status: 'paused',
-        currentStep: 'board_entry_ready',
+        currentStep: 'fields_scraped_ready',
         stopReason: 'manual_review_required',
         reviewUrl: sourceUrl,
         resumeArtifactId: resumeArtifact.id
@@ -221,15 +221,15 @@ describe('application run routes', () => {
       expect(detailResponse.json().run).toMatchObject({
         id: runId,
         status: 'paused',
-        currentStep: 'board_entry_ready',
+        currentStep: 'fields_scraped_ready',
         stopReason: 'manual_review_required',
         reviewUrl: sourceUrl
       });
       expect(detailResponse.json().logs.map((log: { message: string }) => log.message)).toEqual(
         expect.arrayContaining([
           'Started application run.',
-          'Reached the real Greenhouse application form and stopped for Stage 2 review.',
-          'Paused after reaching the real Greenhouse application form for Stage 2 review.'
+          'Scraped the visible Greenhouse application fields and stopped for Stage 3 review.',
+          'Paused after scraping the visible Greenhouse application fields for Stage 3 review.'
         ])
       );
       const pauseLog = detailResponse
@@ -237,10 +237,12 @@ describe('application run routes', () => {
         .logs.find(
           (log: { level: string; message: string }) =>
             log.level === 'info' &&
-            log.message === 'Paused after reaching the real Greenhouse application form for Stage 2 review.'
+            log.message ===
+              'Paused after scraping the visible Greenhouse application fields for Stage 3 review.'
         );
       expect(pauseLog).toBeDefined();
       expect(pauseLog.detailsJson).toContain('"entryAction":"direct_form"');
+      expect(pauseLog.detailsJson).toContain('"label":"First Name"');
       expect(detailResponse.json().artifacts).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: 'application-screenshot' }),
