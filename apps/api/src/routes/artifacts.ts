@@ -4,7 +4,7 @@ import {
   applicantProfileSchema,
   jobRecordSchema
 } from '@jobautomation/core';
-import { createOpenRouterProvider, DEFAULT_OPENROUTER_JOB_SUMMARY_MODEL } from '@jobautomation/llm';
+import { createOpenRouterProvider } from '@jobautomation/llm';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -29,14 +29,14 @@ function parseGeneratePayload(body: unknown): { mode: GenerateArtifactsMode } {
 function buildOpenRouterClient(
   app: Pick<FastifyInstance, 'config'>
 ): ReturnType<typeof createOpenRouterProvider> | null {
-  if (!app.config.OPENROUTER_API_KEY) {
+  if (!app.config.OPENROUTER_API_KEY || !app.config.OPENROUTER_JOB_SUMMARY_MODEL) {
     return null;
   }
 
   return createOpenRouterProvider({
     apiKey: app.config.OPENROUTER_API_KEY,
     baseUrl: app.config.OPENROUTER_API_BASE_URL,
-    model: app.config.OPENROUTER_JOB_SUMMARY_MODEL || DEFAULT_OPENROUTER_JOB_SUMMARY_MODEL
+    model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
   });
 }
 

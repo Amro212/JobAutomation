@@ -1,1 +1,4 @@
-export const DEFAULT_OPENROUTER_JOB_SUMMARY_MODEL = 'google/gemini-2.0-flash-lite-001';
+export const OPENROUTER_MODEL_ENV_KEYS = {
+  jobSummary: 'OPENROUTER_JOB_SUMMARY_MODEL',
+  applicationFillPlan: 'OPENROUTER_APPLICATION_FILL_PLAN_MODEL'
+} as const;

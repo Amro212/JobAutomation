@@ -88,6 +88,19 @@ describe('pause application run', () => {
       details: {
         promptVersion: 'stage4-fill-plan-v1',
         rawResponseLength: 123,
+        promptPayload: {
+          applicantProfile: {
+            identity: {
+              fullName: 'Taylor Example'
+            }
+          },
+          fields: [
+            {
+              id: 'first_name',
+              answerability: 'direct_profile'
+            }
+          ]
+        },
         responseJson: {
           items: [
             {
@@ -106,6 +119,15 @@ describe('pause application run', () => {
             value: 'Taylor',
             confidence: 0.99,
             skipReason: ''
+          }
+        ],
+        fieldDiagnostics: [
+          {
+            fieldId: 'first_name',
+            answerability: 'direct_profile',
+            category: 'accepted',
+            normalizedAction: 'fill',
+            recovered: false
           }
         ]
       },
@@ -135,6 +157,19 @@ describe('pause application run', () => {
       pageUrl: 'https://job-boards.greenhouse.io/example/jobs/1/application',
       promptVersion: 'stage4-fill-plan-v1',
       rawResponseLength: 123,
+      promptPayload: {
+        applicantProfile: {
+          identity: {
+            fullName: 'Taylor Example'
+          }
+        },
+        fields: [
+          {
+            id: 'first_name',
+            answerability: 'direct_profile'
+          }
+        ]
+      },
       responseJson: {
         items: [
           {
@@ -158,6 +193,17 @@ describe('pause application run', () => {
         }
       ]
     });
+    expect(jsonContents).toMatchObject({
+      fieldDiagnostics: [
+        {
+          fieldId: 'first_name',
+          answerability: 'direct_profile',
+          category: 'accepted',
+          normalizedAction: 'fill',
+          recovered: false
+        }
+      ]
+    });
 
     expect(createLogEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -170,5 +216,7 @@ describe('pause application run', () => {
 
     expect(readFileSync(jsonPath, 'utf8')).toContain('responseJson');
     expect(readFileSync(jsonPath, 'utf8')).toContain('fillPlan');
+    expect(readFileSync(jsonPath, 'utf8')).toContain('promptPayload');
+    expect(readFileSync(jsonPath, 'utf8')).toContain('fieldDiagnostics');
   });
 });

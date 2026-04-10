@@ -30,11 +30,8 @@ const envSchema = z.object({
     .transform(resolveProjectPath),
   OPENROUTER_API_KEY: z.string().trim().min(1).optional(),
   OPENROUTER_API_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
-  OPENROUTER_JOB_SUMMARY_MODEL: z
-    .string()
-    .trim()
-    .min(1)
-    .default('google/gemini-2.0-flash-lite-001')
+  OPENROUTER_JOB_SUMMARY_MODEL: z.string().trim().min(1).optional(),
+  OPENROUTER_APPLICATION_FILL_PLAN_MODEL: z.string().trim().min(1).optional()
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

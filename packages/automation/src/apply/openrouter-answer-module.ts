@@ -105,7 +105,9 @@ export type GenerateApplicationFillPlanResult = {
   promptVersion: string;
   rawResponseLength: number;
   serializedProfileShape: Record<string, unknown>;
+  promptPayload: ApplicationFillPlanPromptPayload;
   responseJson: z.infer<typeof applicationFillPlanResponseSchema>;
+  fieldDiagnostics: ApplicationFillPlanFieldDiagnostic[];
   fillPlan: ApplicationFillPlanEntry[];
 };
 
@@ -174,7 +176,43 @@ type PromptField = {
   required: boolean;
   enabled: boolean;
   options: ScrapedApplicationFieldOption[];
+  answerability: PromptFieldAnswerability;
+  guidance: string;
   specialHandling?: string;
+};
+
+export type PromptFieldAnswerability =
+  | 'direct_profile'
+  | 'structured_profile'
+  | 'conditional_follow_up'
+  | 'company_specific_or_unsupported';
+
+export type ApplicationFillPlanDiagnosticCategory =
+  | 'accepted'
+  | 'schema_mismatch'
+  | 'unsupported_field_type'
+  | 'missing_profile_fact'
+  | 'model_uncertainty'
+  | 'normalization_rejection';
+
+export type ApplicationFillPlanFieldDiagnostic = {
+  fieldId: string;
+  label: string;
+  type: ScrapedApplicationFieldType;
+  required: boolean;
+  answerability: PromptFieldAnswerability;
+  category: ApplicationFillPlanDiagnosticCategory;
+  rawAction: ApplicationFillPlanAction | null;
+  normalizedAction: ApplicationFillPlanAction;
+  expectedActions: ApplicationFillPlanAction[];
+  reason: string;
+  recovered: boolean;
+};
+
+export type ApplicationFillPlanPromptPayload = {
+  job: GenerateApplicationFillPlanInput['job'];
+  applicantProfile: SerializedApplicantProfile;
+  fields: PromptField[];
 };
 
 function logStage4(action: string, details: Record<string, unknown>): void {
@@ -326,7 +364,80 @@ function describeSerializedProfileShape(
   };
 }
 
+function normalizeTextForMatching(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function includesAny(value: string, candidates: string[]): boolean {
+  const normalizedValue = normalizeTextForMatching(value);
+  return candidates.some((candidate) => normalizedValue.includes(candidate));
+}
+
+function classifyFieldAnswerability(field: ScrapedApplicationField): PromptFieldAnswerability {
+  const fingerprint = `${field.id} ${field.label}`;
+
+  if (
+    includesAny(fingerprint, ['if other', 'please specify', 'if you have held']) ||
+    normalizeTextForMatching(field.label).startsWith('if ')
+  ) {
+    return 'conditional_follow_up';
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'first name',
+      'last name',
+      'full name',
+      ' email',
+      'phone',
+      'location',
+      'country',
+      'linkedin',
+      'website',
+      'portfolio'
+    ])
+  ) {
+    return 'direct_profile';
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'work authorization',
+      'authorized to work',
+      'legally authorized',
+      'sponsorship',
+      'citizen',
+      'citizenship',
+      'pronouns',
+      'gender',
+      'race',
+      'ethnicity',
+      'hispanic',
+      'veteran',
+      'disability'
+    ])
+  ) {
+    return 'structured_profile';
+  }
+
+  return 'company_specific_or_unsupported';
+}
+
+function guidanceForAnswerability(answerability: PromptFieldAnswerability): string {
+  switch (answerability) {
+    case 'direct_profile':
+      return 'Answer directly from the applicant identity/profile facts when available.';
+    case 'structured_profile':
+      return 'Answer only from structured applicant facts. If the exact fact is not present, skip.';
+    case 'conditional_follow_up':
+      return 'Answer only when a prerequisite answer is explicitly grounded. Otherwise skip.';
+    case 'company_specific_or_unsupported':
+      return 'Skip unless the applicant profile explicitly contains the exact company-specific fact.';
+  }
+}
+
 function toPromptField(field: ScrapedApplicationField): PromptField {
+  const answerability = classifyFieldAnswerability(field);
   return {
     id: field.id,
     label: field.label,
@@ -334,6 +445,8 @@ function toPromptField(field: ScrapedApplicationField): PromptField {
     required: field.required,
     enabled: field.enabled,
     options: field.options,
+    answerability,
+    guidance: guidanceForAnswerability(answerability),
     ...(field.specialHandling ? { specialHandling: field.specialHandling } : {})
   };
 }
@@ -347,6 +460,7 @@ function buildSystemPrompt(): string {
     'If a field is uncertain, ambiguous, company-specific, or unsupported, return action "skip" with a short skipReason.',
     'Action rules:',
     '- text, email, tel, textarea, rich_text, combobox => action "fill" with a string value.',
+    '- combobox is a typed searchable widget. Do not return action "select" for combobox.',
     '- select => action "select" with an exact option value when possible.',
     '- checkbox => action "check" with a boolean value.',
     '- checkbox_group => action "check" with an array of exact option values.',
@@ -363,12 +477,12 @@ function buildSystemPrompt(): string {
   ].join('\n');
 }
 
-function buildPrompt(input: {
+function createPromptPayload(input: {
   job: GenerateApplicationFillPlanInput['job'];
   serializedProfile: SerializedApplicantProfile;
   fields: ScrapedApplicationField[];
-}): string {
-  const promptPayload = {
+}): ApplicationFillPlanPromptPayload {
+  return {
     job: {
       title: input.job.title,
       companyName: input.job.companyName,
@@ -378,7 +492,9 @@ function buildPrompt(input: {
     applicantProfile: input.serializedProfile,
     fields: input.fields.map(toPromptField)
   };
+}
 
+function buildPrompt(promptPayload: ApplicationFillPlanPromptPayload): string {
   return JSON.stringify(promptPayload, null, 2);
 }
 
@@ -437,81 +553,311 @@ function coerceCheckboxValue(value: ApplicationFillPlanEntry['value']): boolean 
   return null;
 }
 
-function defaultSkipEntry(field: ScrapedApplicationField, skipReason: string): ApplicationFillPlanEntry {
+function expectedActionsForField(field: ScrapedApplicationField): ApplicationFillPlanAction[] {
+  switch (field.type) {
+    case 'select':
+      return ['select'];
+    case 'radio_group':
+      return ['click'];
+    case 'checkbox':
+    case 'checkbox_group':
+      return ['check'];
+    case 'file':
+      return ['skip'];
+    default:
+      return ['fill'];
+  }
+}
+
+function defaultSkipReasonForAnswerability(answerability: PromptFieldAnswerability): string {
+  switch (answerability) {
+    case 'company_specific_or_unsupported':
+    case 'conditional_follow_up':
+      return 'missing_profile_fact: no grounded applicant profile fact is available for this field';
+    case 'direct_profile':
+    case 'structured_profile':
+      return 'model_uncertainty: the model did not return a grounded answer for this field';
+  }
+}
+
+function createDiagnostic(input: {
+  field: ScrapedApplicationField;
+  answerability: PromptFieldAnswerability;
+  category: ApplicationFillPlanDiagnosticCategory;
+  rawAction: ApplicationFillPlanAction | null;
+  normalizedAction: ApplicationFillPlanAction;
+  reason: string;
+  recovered: boolean;
+}): ApplicationFillPlanFieldDiagnostic {
   return {
-    fieldId: field.id,
-    action: 'skip',
-    value: null,
-    confidence: 0,
-    skipReason
+    fieldId: input.field.id,
+    label: input.field.label,
+    type: input.field.type,
+    required: input.field.required,
+    answerability: input.answerability,
+    category: input.category,
+    rawAction: input.rawAction,
+    normalizedAction: input.normalizedAction,
+    expectedActions: expectedActionsForField(input.field),
+    reason: input.reason,
+    recovered: input.recovered
+  };
+}
+
+function createSkipResult(input: {
+  field: ScrapedApplicationField;
+  answerability: PromptFieldAnswerability;
+  rawEntry?: ApplicationFillPlanEntry;
+  skipReason: string;
+  category: ApplicationFillPlanDiagnosticCategory;
+}): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } {
+  return {
+    entry: {
+      fieldId: input.field.id,
+      action: 'skip',
+      value: null,
+      confidence: input.rawEntry ? clampConfidence(input.rawEntry.confidence) : 0,
+      skipReason: input.skipReason
+    },
+    diagnostic: createDiagnostic({
+      field: input.field,
+      answerability: input.answerability,
+      category: input.category,
+      rawAction: input.rawEntry?.action ?? null,
+      normalizedAction: 'skip',
+      reason: input.skipReason,
+      recovered: false
+    })
+  };
+}
+
+function createAcceptedResult(input: {
+  field: ScrapedApplicationField;
+  answerability: PromptFieldAnswerability;
+  rawEntry?: ApplicationFillPlanEntry;
+  normalizedAction: ApplicationFillPlanAction;
+  value: ApplicationFillPlanEntry['value'];
+  confidence: number;
+  category?: ApplicationFillPlanDiagnosticCategory;
+  reason?: string;
+  recovered?: boolean;
+}): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } {
+  const category = input.category ?? 'accepted';
+  const reason = input.reason ?? 'accepted';
+  const recovered = input.recovered ?? false;
+
+  return {
+    entry: {
+      fieldId: input.field.id,
+      action: input.normalizedAction,
+      value: input.value,
+      confidence: clampConfidence(input.confidence),
+      skipReason: ''
+    },
+    diagnostic: createDiagnostic({
+      field: input.field,
+      answerability: input.answerability,
+      category,
+      rawAction: input.rawEntry?.action ?? null,
+      normalizedAction: input.normalizedAction,
+      reason,
+      recovered
+    })
   };
 }
 
 function normalizeEntryForField(
   field: ScrapedApplicationField,
+  answerability: PromptFieldAnswerability,
   entry: ApplicationFillPlanEntry | undefined
-): ApplicationFillPlanEntry {
+): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } {
   if (!entry) {
-    return defaultSkipEntry(field, 'model_did_not_return_plan');
+    return createSkipResult({
+      field,
+      answerability,
+      skipReason: defaultSkipReasonForAnswerability(answerability),
+      category:
+        answerability === 'company_specific_or_unsupported' ||
+        answerability === 'conditional_follow_up'
+          ? 'missing_profile_fact'
+          : 'model_uncertainty'
+    });
   }
 
   if (field.type === 'file') {
     return {
-      fieldId: field.id,
-      action: 'skip',
-      value: null,
-      confidence: clampConfidence(entry.confidence),
-      skipReason: entry.skipReason || 'file_upload_handled_later'
+      entry: {
+        fieldId: field.id,
+        action: 'skip',
+        value: null,
+        confidence: clampConfidence(entry.confidence),
+        skipReason: entry.skipReason || 'file_upload_handled_later'
+      },
+      diagnostic: createDiagnostic({
+        field,
+        answerability,
+        category: 'unsupported_field_type',
+        rawAction: entry.action,
+        normalizedAction: 'skip',
+        reason: entry.skipReason || 'file_upload_handled_later',
+        recovered: false
+      })
     };
   }
 
   if (entry.action === 'skip') {
-    return {
-      fieldId: field.id,
-      action: 'skip',
-      value: null,
-      confidence: clampConfidence(entry.confidence),
-      skipReason: entry.skipReason || 'model_skipped'
-    };
+    return createSkipResult({
+      field,
+      answerability,
+      rawEntry: entry,
+      skipReason:
+        answerability === 'company_specific_or_unsupported' ||
+        answerability === 'conditional_follow_up'
+          ? 'missing_profile_fact: no grounded applicant profile fact is available for this field'
+          : entry.skipReason || defaultSkipReasonForAnswerability(answerability),
+      category:
+        answerability === 'company_specific_or_unsupported' ||
+        answerability === 'conditional_follow_up'
+          ? 'missing_profile_fact'
+          : 'model_uncertainty'
+    });
+  }
+
+  if (field.type === 'combobox') {
+    if (entry.action === 'fill' && typeof entry.value === 'string') {
+      const textValue = entry.value.trim();
+      return textValue.length > 0
+        ? createAcceptedResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            normalizedAction: 'fill',
+            value: textValue,
+            confidence: entry.confidence
+          })
+        : createSkipResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            skipReason: 'normalization_rejection: the model returned an empty fill value',
+            category: 'normalization_rejection'
+          });
+    }
+
+    if (entry.action === 'select' && typeof entry.value === 'string') {
+      const textValue = entry.value.trim();
+      return textValue.length > 0
+        ? createAcceptedResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            normalizedAction: 'fill',
+            value: textValue,
+            confidence: entry.confidence,
+            category: 'schema_mismatch',
+            reason: 'schema_mismatch: combobox fields require action "fill"; recovered from model action "select"',
+            recovered: true
+          })
+        : createSkipResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            skipReason: defaultSkipReasonForAnswerability(answerability),
+            category:
+              answerability === 'company_specific_or_unsupported' ||
+              answerability === 'conditional_follow_up'
+                ? 'missing_profile_fact'
+                : 'model_uncertainty'
+          });
+    }
+
+    return createSkipResult({
+      field,
+      answerability,
+      rawEntry: entry,
+      skipReason:
+        entry.action === 'select'
+          ? defaultSkipReasonForAnswerability(answerability)
+          : `schema_mismatch: expected ${expectedActionsForField(field).join('/')} for ${field.type}, got ${entry.action}`,
+      category:
+        entry.action === 'select'
+          ? answerability === 'company_specific_or_unsupported' ||
+            answerability === 'conditional_follow_up'
+            ? 'missing_profile_fact'
+            : 'model_uncertainty'
+          : 'schema_mismatch'
+    });
   }
 
   if (field.type === 'select') {
     if (entry.action !== 'select' || typeof entry.value !== 'string') {
-      return defaultSkipEntry(field, 'invalid_action_for_field_type');
+      return createSkipResult({
+        field,
+        answerability,
+        rawEntry: entry,
+        skipReason: `schema_mismatch: expected select for ${field.type}, got ${entry.action}`,
+        category: 'schema_mismatch'
+      });
     }
 
     const optionValue = resolveOptionValue(field.options, entry.value);
     return optionValue
-      ? {
-          fieldId: field.id,
-          action: 'select',
+      ? createAcceptedResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          normalizedAction: 'select',
           value: optionValue,
-          confidence: clampConfidence(entry.confidence),
-          skipReason: ''
-        }
-      : defaultSkipEntry(field, 'option_not_found');
+          confidence: entry.confidence
+        })
+      : createSkipResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          skipReason: 'normalization_rejection: the model selected an option that does not exist',
+          category: 'normalization_rejection'
+        });
   }
 
   if (field.type === 'radio_group') {
     if (entry.action !== 'click' || typeof entry.value !== 'string') {
-      return defaultSkipEntry(field, 'invalid_action_for_field_type');
+      return createSkipResult({
+        field,
+        answerability,
+        rawEntry: entry,
+        skipReason: `schema_mismatch: expected click for ${field.type}, got ${entry.action}`,
+        category: 'schema_mismatch'
+      });
     }
 
     const optionValue = resolveOptionValue(field.options, entry.value);
     return optionValue
-      ? {
-          fieldId: field.id,
-          action: 'click',
+      ? createAcceptedResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          normalizedAction: 'click',
           value: optionValue,
-          confidence: clampConfidence(entry.confidence),
-          skipReason: ''
-        }
-      : defaultSkipEntry(field, 'option_not_found');
+          confidence: entry.confidence
+        })
+      : createSkipResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          skipReason: 'normalization_rejection: the model selected a radio option that does not exist',
+          category: 'normalization_rejection'
+        });
   }
 
   if (field.type === 'checkbox_group') {
     if (entry.action !== 'check') {
-      return defaultSkipEntry(field, 'invalid_action_for_field_type');
+      return createSkipResult({
+        field,
+        answerability,
+        rawEntry: entry,
+        skipReason: `schema_mismatch: expected check for ${field.type}, got ${entry.action}`,
+        category: 'schema_mismatch'
+      });
     }
 
     const rawValues =
@@ -529,53 +875,89 @@ function normalizeEntryForField(
     );
 
     return values.length > 0
-      ? {
-          fieldId: field.id,
-          action: 'check',
+      ? createAcceptedResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          normalizedAction: 'check',
           value: values,
-          confidence: clampConfidence(entry.confidence),
-          skipReason: ''
-        }
-      : defaultSkipEntry(field, 'option_not_found');
+          confidence: entry.confidence
+        })
+      : createSkipResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          skipReason: 'normalization_rejection: the model selected checkbox options that do not exist',
+          category: 'normalization_rejection'
+        });
   }
 
   if (field.type === 'checkbox') {
     if (entry.action !== 'check') {
-      return defaultSkipEntry(field, 'invalid_action_for_field_type');
+      return createSkipResult({
+        field,
+        answerability,
+        rawEntry: entry,
+        skipReason: `schema_mismatch: expected check for ${field.type}, got ${entry.action}`,
+        category: 'schema_mismatch'
+      });
     }
 
     const booleanValue = coerceCheckboxValue(entry.value);
     return booleanValue === null
-      ? defaultSkipEntry(field, 'invalid_checkbox_value')
-      : {
-          fieldId: field.id,
-          action: 'check',
+      ? createSkipResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          skipReason: 'normalization_rejection: the model returned an invalid checkbox value',
+          category: 'normalization_rejection'
+        })
+      : createAcceptedResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          normalizedAction: 'check',
           value: booleanValue,
-          confidence: clampConfidence(entry.confidence),
-          skipReason: ''
-        };
+          confidence: entry.confidence
+        });
   }
 
   if (entry.action !== 'fill' || typeof entry.value !== 'string') {
-    return defaultSkipEntry(field, 'invalid_action_for_field_type');
+    return createSkipResult({
+      field,
+      answerability,
+      rawEntry: entry,
+      skipReason: `schema_mismatch: expected fill for ${field.type}, got ${entry.action}`,
+      category: 'schema_mismatch'
+    });
   }
 
   const textValue = entry.value.trim();
   return textValue.length > 0
-    ? {
-        fieldId: field.id,
-        action: 'fill',
+    ? createAcceptedResult({
+        field,
+        answerability,
+        rawEntry: entry,
+        normalizedAction: 'fill',
         value: textValue,
-        confidence: clampConfidence(entry.confidence),
-        skipReason: ''
-      }
-    : defaultSkipEntry(field, 'empty_fill_value');
+        confidence: entry.confidence
+      })
+    : createSkipResult({
+        field,
+        answerability,
+        rawEntry: entry,
+        skipReason: 'normalization_rejection: the model returned an empty fill value',
+        category: 'normalization_rejection'
+      });
 }
 
 function normalizeFillPlan(
   fields: ScrapedApplicationField[],
   items: ApplicationFillPlanEntry[]
-): ApplicationFillPlanEntry[] {
+): {
+  fillPlan: ApplicationFillPlanEntry[];
+  fieldDiagnostics: ApplicationFillPlanFieldDiagnostic[];
+} {
   const firstEntryByFieldId = new Map<string, ApplicationFillPlanEntry>();
 
   for (const item of items) {
@@ -584,7 +966,18 @@ function normalizeFillPlan(
     }
   }
 
-  return fields.map((field) => normalizeEntryForField(field, firstEntryByFieldId.get(field.id)));
+  const normalized = fields.map((field) =>
+    normalizeEntryForField(
+      field,
+      classifyFieldAnswerability(field),
+      firstEntryByFieldId.get(field.id)
+    )
+  );
+
+  return {
+    fillPlan: normalized.map((item) => item.entry),
+    fieldDiagnostics: normalized.map((item) => item.diagnostic)
+  };
 }
 
 export async function generateApplicationFillPlan(
@@ -603,22 +996,27 @@ export async function generateApplicationFillPlan(
 
   const serializedProfile = serializeApplicantProfile(input.applicantProfile);
   const serializedProfileShape = describeSerializedProfileShape(serializedProfile);
+  const promptPayload = createPromptPayload({
+    job: input.job,
+    serializedProfile,
+    fields: input.fields
+  });
 
   logStage4('request_prepared', {
     promptVersion: STAGE_4_PROMPT_VERSION,
     fieldCount: input.fields.length,
-    serializedProfileShape
+    serializedProfileShape,
+    answerabilityCounts: promptPayload.fields.reduce<Record<string, number>>((counts, field) => {
+      counts[field.answerability] = (counts[field.answerability] ?? 0) + 1;
+      return counts;
+    }, {})
   });
 
   const request = {
     schemaName: 'application_fill_plan',
     schema: applicationFillPlanJsonSchema as unknown as Record<string, unknown>,
     systemPrompt: buildSystemPrompt(),
-    prompt: buildPrompt({
-      job: input.job,
-      serializedProfile,
-      fields: input.fields
-    })
+    prompt: buildPrompt(promptPayload)
   } satisfies GenerateStructuredObjectInput;
 
   try {
@@ -648,27 +1046,37 @@ export async function generateApplicationFillPlan(
       );
     }
 
-    const fillPlan = normalizeFillPlan(input.fields, parsed.data.items);
+    const { fillPlan, fieldDiagnostics } = normalizeFillPlan(input.fields, parsed.data.items);
     const skippedFieldIds = fillPlan
       .filter((entry) => entry.action === 'skip')
       .map((entry) => entry.fieldId);
     const uncertainFieldIds = fillPlan
       .filter((entry) => entry.action !== 'skip' && entry.confidence < 0.7)
       .map((entry) => entry.fieldId);
+    const diagnosticCategoryCounts = fieldDiagnostics.reduce<Record<string, number>>(
+      (counts, diagnostic) => {
+        counts[diagnostic.category] = (counts[diagnostic.category] ?? 0) + 1;
+        return counts;
+      },
+      {}
+    );
 
     logStage4('response_parsed', {
       promptVersion: STAGE_4_PROMPT_VERSION,
       rawResponseLength: response.rawText.length,
       parseStatus: 'parsed',
       skippedFieldIds,
-      uncertainFieldIds
+      uncertainFieldIds,
+      diagnosticCategoryCounts
     });
 
     return {
       promptVersion: STAGE_4_PROMPT_VERSION,
       rawResponseLength: response.rawText.length,
       serializedProfileShape,
+      promptPayload,
       responseJson: parsed.data,
+      fieldDiagnostics,
       fillPlan
     };
   } catch (error) {

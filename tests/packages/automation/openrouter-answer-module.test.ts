@@ -303,4 +303,262 @@ describe('openrouter answer module', () => {
       code: 'invalid_output'
     });
   });
+
+  test('coerces greenhouse combobox select responses into fill actions with explicit diagnostics', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'country',
+          action: 'fill',
+          value: 'Canada',
+          confidence: 1,
+          skipReason: ''
+        },
+        {
+          fieldId: 'sponsorship',
+          action: 'select',
+          value: 'Yes',
+          confidence: 0.92,
+          skipReason: ''
+        },
+        {
+          fieldId: 'clearance',
+          action: 'select',
+          value: null,
+          confidence: 0,
+          skipReason: 'ambiguous or unsupported field'
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant({
+        autofillProfile: minimalAutofillProfileSchema.parse({
+          workAuthorizationCountriesCsv: 'CA',
+          requiresSponsorship: 'yes'
+        })
+      }),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'country',
+          label: 'Country*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#country'],
+          options: []
+        },
+        {
+          id: 'sponsorship',
+          label: 'Will you require sponsorship from Anduril for employment now or in the future (e.g, H1B visa)?*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#sponsorship'],
+          options: []
+        },
+        {
+          id: 'clearance',
+          label:
+            'CLEARANCE ELIGIBILITY - This position requires eligibility to obtain and maintain a U.S. security clearance.*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#clearance'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'country',
+        action: 'fill',
+        value: 'Canada',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'sponsorship',
+        action: 'fill',
+        value: 'Yes',
+        confidence: 0.92,
+        skipReason: ''
+      },
+      {
+        fieldId: 'clearance',
+        action: 'skip',
+        value: null,
+        confidence: 0,
+        skipReason: 'missing_profile_fact: no grounded applicant profile fact is available for this field'
+      }
+    ]);
+
+    expect(result.fieldDiagnostics).toEqual([
+      expect.objectContaining({
+        fieldId: 'country',
+        answerability: 'direct_profile',
+        category: 'accepted',
+        rawAction: 'fill',
+        normalizedAction: 'fill'
+      }),
+      expect.objectContaining({
+        fieldId: 'sponsorship',
+        answerability: 'structured_profile',
+        category: 'schema_mismatch',
+        rawAction: 'select',
+        normalizedAction: 'fill',
+        expectedActions: ['fill'],
+        recovered: true
+      }),
+      expect.objectContaining({
+        fieldId: 'clearance',
+        answerability: 'company_specific_or_unsupported',
+        category: 'missing_profile_fact',
+        rawAction: 'select',
+        normalizedAction: 'skip',
+        recovered: false
+      })
+    ]);
+  });
+
+  test('includes prompt payload classifications and preserves greenhouse regression diagnostics', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'first_name',
+          action: 'fill',
+          value: 'Amro',
+          confidence: 1,
+          skipReason: ''
+        },
+        {
+          fieldId: 'question_10957802007',
+          action: 'select',
+          value: 'Yes',
+          confidence: 1,
+          skipReason: ''
+        },
+        {
+          fieldId: 'question_10957798007',
+          action: 'select',
+          value: null,
+          confidence: 0,
+          skipReason: 'ambiguous or unsupported field'
+        },
+        {
+          fieldId: 'question_10957807007',
+          action: 'fill',
+          value: '',
+          confidence: 0,
+          skipReason: 'optional field, skip fill'
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant({
+        fullName: 'Amro Moosa',
+        email: 'amromousa8@gmail.com',
+        phone: '+19054621004',
+        autofillProfile: minimalAutofillProfileSchema.parse({
+          workAuthorizationCountriesCsv: 'CA',
+          requiresSponsorship: 'yes'
+        })
+      }),
+      job: baseJob({
+        companyName: 'Anduril Industries'
+      }),
+      fields: [
+        {
+          id: 'first_name',
+          label: 'First Name*',
+          type: 'text',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#first_name'],
+          options: []
+        },
+        {
+          id: 'question_10957798007',
+          label:
+            'CLEARANCE ELIGIBILITY - This position requires eligibility to obtain and maintain a U.S. security clearance.*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_10957798007'],
+          options: []
+        },
+        {
+          id: 'question_10957802007',
+          label: 'Will you require sponsorship from Anduril for employment now or in the future (e.g, H1B visa)?*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_10957802007'],
+          options: []
+        },
+        {
+          id: 'question_10957807007',
+          label: 'If other, please specify',
+          type: 'text',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_10957807007'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.promptPayload.fields).toEqual([
+      expect.objectContaining({
+        id: 'first_name',
+        answerability: 'direct_profile'
+      }),
+      expect.objectContaining({
+        id: 'question_10957798007',
+        answerability: 'company_specific_or_unsupported'
+      }),
+      expect.objectContaining({
+        id: 'question_10957802007',
+        answerability: 'structured_profile'
+      }),
+      expect.objectContaining({
+        id: 'question_10957807007',
+        answerability: 'conditional_follow_up'
+      })
+    ]);
+
+    expect(result.fillPlan.map((entry) => entry.skipReason)).not.toContain(
+      'invalid_action_for_field_type'
+    );
+    expect(result.fieldDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: 'question_10957802007',
+          category: 'schema_mismatch',
+          normalizedAction: 'fill',
+          recovered: true
+        }),
+        expect.objectContaining({
+          fieldId: 'question_10957798007',
+          category: 'missing_profile_fact'
+        }),
+        expect.objectContaining({
+          fieldId: 'question_10957807007',
+          category: 'normalization_rejection'
+        })
+      ])
+    );
+  });
 });

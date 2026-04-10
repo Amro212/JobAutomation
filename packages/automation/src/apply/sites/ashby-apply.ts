@@ -32,7 +32,9 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
         scrapedFields,
         promptVersion: fillPlanResult.promptVersion,
         rawResponseLength: fillPlanResult.rawResponseLength,
+        promptPayload: fillPlanResult.promptPayload,
         responseJson: fillPlanResult.responseJson,
+        fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan
       }
     );
@@ -45,7 +47,9 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
         scrapedFields,
         promptVersion: fillPlanResult.promptVersion,
         rawResponseLength: fillPlanResult.rawResponseLength,
+        promptPayload: fillPlanResult.promptPayload,
         responseJson: fillPlanResult.responseJson,
+        fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan
       }
     });

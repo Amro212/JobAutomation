@@ -108,6 +108,15 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ message: 'Job not found.' });
     }
 
+    const applicationFillPlanModel =
+      app.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ?? app.config.OPENROUTER_JOB_SUMMARY_MODEL;
+
+    if (app.config.OPENROUTER_API_KEY && !applicationFillPlanModel) {
+      throw new Error(
+        'OPENROUTER_APPLICATION_FILL_PLAN_MODEL or OPENROUTER_JOB_SUMMARY_MODEL must be set when OpenRouter is configured.'
+      );
+    }
+
     const run = await runApplication({
       jobId: payload.jobId,
       jobsRepository: app.repositories.jobs,
@@ -120,7 +129,7 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
         ? {
             apiKey: app.config.OPENROUTER_API_KEY,
             baseUrl: app.config.OPENROUTER_API_BASE_URL,
-            model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
+            model: applicationFillPlanModel!
           }
         : null,
       artifactsRootDir: join(dirname(app.config.JOB_AUTOMATION_DB_PATH), 'artifacts')
