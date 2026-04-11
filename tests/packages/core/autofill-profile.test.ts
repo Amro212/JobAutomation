@@ -12,6 +12,16 @@ describe('autofill profile core schema', () => {
       workAuthorizationCountriesCsv: '',
       requiresSponsorship: '',
       requiresSponsorshipCountriesCsv: '',
+      currentCountryCode: '',
+      primaryCitizenshipCountryCode: '',
+      currentCountryResidenceStatus: '',
+      currentCountryResidenceStatusOther: '',
+      legallyAuthorizedInCurrentCountry: '',
+      needsSponsorshipInCurrentCountry: '',
+      consentToInterviewRecording: '',
+      acceptApplicationPrivacyNotices: '',
+      consentToDemographicDataProcessing: '',
+      lgbtqiaCommunityIdentification: '',
       clearanceStatus: '',
       relocation: '',
       workPreference: '',
@@ -47,6 +57,16 @@ describe('autofill profile core schema', () => {
       workAuthorizationCountriesCsv: 'CA, US',
       requiresSponsorship: 'no',
       requiresSponsorshipCountriesCsv: '',
+      currentCountryCode: 'CA',
+      primaryCitizenshipCountryCode: 'CA',
+      currentCountryResidenceStatus: 'citizen',
+      currentCountryResidenceStatusOther: '',
+      legallyAuthorizedInCurrentCountry: 'yes',
+      needsSponsorshipInCurrentCountry: 'no',
+      consentToInterviewRecording: 'yes',
+      acceptApplicationPrivacyNotices: 'yes',
+      consentToDemographicDataProcessing: 'yes',
+      lgbtqiaCommunityIdentification: 'no',
       clearanceStatus: 'eligible',
       relocation: 'yes',
       workPreference: 'no_preference',
@@ -79,6 +99,15 @@ describe('autofill profile core schema', () => {
     expect(parsed.yearsOfExperience).toBe('5_10');
     expect(parsed.criminalBackground).toBe('disclose_if_required');
     expect(parsed.salaryExpectationCurrency).toBe('USD');
+    expect(parsed.currentCountryCode).toBe('CA');
+    expect(parsed.primaryCitizenshipCountryCode).toBe('CA');
+    expect(parsed.currentCountryResidenceStatus).toBe('citizen');
+    expect(parsed.legallyAuthorizedInCurrentCountry).toBe('yes');
+    expect(parsed.needsSponsorshipInCurrentCountry).toBe('no');
+    expect(parsed.consentToInterviewRecording).toBe('yes');
+    expect(parsed.acceptApplicationPrivacyNotices).toBe('yes');
+    expect(parsed.consentToDemographicDataProcessing).toBe('yes');
+    expect(parsed.lgbtqiaCommunityIdentification).toBe('no');
   });
 
   test('country parser normalizes separators and casing', () => {

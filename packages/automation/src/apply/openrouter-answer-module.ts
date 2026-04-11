@@ -1,4 +1,6 @@
 import {
+  FILTER_COUNTRIES,
+  getCountrySearchTokens,
   parseWorkAuthorizationCountriesCsv,
   type ApplicantProfile,
   type JobRecord
@@ -21,6 +23,27 @@ const STAGE_4_LOG_PREFIX = '[Stage 4][openrouter-answer-module]';
 const STAGE_4_PROMPT_VERSION = 'stage4-fill-plan-v1';
 const MAX_SUMMARY_CHARS = 2_000;
 const MAX_CONTEXT_CHARS = 4_000;
+const MAX_RESUME_LATEX_CHARS = 20_000;
+const MAX_RESUME_EXCERPT_CHARS = 2_500;
+const MAX_RESUME_LINES = 12;
+
+const RESUME_TECHNOLOGY_KEYWORDS = [
+  'TypeScript',
+  'JavaScript',
+  'Python',
+  'Node.js',
+  'React',
+  'Playwright',
+  'Postgres',
+  'PostgreSQL',
+  'MySQL',
+  'SQL',
+  'Docker',
+  'AWS',
+  'REST API',
+  'GraphQL',
+  'CI/CD'
+] as const;
 
 const applicationFillPlanActionSchema = z.enum(['fill', 'select', 'check', 'click', 'skip']);
 
@@ -121,6 +144,30 @@ export class ApplicationAnswerGenerationError extends Error {
   }
 }
 
+type ResumeContext = {
+  available: boolean;
+  recentRoles: string[];
+  technologies: string[];
+  projectSignals: string[];
+  achievementSignals: string[];
+  stakeholderSignals: string[];
+  excerpt: string;
+  hasProfessionalRoleSignals: boolean;
+};
+
+type ResumeLatexContext = {
+  available: boolean;
+  fileName: string | null;
+  tex: string;
+};
+
+type CompletionPolicyDefaults = {
+  consentToInterviewRecording: 'yes' | 'no' | null;
+  acceptApplicationPrivacyNotices: 'yes' | 'no' | null;
+  consentToDemographicDataProcessing: 'yes' | 'no' | null;
+  lgbtqiaCommunityIdentification: 'yes' | 'no' | 'prefer_not_to_say' | null;
+};
+
 type SerializedApplicantProfile = {
   available: boolean;
   identity: {
@@ -133,11 +180,21 @@ type SerializedApplicantProfile = {
   };
   summary: string;
   reusableContext: string;
+  resumeLatex: ResumeLatexContext;
+  resumeContext: ResumeContext;
   preferredCountries: string[];
+  completionPolicyDefaults: CompletionPolicyDefaults;
   workAuthorization: {
     authorizedWithoutSponsorshipCountryCodes: string[];
     requiresSponsorship: boolean | null;
     requiresSponsorshipCountryCodes: string[];
+    currentCountryCode: string | null;
+    primaryCitizenshipCountryCode: string | null;
+    currentCountryResidenceStatus: string | null;
+    currentCountryResidenceStatusOther: string | null;
+    legallyAuthorizedInCurrentCountry: string | null;
+    needsSponsorshipInCurrentCountry: string | null;
+    clearanceStatus: string | null;
     noticePeriod: string | null;
     startDate: string | null;
   };
@@ -178,6 +235,8 @@ type PromptField = {
   options: ScrapedApplicationFieldOption[];
   answerability: PromptFieldAnswerability;
   guidance: string;
+  intent?: PromptFieldIntent;
+  targetCountryCode?: string | null;
   specialHandling?: string;
 };
 
@@ -185,7 +244,19 @@ export type PromptFieldAnswerability =
   | 'direct_profile'
   | 'structured_profile'
   | 'conditional_follow_up'
-  | 'company_specific_or_unsupported';
+  | 'open_ended_best_effort'
+  | 'unsupported_or_unanswerable';
+
+export type PromptFieldIntent =
+  | 'professional_experience_yes_no'
+  | 'heard_about_company'
+  | 'company_interest'
+  | 'company_values_resonance'
+  | 'achievement_narrative'
+  | 'stakeholder_collaboration_example'
+  | 'technical_experience_narrative'
+  | 'consent_or_notice'
+  | 'lgbtqia_identification';
 
 export type ApplicationFillPlanDiagnosticCategory =
   | 'accepted'
@@ -193,7 +264,11 @@ export type ApplicationFillPlanDiagnosticCategory =
   | 'unsupported_field_type'
   | 'missing_profile_fact'
   | 'model_uncertainty'
-  | 'normalization_rejection';
+  | 'normalization_rejection'
+  | 'best_effort_negative_inference'
+  | 'resume_grounded_best_effort'
+  | 'policy_default_consent'
+  | 'profile_default_sensitive_response';
 
 export type ApplicationFillPlanFieldDiagnostic = {
   fieldId: string;
@@ -211,6 +286,10 @@ export type ApplicationFillPlanFieldDiagnostic = {
 
 export type ApplicationFillPlanPromptPayload = {
   job: GenerateApplicationFillPlanInput['job'];
+  jobCountryContext: {
+    jobLocationRaw: string;
+    normalizedJobCountryCode: string | null;
+  };
   applicantProfile: SerializedApplicantProfile;
   fields: PromptField[];
 };
@@ -229,9 +308,107 @@ function truncate(value: string, maxChars: number): string {
   return `${trimmed.slice(0, maxChars)}\n[truncated]`;
 }
 
+function toNullableEnumValue<T extends string>(value: T | ''): T | null {
+  return value === '' ? null : value;
+}
+
+function cleanupResumeLine(value: string): string {
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .trim();
+}
+
+function stripLatexToPlainText(rawLatex: string): string {
+  return rawLatex
+    .replace(/%.*$/gm, ' ')
+    .replace(/\\item/g, '\n')
+    .replace(/\\href\{[^}]*\}\{([^}]*)\}/g, '$1')
+    .replace(/\\(?:textbf|textit|emph|underline|section|subsection|subsubsection)\*?\{([^}]*)\}/g, '$1')
+    .replace(/\\[a-zA-Z]+\*?(?:\[[^\]]*\])?/g, ' ')
+    .replace(/[{}]/g, ' ')
+    .replace(/[&_~^$]/g, ' ')
+    .replace(/\r/g, '\n');
+}
+
+function extractResumeLines(rawLatex: string): string[] {
+  return stripLatexToPlainText(rawLatex)
+    .split('\n')
+    .map(cleanupResumeLine)
+    .filter((line) => line.length >= 12);
+}
+
+function extractMatchingResumeLines(lines: string[], pattern: RegExp, limit = 4): string[] {
+  const matches = lines.filter((line) => pattern.test(line));
+  return Array.from(new Set(matches)).slice(0, limit);
+}
+
+function extractResumeTechnologies(resumeText: string): string[] {
+  const normalized = normalizeTextForMatching(resumeText);
+  return RESUME_TECHNOLOGY_KEYWORDS.filter((keyword) =>
+    normalized.includes(normalizeTextForMatching(keyword))
+  );
+}
+
+function buildResumeContext(applicantProfile: ApplicantProfile | null): ResumeContext {
+  const baseResumeTex = applicantProfile?.baseResumeTex.trim() ?? '';
+  if (baseResumeTex.length === 0) {
+    return {
+      available: false,
+      recentRoles: [],
+      technologies: [],
+      projectSignals: [],
+      achievementSignals: [],
+      stakeholderSignals: [],
+      excerpt: '',
+      hasProfessionalRoleSignals: false
+    };
+  }
+
+  const lines = extractResumeLines(baseResumeTex);
+  const excerpt = truncate(lines.slice(0, MAX_RESUME_LINES).join('\n'), MAX_RESUME_EXCERPT_CHARS);
+  const technologies = extractResumeTechnologies(excerpt);
+  const recentRoles = extractMatchingResumeLines(
+    lines,
+    /\b(engineer|developer|intern|analyst|consultant|manager|lead|specialist|co-op)\b/i
+  );
+  const projectSignals = extractMatchingResumeLines(
+    lines,
+    /\b(project|platform|tool|pipeline|application|service|system|automation|backend|database)\b/i,
+    6
+  );
+  const achievementSignals = extractMatchingResumeLines(
+    lines,
+    /\b(built|designed|developed|delivered|launched|led|improved|automated|reduced|saved|implemented)\b/i,
+    6
+  );
+  const stakeholderSignals = extractMatchingResumeLines(
+    lines,
+    /\b(stakeholder|product|operations|customer|cross-functional|collaborat|partnered)\b/i,
+    4
+  );
+
+  return {
+    available: true,
+    recentRoles,
+    technologies,
+    projectSignals,
+    achievementSignals,
+    stakeholderSignals,
+    excerpt,
+    hasProfessionalRoleSignals: recentRoles.length > 0
+  };
+}
+
 function serializeApplicantProfile(
   applicantProfile: ApplicantProfile | null
 ): SerializedApplicantProfile {
+  const resumeContext = buildResumeContext(applicantProfile);
+  const resumeLatex: ResumeLatexContext = {
+    available: (applicantProfile?.baseResumeTex.trim().length ?? 0) > 0,
+    fileName: applicantProfile?.baseResumeFileName.trim() || null,
+    tex: truncate(applicantProfile?.baseResumeTex ?? '', MAX_RESUME_LATEX_CHARS)
+  };
   if (!applicantProfile) {
     return {
       available: false,
@@ -245,11 +422,26 @@ function serializeApplicantProfile(
       },
       summary: '',
       reusableContext: '',
+      resumeLatex,
+      resumeContext,
       preferredCountries: [],
+      completionPolicyDefaults: {
+        consentToInterviewRecording: null,
+        acceptApplicationPrivacyNotices: null,
+        consentToDemographicDataProcessing: null,
+        lgbtqiaCommunityIdentification: null
+      },
       workAuthorization: {
         authorizedWithoutSponsorshipCountryCodes: [],
         requiresSponsorship: null,
         requiresSponsorshipCountryCodes: [],
+        currentCountryCode: null,
+        primaryCitizenshipCountryCode: null,
+        currentCountryResidenceStatus: null,
+        currentCountryResidenceStatusOther: null,
+        legallyAuthorizedInCurrentCountry: null,
+        needsSponsorshipInCurrentCountry: null,
+        clearanceStatus: null,
         noticePeriod: null,
         startDate: null
       },
@@ -302,7 +494,23 @@ function serializeApplicantProfile(
     },
     summary: truncate(applicantProfile.summary, MAX_SUMMARY_CHARS),
     reusableContext: truncate(applicantProfile.reusableContext, MAX_CONTEXT_CHARS),
+    resumeLatex,
+    resumeContext,
     preferredCountries: applicantProfile.preferredCountries,
+    completionPolicyDefaults: {
+      consentToInterviewRecording: toNullableEnumValue(
+        autofillProfile.consentToInterviewRecording
+      ),
+      acceptApplicationPrivacyNotices: toNullableEnumValue(
+        autofillProfile.acceptApplicationPrivacyNotices
+      ),
+      consentToDemographicDataProcessing: toNullableEnumValue(
+        autofillProfile.consentToDemographicDataProcessing
+      ),
+      lgbtqiaCommunityIdentification: toNullableEnumValue(
+        autofillProfile.lgbtqiaCommunityIdentification
+      )
+    },
     workAuthorization: {
       authorizedWithoutSponsorshipCountryCodes: parseWorkAuthorizationCountriesCsv(
         autofillProfile.workAuthorizationCountriesCsv
@@ -311,6 +519,14 @@ function serializeApplicantProfile(
       requiresSponsorshipCountryCodes: parseWorkAuthorizationCountriesCsv(
         autofillProfile.requiresSponsorshipCountriesCsv
       ),
+      currentCountryCode: autofillProfile.currentCountryCode || null,
+      primaryCitizenshipCountryCode: autofillProfile.primaryCitizenshipCountryCode || null,
+      currentCountryResidenceStatus: autofillProfile.currentCountryResidenceStatus || null,
+      currentCountryResidenceStatusOther:
+        autofillProfile.currentCountryResidenceStatusOther.trim() || null,
+      legallyAuthorizedInCurrentCountry: autofillProfile.legallyAuthorizedInCurrentCountry || null,
+      needsSponsorshipInCurrentCountry: autofillProfile.needsSponsorshipInCurrentCountry || null,
+      clearanceStatus: autofillProfile.clearanceStatus || null,
       noticePeriod: autofillProfile.noticePeriod || null,
       startDate: autofillProfile.startDate.trim() || null
     },
@@ -353,13 +569,29 @@ function describeSerializedProfileShape(
       .map(([key]) => key),
     hasSummary: serializedProfile.summary.length > 0,
     hasReusableContext: serializedProfile.reusableContext.length > 0,
+    resumeLatex: {
+      available: serializedProfile.resumeLatex.available,
+      fileName: serializedProfile.resumeLatex.fileName,
+      texLength: serializedProfile.resumeLatex.tex.length
+    },
+    resumeContext: {
+      available: serializedProfile.resumeContext.available,
+      recentRoleCount: serializedProfile.resumeContext.recentRoles.length,
+      technologyCount: serializedProfile.resumeContext.technologies.length,
+      stakeholderSignalCount: serializedProfile.resumeContext.stakeholderSignals.length
+    },
     preferredCountryCount: serializedProfile.preferredCountries.length,
+    completionPolicyDefaults: serializedProfile.completionPolicyDefaults,
     workAuthorization: {
       authorizedCountryCount:
         serializedProfile.workAuthorization.authorizedWithoutSponsorshipCountryCodes.length,
       requiresSponsorship: serializedProfile.workAuthorization.requiresSponsorship,
       sponsorshipCountryCount:
-        serializedProfile.workAuthorization.requiresSponsorshipCountryCodes.length
+        serializedProfile.workAuthorization.requiresSponsorshipCountryCodes.length,
+      currentCountryCode: serializedProfile.workAuthorization.currentCountryCode,
+      primaryCitizenshipCountryCode: serializedProfile.workAuthorization.primaryCitizenshipCountryCode,
+      currentCountryResidenceStatus: serializedProfile.workAuthorization.currentCountryResidenceStatus,
+      clearanceStatus: serializedProfile.workAuthorization.clearanceStatus
     }
   };
 }
@@ -373,14 +605,193 @@ function includesAny(value: string, candidates: string[]): boolean {
   return candidates.some((candidate) => normalizedValue.includes(candidate));
 }
 
+function inferCountryCodeFromText(value: string): string | null {
+  const normalizedValue = normalizeTextForMatching(value);
+  if (normalizedValue.length === 0) {
+    return null;
+  }
+
+  const matches = FILTER_COUNTRIES.filter((country) =>
+    getCountrySearchTokens(country.code).some((token) => normalizedValue.includes(token))
+  );
+
+  return matches.length === 1 ? matches[0]?.code ?? null : null;
+}
+
+function isProfessionalExperienceBinaryPrompt(fingerprint: string): boolean {
+  return (
+    includesAny(fingerprint, ['professional setting', 'professionally']) &&
+    includesAny(fingerprint, [
+      'do you have',
+      'have you',
+      'hands-on experience',
+      'developed, maintained',
+      'production-ready backend',
+      'experience working with'
+    ])
+  );
+}
+
+function isConsentOrNoticePrompt(fingerprint: string): boolean {
+  return includesAny(fingerprint, [
+    'consent',
+    'privacy notice',
+    'notice at collection',
+    'acknowledge',
+    'acknowledgement',
+    'record and auto-transcript',
+    'demographic data',
+    'self-identification data'
+  ]);
+}
+
+function isLgbtqiaIdentificationPrompt(fingerprint: string): boolean {
+  return includesAny(fingerprint, [
+    'sexual orientation',
+    'lesbian',
+    'bisexual',
+    'transgender',
+    'queer',
+    'intersex',
+    'asexual',
+    'lgbtqia'
+  ]);
+}
+
+function detectFieldIntent(field: ScrapedApplicationField): PromptFieldIntent | null {
+  const fingerprint = `${field.id} ${field.label}`;
+
+  if (isProfessionalExperienceBinaryPrompt(fingerprint)) {
+    return 'professional_experience_yes_no';
+  }
+
+  if (isConsentOrNoticePrompt(fingerprint)) {
+    return 'consent_or_notice';
+  }
+
+  if (isLgbtqiaIdentificationPrompt(fingerprint)) {
+    return 'lgbtqia_identification';
+  }
+
+  if (includesAny(fingerprint, ['how did you hear about', 'heard about'])) {
+    return 'heard_about_company';
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'why are you interested',
+      'interested in working',
+      'what makes you interested',
+      'why do you want to work',
+      'why do you want to join',
+      'what excites you'
+    ])
+  ) {
+    return 'company_interest';
+  }
+
+  if (includesAny(fingerprint, ['values', 'resonate', 'resonates', 'mission'])) {
+    return 'company_values_resonance';
+  }
+
+  if (includesAny(fingerprint, ['achievement', 'accomplishment', 'proud of', 'tell us about a time'])) {
+    return 'achievement_narrative';
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'stakeholder',
+      'cross-functional',
+      'collaboration',
+      'collaborate',
+      'partner with'
+    ])
+  ) {
+    return 'stakeholder_collaboration_example';
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'technical experience',
+      'experience with',
+      'describe your experience',
+      'engineering experience'
+    ])
+  ) {
+    return 'technical_experience_narrative';
+  }
+
+  return null;
+}
+
+function skipCategoryForAnswerability(
+  answerability: PromptFieldAnswerability
+): ApplicationFillPlanDiagnosticCategory {
+  switch (answerability) {
+    case 'structured_profile':
+    case 'conditional_follow_up':
+      return 'missing_profile_fact';
+    case 'direct_profile':
+    case 'open_ended_best_effort':
+    case 'unsupported_or_unanswerable':
+      return 'model_uncertainty';
+  }
+}
+
 function classifyFieldAnswerability(field: ScrapedApplicationField): PromptFieldAnswerability {
   const fingerprint = `${field.id} ${field.label}`;
+  const intent = detectFieldIntent(field);
 
   if (
     includesAny(fingerprint, ['if other', 'please specify', 'if you have held']) ||
     normalizeTextForMatching(field.label).startsWith('if ')
   ) {
     return 'conditional_follow_up';
+  }
+
+  if (
+    intent === 'professional_experience_yes_no' ||
+    intent === 'heard_about_company' ||
+    intent === 'company_interest' ||
+    intent === 'company_values_resonance' ||
+    intent === 'achievement_narrative' ||
+    intent === 'stakeholder_collaboration_example' ||
+    intent === 'technical_experience_narrative'
+  ) {
+    return 'open_ended_best_effort';
+  }
+
+  if (intent === 'consent_or_notice' || intent === 'lgbtqia_identification') {
+    return 'structured_profile';
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'work authorization',
+      'authorized to work',
+      'legally authorized',
+      'legally eligible to work',
+      'eligible to work',
+      'sponsorship',
+      'citizen',
+      'citizenship',
+      'visa',
+      'work permit',
+      'residence status',
+      'clearance',
+      'export control',
+      'consent',
+      'privacy',
+      'pronouns',
+      'gender',
+      'race',
+      'ethnicity',
+      'hispanic',
+      'veteran',
+      'disability'
+    ])
+  ) {
+    return 'structured_profile';
   }
 
   if (
@@ -400,44 +811,75 @@ function classifyFieldAnswerability(field: ScrapedApplicationField): PromptField
     return 'direct_profile';
   }
 
-  if (
-    includesAny(fingerprint, [
-      'work authorization',
-      'authorized to work',
-      'legally authorized',
-      'sponsorship',
-      'citizen',
-      'citizenship',
-      'pronouns',
-      'gender',
-      'race',
-      'ethnicity',
-      'hispanic',
-      'veteran',
-      'disability'
-    ])
-  ) {
-    return 'structured_profile';
-  }
-
-  return 'company_specific_or_unsupported';
+  return 'unsupported_or_unanswerable';
 }
 
-function guidanceForAnswerability(answerability: PromptFieldAnswerability): string {
+function guidanceForAnswerability(
+  answerability: PromptFieldAnswerability,
+  intent: PromptFieldIntent | null,
+  targetCountryCode: string | null
+): string {
+  if (intent === 'professional_experience_yes_no') {
+    return [
+      'Use applicant summary, reusable context, resumeContext, and structured profile facts.',
+      'Use resumeLatex.tex as the raw LaTeX resume source when detailed resume evidence is needed.',
+      'Answer Yes only when those sources show clear professional evidence for the asked experience.',
+      'Otherwise answer No.',
+      'Do not hallucinate employers, projects, years, systems, or technologies.'
+    ].join(' ');
+  }
+
+  if (intent === 'consent_or_notice') {
+    return [
+      'Use applicantProfile.completionPolicyDefaults for required consent, privacy, and notice prompts.',
+      'If the specific profile value is unset, default to Yes.',
+      'Do not skip these acknowledgements when the form requires an answer to continue.'
+    ].join(' ');
+  }
+
+  if (intent === 'lgbtqia_identification') {
+    return [
+      'Use applicantProfile.completionPolicyDefaults.lgbtqiaCommunityIdentification when set.',
+      'If it is unset, default to No.',
+      'Do not skip this field.'
+    ].join(' ');
+  }
+
   switch (answerability) {
     case 'direct_profile':
       return 'Answer directly from the applicant identity/profile facts when available.';
     case 'structured_profile':
-      return 'Answer only from structured applicant facts. If the exact fact is not present, skip.';
+      return [
+        'Answer only from structured applicant facts and structured legal-status fields.',
+        targetCountryCode
+          ? `Treat ${targetCountryCode} as the target country inferred from the field wording.`
+          : 'If the question refers to the work country or job location, use jobCountryContext.normalizedJobCountryCode when available.',
+        'Do not guess security clearance, export-control eligibility, citizenship in an unrelated country, or consent/privacy acknowledgements.'
+      ].join(' ');
     case 'conditional_follow_up':
       return 'Answer only when a prerequisite answer is explicitly grounded. Otherwise skip.';
-    case 'company_specific_or_unsupported':
-      return 'Skip unless the applicant profile explicitly contains the exact company-specific fact.';
+    case 'open_ended_best_effort':
+      if (intent === 'heard_about_company') {
+        return 'Answer with the best available grounded source. If no explicit source exists in profile or context, default to LinkedIn instead of skipping.';
+      }
+
+      return [
+        'Answer with the strongest grounded synthesis from applicant summary, reusable context, resumeContext, qualifications, preferences, and job/company context.',
+        'Use resumeLatex.tex as the full LaTeX resume source when resumeContext is too compressed.',
+        'Do not skip only because the profile lacks an exact matching sentence.',
+        'Do not invent employers, projects, systems, years, achievements, or technologies that are not supported by resume/profile context.',
+        'If the question asks about professional work, do not upgrade student or personal work into professional experience unless the resume/profile clearly frames it that way.'
+      ].join(' ');
+    case 'unsupported_or_unanswerable':
+      return 'Skip when the field cannot be answered safely from the available applicant and job context.';
   }
 }
 
 function toPromptField(field: ScrapedApplicationField): PromptField {
   const answerability = classifyFieldAnswerability(field);
+  const intent = detectFieldIntent(field);
+  const targetCountryCode = inferCountryCodeFromText(`${field.id} ${field.label}`);
+
   return {
     id: field.id,
     label: field.label,
@@ -446,7 +888,9 @@ function toPromptField(field: ScrapedApplicationField): PromptField {
     enabled: field.enabled,
     options: field.options,
     answerability,
-    guidance: guidanceForAnswerability(answerability),
+    guidance: guidanceForAnswerability(answerability, intent, targetCountryCode),
+    ...(intent ? { intent } : {}),
+    ...(targetCountryCode ? { targetCountryCode } : {}),
     ...(field.specialHandling ? { specialHandling: field.specialHandling } : {})
   };
 }
@@ -456,8 +900,9 @@ function buildSystemPrompt(): string {
     'You create a structured application fill plan for a single job-board page state.',
     `Prompt version: ${STAGE_4_PROMPT_VERSION}.`,
     'Use only the applicant profile facts and the scraped field definitions provided by the user.',
-    'Never invent qualifications, work authorization, company-specific motivation, compensation, or demographic data.',
-    'If a field is uncertain, ambiguous, company-specific, or unsupported, return action "skip" with a short skipReason.',
+    'Use best-effort grounded synthesis for open-ended motivation and narrative questions when the applicant profile, resumeLatex, and resumeContext give enough context to answer plausibly.',
+    'Never invent employers, projects, years, achievements, technologies, legal status, security clearance, export-control eligibility, or demographic facts.',
+    'If a field is uncertain or unsupported, return action "skip" with a short skipReason.',
     'Action rules:',
     '- text, email, tel, textarea, rich_text, combobox => action "fill" with a string value.',
     '- combobox is a typed searchable widget. Do not return action "select" for combobox.',
@@ -466,10 +911,25 @@ function buildSystemPrompt(): string {
     '- checkbox_group => action "check" with an array of exact option values.',
     '- radio_group => action "click" with an exact option value.',
     '- file uploads are handled later, so use action "skip".',
-    'Work authorization rules:',
+    'Open-ended best-effort rules:',
+    '- For "How did you hear about us?" style prompts, use an explicit source from profile/context when available; otherwise answer LinkedIn.',
+    '- For professional yes/no experience prompts, answer Yes only if summary, reusableContext, resumeLatex, or resumeContext shows clear professional evidence. Otherwise answer No. Do not skip.',
+    '- For motivation, values, achievement, stakeholder, and technical-experience prompts, synthesize from applicant summary, reusable context, resumeLatex, resumeContext, qualifications, preferences, and the job/company context instead of skipping for lack of an exact matching sentence.',
+    '- For experience-oriented answers, stay conservative when evidence is partial and use the closest grounded example available.',
+    'Consent and notice policy rules:',
+    '- Use applicantProfile.completionPolicyDefaults for interview recording, privacy notice, notice-at-collection, and demographic-data-processing prompts.',
+    '- If those profile values are unset, default required consent/privacy/notice prompts to Yes so the application can continue.',
+    '- Use applicantProfile.completionPolicyDefaults.lgbtqiaCommunityIdentification for LGBTQIA community-identification prompts. If unset, default to No.',
+    'Structured legal reasoning rules:',
     '- authorizedWithoutSponsorshipCountryCodes lists countries where the candidate can work without sponsorship.',
     '- requiresSponsorship tells you whether the candidate needs sponsorship now or later when asked generally.',
-    '- if the field asks about a country not covered by the profile facts, skip instead of guessing.',
+    '- currentCountryCode, primaryCitizenshipCountryCode, currentCountryResidenceStatus, legallyAuthorizedInCurrentCountry, and needsSponsorshipInCurrentCountry describe the applicant status in their current country.',
+    '- If the field wording names a country explicitly, use that country first. Otherwise, for questions about the work country or job location, use jobCountryContext.normalizedJobCountryCode when available.',
+    '- If the target country matches currentCountryCode, treat citizen, permanent_resident, open_work_permit, and employer_specific_work_visa as strong evidence of legal work/live status there.',
+    '- If the target country matches primaryCitizenshipCountryCode, citizenship can support citizenship and legal-work answers there.',
+    '- If authorizedWithoutSponsorshipCountryCodes contains the target country, that supports a "yes" answer to work authorization without sponsorship.',
+    '- If requiresSponsorshipCountryCodes contains the target country, or needsSponsorshipInCurrentCountry is yes for the current country, that supports a "yes" answer to sponsorship-needed questions.',
+    '- If the field asks about a country not covered by structured facts, skip instead of guessing.',
     'Return JSON only with shape { "items": [...] }.',
     'Every item must include fieldId, action, value, confidence, and skipReason.',
     'When action is not "skip", keep skipReason as an empty string.',
@@ -488,6 +948,10 @@ function createPromptPayload(input: {
       companyName: input.job.companyName,
       location: input.job.location,
       sourceUrl: input.job.sourceUrl
+    },
+    jobCountryContext: {
+      jobLocationRaw: input.job.location,
+      normalizedJobCountryCode: inferCountryCodeFromText(input.job.location)
     },
     applicantProfile: input.serializedProfile,
     fields: input.fields.map(toPromptField)
@@ -571,12 +1035,15 @@ function expectedActionsForField(field: ScrapedApplicationField): ApplicationFil
 
 function defaultSkipReasonForAnswerability(answerability: PromptFieldAnswerability): string {
   switch (answerability) {
-    case 'company_specific_or_unsupported':
-    case 'conditional_follow_up':
-      return 'missing_profile_fact: no grounded applicant profile fact is available for this field';
-    case 'direct_profile':
     case 'structured_profile':
+    case 'conditional_follow_up':
+      return 'missing_profile_fact: no grounded structured applicant fact is available for this field';
+    case 'direct_profile':
       return 'model_uncertainty: the model did not return a grounded answer for this field';
+    case 'open_ended_best_effort':
+      return 'model_uncertainty: the model did not produce a grounded best-effort answer for this field';
+    case 'unsupported_or_unanswerable':
+      return 'model_uncertainty: the field could not be answered safely from the available context';
   }
 }
 
@@ -666,21 +1133,241 @@ function createAcceptedResult(input: {
   };
 }
 
+function buildProfileEvidenceCorpus(serializedProfile: SerializedApplicantProfile): string {
+  return normalizeTextForMatching(
+    [
+      serializedProfile.summary,
+      serializedProfile.reusableContext,
+      serializedProfile.resumeLatex.tex,
+      serializedProfile.resumeContext.excerpt,
+      serializedProfile.resumeContext.recentRoles.join('\n'),
+      serializedProfile.resumeContext.technologies.join('\n'),
+      serializedProfile.resumeContext.projectSignals.join('\n'),
+      serializedProfile.resumeContext.achievementSignals.join('\n'),
+      serializedProfile.resumeContext.stakeholderSignals.join('\n')
+    ].join('\n')
+  );
+}
+
+function hasProfessionalExperienceSupport(
+  field: ScrapedApplicationField,
+  serializedProfile: SerializedApplicantProfile
+): boolean {
+  if (!serializedProfile.resumeContext.hasProfessionalRoleSignals) {
+    return false;
+  }
+
+  const corpus = buildProfileEvidenceCorpus(serializedProfile);
+  const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+
+  if (includesAny(fingerprint, ['postgres', 'postgresql', 'relational database', 'database'])) {
+    return (
+      corpus.includes('postgres') ||
+      corpus.includes('postgresql') ||
+      corpus.includes('mysql') ||
+      corpus.includes('database')
+    );
+  }
+
+  if (includesAny(fingerprint, ['backend', 'back-end', 'production-ready backend', 'api', 'server'])) {
+    return (
+      corpus.includes('backend') ||
+      corpus.includes('back-end') ||
+      corpus.includes('api') ||
+      corpus.includes('server') ||
+      corpus.includes('service')
+    );
+  }
+
+  return false;
+}
+
+function resolveConsentPolicyValue(
+  field: ScrapedApplicationField,
+  serializedProfile: SerializedApplicantProfile
+): { value: 'yes' | 'no'; source: string } {
+  const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+
+  if (includesAny(fingerprint, ['record', 'recording', 'auto-transcript', 'brighthire', 'interview'])) {
+    return serializedProfile.completionPolicyDefaults.consentToInterviewRecording
+      ? {
+          value: serializedProfile.completionPolicyDefaults.consentToInterviewRecording,
+          source: 'applicantProfile.completionPolicyDefaults.consentToInterviewRecording'
+        }
+      : { value: 'yes', source: 'default_yes_for_required_consent' };
+  }
+
+  if (includesAny(fingerprint, ['demographic data', 'self-identification data', 'gdpr_demographic_data_consent_given'])) {
+    return serializedProfile.completionPolicyDefaults.consentToDemographicDataProcessing
+      ? {
+          value: serializedProfile.completionPolicyDefaults.consentToDemographicDataProcessing,
+          source: 'applicantProfile.completionPolicyDefaults.consentToDemographicDataProcessing'
+        }
+      : { value: 'yes', source: 'default_yes_for_required_consent' };
+  }
+
+  return serializedProfile.completionPolicyDefaults.acceptApplicationPrivacyNotices
+    ? {
+        value: serializedProfile.completionPolicyDefaults.acceptApplicationPrivacyNotices,
+        source: 'applicantProfile.completionPolicyDefaults.acceptApplicationPrivacyNotices'
+      }
+    : { value: 'yes', source: 'default_yes_for_required_consent' };
+}
+
+function resolveSensitiveIdentificationValue(
+  serializedProfile: SerializedApplicantProfile
+): { value: 'yes' | 'no' | 'prefer_not_to_say'; source: string } {
+  return serializedProfile.completionPolicyDefaults.lgbtqiaCommunityIdentification
+    ? {
+        value: serializedProfile.completionPolicyDefaults.lgbtqiaCommunityIdentification,
+        source: 'applicantProfile.completionPolicyDefaults.lgbtqiaCommunityIdentification'
+      }
+    : { value: 'no', source: 'default_no_for_optional_sensitive_self_id' };
+}
+
+function textValueForEnum(value: 'yes' | 'no' | 'prefer_not_to_say'): string {
+  switch (value) {
+    case 'prefer_not_to_say':
+      return 'Prefer not to say';
+    case 'yes':
+      return 'Yes';
+    case 'no':
+      return 'No';
+  }
+}
+
+function createDeterministicFieldResult(input: {
+  field: ScrapedApplicationField;
+  answerability: PromptFieldAnswerability;
+  rawEntry?: ApplicationFillPlanEntry;
+  textValue: string;
+  category: ApplicationFillPlanDiagnosticCategory;
+  reason: string;
+}): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } {
+  const { field, answerability, rawEntry, textValue, category, reason } = input;
+  const confidence = rawEntry ? clampConfidence(rawEntry.confidence) || 1 : 1;
+
+  if (field.type === 'checkbox') {
+    return createAcceptedResult({
+      field,
+      answerability,
+      rawEntry,
+      normalizedAction: 'check',
+      value: normalizeForComparison(textValue) === 'yes',
+      confidence,
+      category,
+      reason
+    });
+  }
+
+  if (field.type === 'radio_group') {
+    const optionValue = resolveOptionValue(field.options, textValue);
+    return optionValue
+      ? createAcceptedResult({
+          field,
+          answerability,
+          rawEntry,
+          normalizedAction: 'click',
+          value: optionValue,
+          confidence,
+          category,
+          reason
+        })
+      : createSkipResult({
+          field,
+          answerability,
+          rawEntry,
+          skipReason: 'normalization_rejection: deterministic response did not match a radio option',
+          category: 'normalization_rejection'
+        });
+  }
+
+  if (field.type === 'select') {
+    const optionValue = resolveOptionValue(field.options, textValue);
+    return optionValue
+      ? createAcceptedResult({
+          field,
+          answerability,
+          rawEntry,
+          normalizedAction: 'select',
+          value: optionValue,
+          confidence,
+          category,
+          reason
+        })
+      : createSkipResult({
+          field,
+          answerability,
+          rawEntry,
+          skipReason: 'normalization_rejection: deterministic response did not match a select option',
+          category: 'normalization_rejection'
+        });
+  }
+
+  return createAcceptedResult({
+    field,
+    answerability,
+    rawEntry,
+    normalizedAction: 'fill',
+    value: textValue,
+    confidence,
+    category,
+    reason
+  });
+}
+
 function normalizeEntryForField(
   field: ScrapedApplicationField,
-  answerability: PromptFieldAnswerability,
+  promptField: PromptField,
+  serializedProfile: SerializedApplicantProfile,
   entry: ApplicationFillPlanEntry | undefined
 ): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } {
+  const answerability = promptField.answerability;
+
+  if (promptField.intent === 'professional_experience_yes_no') {
+    const supported = hasProfessionalExperienceSupport(field, serializedProfile);
+    return createDeterministicFieldResult({
+      field,
+      answerability,
+      rawEntry: entry,
+      textValue: supported ? 'Yes' : 'No',
+      category: supported ? 'accepted' : 'best_effort_negative_inference',
+      reason: supported
+        ? 'accepted: professional experience is supported by resume/profile context'
+        : 'best_effort_negative_inference: no clear professional evidence was found in resume/profile context'
+    });
+  }
+
+  if (promptField.intent === 'consent_or_notice') {
+    const consentResolution = resolveConsentPolicyValue(field, serializedProfile);
+    return createDeterministicFieldResult({
+      field,
+      answerability,
+      rawEntry: entry,
+      textValue: textValueForEnum(consentResolution.value),
+      category: 'policy_default_consent',
+      reason: `policy_default_consent: used ${consentResolution.source}`
+    });
+  }
+
+  if (promptField.intent === 'lgbtqia_identification') {
+    const sensitiveResolution = resolveSensitiveIdentificationValue(serializedProfile);
+    return createDeterministicFieldResult({
+      field,
+      answerability,
+      rawEntry: entry,
+      textValue: textValueForEnum(sensitiveResolution.value),
+      category: 'profile_default_sensitive_response',
+      reason: `profile_default_sensitive_response: used ${sensitiveResolution.source}`
+    });
+  }
+
   if (!entry) {
     return createSkipResult({
       field,
       answerability,
       skipReason: defaultSkipReasonForAnswerability(answerability),
-      category:
-        answerability === 'company_specific_or_unsupported' ||
-        answerability === 'conditional_follow_up'
-          ? 'missing_profile_fact'
-          : 'model_uncertainty'
+      category: skipCategoryForAnswerability(answerability)
     });
   }
 
@@ -710,16 +1397,8 @@ function normalizeEntryForField(
       field,
       answerability,
       rawEntry: entry,
-      skipReason:
-        answerability === 'company_specific_or_unsupported' ||
-        answerability === 'conditional_follow_up'
-          ? 'missing_profile_fact: no grounded applicant profile fact is available for this field'
-          : entry.skipReason || defaultSkipReasonForAnswerability(answerability),
-      category:
-        answerability === 'company_specific_or_unsupported' ||
-        answerability === 'conditional_follow_up'
-          ? 'missing_profile_fact'
-          : 'model_uncertainty'
+      skipReason: entry.skipReason || defaultSkipReasonForAnswerability(answerability),
+      category: skipCategoryForAnswerability(answerability)
     });
   }
 
@@ -763,11 +1442,7 @@ function normalizeEntryForField(
             answerability,
             rawEntry: entry,
             skipReason: defaultSkipReasonForAnswerability(answerability),
-            category:
-              answerability === 'company_specific_or_unsupported' ||
-              answerability === 'conditional_follow_up'
-                ? 'missing_profile_fact'
-                : 'model_uncertainty'
+            category: skipCategoryForAnswerability(answerability)
           });
     }
 
@@ -781,10 +1456,7 @@ function normalizeEntryForField(
           : `schema_mismatch: expected ${expectedActionsForField(field).join('/')} for ${field.type}, got ${entry.action}`,
       category:
         entry.action === 'select'
-          ? answerability === 'company_specific_or_unsupported' ||
-            answerability === 'conditional_follow_up'
-            ? 'missing_profile_fact'
-            : 'model_uncertainty'
+          ? skipCategoryForAnswerability(answerability)
           : 'schema_mismatch'
     });
   }
@@ -940,7 +1612,19 @@ function normalizeEntryForField(
         rawEntry: entry,
         normalizedAction: 'fill',
         value: textValue,
-        confidence: entry.confidence
+        confidence: entry.confidence,
+        category:
+          promptField.intent === 'achievement_narrative' ||
+          promptField.intent === 'stakeholder_collaboration_example' ||
+          promptField.intent === 'technical_experience_narrative'
+            ? 'resume_grounded_best_effort'
+            : 'accepted',
+        reason:
+          promptField.intent === 'achievement_narrative' ||
+          promptField.intent === 'stakeholder_collaboration_example' ||
+          promptField.intent === 'technical_experience_narrative'
+            ? 'resume_grounded_best_effort: grounded experience answer accepted'
+            : 'accepted'
       })
     : createSkipResult({
         field,
@@ -953,12 +1637,15 @@ function normalizeEntryForField(
 
 function normalizeFillPlan(
   fields: ScrapedApplicationField[],
+  promptFields: PromptField[],
+  serializedProfile: SerializedApplicantProfile,
   items: ApplicationFillPlanEntry[]
 ): {
   fillPlan: ApplicationFillPlanEntry[];
   fieldDiagnostics: ApplicationFillPlanFieldDiagnostic[];
 } {
   const firstEntryByFieldId = new Map<string, ApplicationFillPlanEntry>();
+  const promptFieldById = new Map(promptFields.map((field) => [field.id, field]));
 
   for (const item of items) {
     if (!firstEntryByFieldId.has(item.fieldId)) {
@@ -969,7 +1656,8 @@ function normalizeFillPlan(
   const normalized = fields.map((field) =>
     normalizeEntryForField(
       field,
-      classifyFieldAnswerability(field),
+      promptFieldById.get(field.id) ?? toPromptField(field),
+      serializedProfile,
       firstEntryByFieldId.get(field.id)
     )
   );
@@ -1046,7 +1734,12 @@ export async function generateApplicationFillPlan(
       );
     }
 
-    const { fillPlan, fieldDiagnostics } = normalizeFillPlan(input.fields, parsed.data.items);
+    const { fillPlan, fieldDiagnostics } = normalizeFillPlan(
+      input.fields,
+      promptPayload.fields,
+      serializedProfile,
+      parsed.data.items
+    );
     const skippedFieldIds = fillPlan
       .filter((entry) => entry.action === 'skip')
       .map((entry) => entry.fieldId);

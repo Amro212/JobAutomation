@@ -75,7 +75,22 @@ describe('API routes', () => {
         linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
         websiteUrl: 'https://example.com',
         baseResumeFileName: 'resume.tex',
-        baseResumeTex: '\\section{Experience}'
+        baseResumeTex: '\\section{Experience}',
+        autofillProfile: {
+          currentCountryCode: 'CA',
+          primaryCitizenshipCountryCode: 'CA',
+          currentCountryResidenceStatus: 'citizen',
+          currentCountryResidenceStatusOther: '',
+          legallyAuthorizedInCurrentCountry: 'yes',
+          needsSponsorshipInCurrentCountry: 'no',
+          consentToInterviewRecording: 'yes',
+          acceptApplicationPrivacyNotices: 'yes',
+          consentToDemographicDataProcessing: 'yes',
+          lgbtqiaCommunityIdentification: 'no',
+          workAuthorizationCountriesCsv: 'CA, US',
+          requiresSponsorship: 'no',
+          requiresSponsorshipCountriesCsv: ''
+        }
       }
     });
 
@@ -84,6 +99,15 @@ describe('API routes', () => {
     expect(saveResponse.statusCode).toBe(200);
     expect(loadResponse.json().profile.baseResumeFileName).toBe('resume.tex');
     expect(loadResponse.json().profile.baseResumeTex).toContain('Experience');
+    expect(loadResponse.json().profile.autofillProfile.currentCountryCode).toBe('CA');
+    expect(loadResponse.json().profile.autofillProfile.primaryCitizenshipCountryCode).toBe('CA');
+    expect(loadResponse.json().profile.autofillProfile.currentCountryResidenceStatus).toBe('citizen');
+    expect(loadResponse.json().profile.autofillProfile.legallyAuthorizedInCurrentCountry).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.needsSponsorshipInCurrentCountry).toBe('no');
+    expect(loadResponse.json().profile.autofillProfile.consentToInterviewRecording).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.acceptApplicationPrivacyNotices).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.consentToDemographicDataProcessing).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.lgbtqiaCommunityIdentification).toBe('no');
     expect(loadResponse.json().readiness.readyForTailoring).toBe(true);
   });
 

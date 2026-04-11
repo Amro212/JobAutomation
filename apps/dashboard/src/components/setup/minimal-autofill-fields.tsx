@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { MinimalAutofillProfile } from '@jobautomation/core';
+import { FILTER_COUNTRIES, type MinimalAutofillProfile } from '@jobautomation/core';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,6 +24,9 @@ export function MinimalAutofillFields({ profile }: { profile: MinimalAutofillPro
   const [workPreference, setWorkPreference] = useState(profile.workPreference);
   const [genderPronouns, setGenderPronouns] = useState(profile.genderPronouns);
   const [highestEducation, setHighestEducation] = useState(profile.highestEducation);
+  const [currentCountryResidenceStatus, setCurrentCountryResidenceStatus] = useState(
+    profile.currentCountryResidenceStatus
+  );
   const [salaryEnabled, setSalaryEnabled] = useState(
     profile.salaryExpectationAmount.trim().length > 0 || profile.salaryExpectations.trim().length > 0
   );
@@ -60,6 +63,192 @@ export function MinimalAutofillFields({ profile }: { profile: MinimalAutofillPro
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-4 rounded-lg border p-4 text-sm md:col-span-2">
+          <div className="space-y-1">
+            <p className="font-medium">Work status in your current country</p>
+            <p className="text-muted-foreground text-xs">
+              This gives the application agent enough legal context to answer country-specific work eligibility
+              questions without free-form guessing.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Current country</span>
+              <select
+                name="autofill_currentCountryCode"
+                defaultValue={profile.currentCountryCode}
+                className={selectClassName}
+              >
+                <option value="">Not set</option>
+                {FILTER_COUNTRIES.map((country) => (
+                  <option key={country.code} value={country.code}>
+                    {country.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Primary citizenship</span>
+              <select
+                name="autofill_primaryCitizenshipCountryCode"
+                defaultValue={profile.primaryCitizenshipCountryCode}
+                className={selectClassName}
+              >
+                <option value="">Not set</option>
+                {FILTER_COUNTRIES.map((country) => (
+                  <option key={country.code} value={country.code}>
+                    {country.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Status in your current country</span>
+              <select
+                name="autofill_currentCountryResidenceStatus"
+                value={currentCountryResidenceStatus}
+                onChange={(event) =>
+                  setCurrentCountryResidenceStatus(
+                    event.target.value as typeof profile.currentCountryResidenceStatus
+                  )
+                }
+                className={selectClassName}
+              >
+                <option value="">Not set</option>
+                <option value="citizen">Citizen</option>
+                <option value="permanent_resident">Permanent resident</option>
+                <option value="temporary_resident">Temporary resident</option>
+                <option value="open_work_permit">Open work permit</option>
+                <option value="employer_specific_work_visa">Employer-specific work visa</option>
+                <option value="student_visa">Student visa</option>
+                <option value="dependent_visa">Dependent visa</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+
+            {currentCountryResidenceStatus === 'other' ? (
+              <label className="space-y-2 text-sm">
+                <span className="font-medium">Other status</span>
+                <Input
+                  name="autofill_currentCountryResidenceStatusOther"
+                  defaultValue={profile.currentCountryResidenceStatusOther}
+                  placeholder="Describe your visa or residency status"
+                />
+              </label>
+            ) : (
+              <input type="hidden" name="autofill_currentCountryResidenceStatusOther" value="" />
+            )}
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Legally authorized to work there?</span>
+              <select
+                name="autofill_legallyAuthorizedInCurrentCountry"
+                defaultValue={profile.legallyAuthorizedInCurrentCountry}
+                className={selectClassName}
+              >
+                <option value="">Not set</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+                <option value="unsure">Unsure</option>
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Need sponsorship there?</span>
+              <select
+                name="autofill_needsSponsorshipInCurrentCountry"
+                defaultValue={profile.needsSponsorshipInCurrentCountry}
+                className={selectClassName}
+              >
+                <option value="">Not set</option>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+                <option value="unsure">Unsure</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-lg border p-4 text-sm md:col-span-2">
+          <div className="space-y-1">
+            <p className="font-medium">Consent defaults</p>
+            <p className="text-muted-foreground text-xs">
+              These defaults are used for required application consent, privacy, and notice prompts when the form
+              expects an explicit acknowledgement to continue.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Interview recording consent</span>
+              <select
+                name="autofill_consentToInterviewRecording"
+                defaultValue={profile.consentToInterviewRecording}
+                className={selectClassName}
+              >
+                <option value="">Use default Yes</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Privacy / notice acknowledgements</span>
+              <select
+                name="autofill_acceptApplicationPrivacyNotices"
+                defaultValue={profile.acceptApplicationPrivacyNotices}
+                className={selectClassName}
+              >
+                <option value="">Use default Yes</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Demographic data processing consent</span>
+              <select
+                name="autofill_consentToDemographicDataProcessing"
+                defaultValue={profile.consentToDemographicDataProcessing}
+                className={selectClassName}
+              >
+                <option value="">Use default Yes</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="space-y-4 rounded-lg border p-4 text-sm md:col-span-2">
+          <div className="space-y-1">
+            <p className="font-medium">Sensitive self-identification defaults</p>
+            <p className="text-muted-foreground text-xs">
+              Use explicit values here for optional self-ID questions. If left unset, the automation falls back to a
+              conservative default when a form requires an answer.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">LGBTQIA+ community identification</span>
+              <select
+                name="autofill_lgbtqiaCommunityIdentification"
+                defaultValue={profile.lgbtqiaCommunityIdentification}
+                className={selectClassName}
+              >
+                <option value="">Use default No</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+                <option value="prefer_not_to_say">Prefer not to say</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
         <label className="space-y-2 text-sm">
           <span className="font-medium">Requires visa sponsorship?</span>
           <select

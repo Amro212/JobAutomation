@@ -9,6 +9,30 @@ export const minimalAutofillProfileSchema = z.object({
   workAuthorizationCountriesCsv: z.string().default(''),
   requiresSponsorship: z.enum(['', 'yes', 'no']).default(''),
   requiresSponsorshipCountriesCsv: z.string().default(''),
+  currentCountryCode: z.string().length(2).or(z.literal('')).default(''),
+  primaryCitizenshipCountryCode: z.string().length(2).or(z.literal('')).default(''),
+  currentCountryResidenceStatus: z
+    .enum([
+      '',
+      'citizen',
+      'permanent_resident',
+      'temporary_resident',
+      'open_work_permit',
+      'employer_specific_work_visa',
+      'student_visa',
+      'dependent_visa',
+      'other'
+    ])
+    .default(''),
+  currentCountryResidenceStatusOther: z.string().default(''),
+  legallyAuthorizedInCurrentCountry: z.enum(['', 'yes', 'no', 'unsure']).default(''),
+  needsSponsorshipInCurrentCountry: z.enum(['', 'yes', 'no', 'unsure']).default(''),
+  consentToInterviewRecording: z.enum(['', 'yes', 'no']).default(''),
+  acceptApplicationPrivacyNotices: z.enum(['', 'yes', 'no']).default(''),
+  consentToDemographicDataProcessing: z.enum(['', 'yes', 'no']).default(''),
+  lgbtqiaCommunityIdentification: z
+    .enum(['', 'yes', 'no', 'prefer_not_to_say'])
+    .default(''),
   clearanceStatus: z.enum(['', 'none', 'held', 'eligible', 'unsure']).default(''),
   relocation: z.enum(['', 'yes', 'no']).default(''),
   workPreference: z.enum(['', 'no_preference', 'remote', 'hybrid', 'onsite']).default(''),

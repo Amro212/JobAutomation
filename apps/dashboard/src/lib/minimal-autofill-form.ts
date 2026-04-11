@@ -39,6 +39,32 @@ export function parseMinimalAutofillFormData(formData: FormData): MinimalAutofil
     workAuthorizationCountriesCsv: '',
     requiresSponsorship: String(formData.get('autofill_requiresSponsorship') ?? ''),
     requiresSponsorshipCountriesCsv: String(formData.get('autofill_requiresSponsorshipCountriesCsv') ?? '').trim(),
+    currentCountryCode: String(formData.get('autofill_currentCountryCode') ?? '').trim().toUpperCase(),
+    primaryCitizenshipCountryCode: String(formData.get('autofill_primaryCitizenshipCountryCode') ?? '')
+      .trim()
+      .toUpperCase(),
+    currentCountryResidenceStatus: String(formData.get('autofill_currentCountryResidenceStatus') ?? ''),
+    currentCountryResidenceStatusOther: String(
+      formData.get('autofill_currentCountryResidenceStatusOther') ?? ''
+    ).trim(),
+    legallyAuthorizedInCurrentCountry: String(
+      formData.get('autofill_legallyAuthorizedInCurrentCountry') ?? ''
+    ),
+    needsSponsorshipInCurrentCountry: String(
+      formData.get('autofill_needsSponsorshipInCurrentCountry') ?? ''
+    ),
+    consentToInterviewRecording: String(
+      formData.get('autofill_consentToInterviewRecording') ?? ''
+    ),
+    acceptApplicationPrivacyNotices: String(
+      formData.get('autofill_acceptApplicationPrivacyNotices') ?? ''
+    ),
+    consentToDemographicDataProcessing: String(
+      formData.get('autofill_consentToDemographicDataProcessing') ?? ''
+    ),
+    lgbtqiaCommunityIdentification: String(
+      formData.get('autofill_lgbtqiaCommunityIdentification') ?? ''
+    ),
     clearanceStatus: String(formData.get('autofill_clearanceStatus') ?? ''),
     relocation: String(formData.get('autofill_relocation') ?? ''),
     workPreference: String(formData.get('autofill_workPreference') ?? ''),
