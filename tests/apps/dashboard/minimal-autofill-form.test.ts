@@ -16,6 +16,8 @@ describe('minimal autofill form parser', () => {
     formData.set('autofill_consentToDemographicDataProcessing', 'no');
     formData.set('autofill_lgbtqiaCommunityIdentification', 'prefer_not_to_say');
     formData.set('autofill_veteranStatus', 'protected_veteran');
+    formData.set('autofill_highestEducationStartYear', '2021');
+    formData.set('autofill_highestEducationEndYear', '2026');
 
     const parsed = parseMinimalAutofillFormData(formData);
 
@@ -29,5 +31,7 @@ describe('minimal autofill form parser', () => {
     expect(parsed.consentToDemographicDataProcessing).toBe('no');
     expect(parsed.lgbtqiaCommunityIdentification).toBe('prefer_not_to_say');
     expect(parsed.veteranStatus).toBe('protected_veteran');
+    expect(parsed.highestEducationStartYear).toBe('2021');
+    expect(parsed.highestEducationEndYear).toBe('2026');
   });
 });

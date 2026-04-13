@@ -81,6 +81,8 @@ export function parseMinimalAutofillFormData(formData: FormData): MinimalAutofil
     highestEducationSchool: String(formData.get('autofill_highestEducationSchool') ?? '').trim(),
     highestEducationProgram: String(formData.get('autofill_highestEducationProgram') ?? '').trim(),
     highestEducationDiscipline: String(formData.get('autofill_highestEducationDiscipline') ?? '').trim(),
+    highestEducationStartYear: String(formData.get('autofill_highestEducationStartYear') ?? '').trim(),
+    highestEducationEndYear: String(formData.get('autofill_highestEducationEndYear') ?? '').trim(),
     criminalBackground: String(formData.get('autofill_criminalBackground') ?? ''),
     noticePeriod: String(formData.get('autofill_noticePeriod') ?? ''),
     currentlyEmployed: String(formData.get('autofill_currentlyEmployed') ?? ''),

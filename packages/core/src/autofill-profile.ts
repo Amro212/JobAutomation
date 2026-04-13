@@ -67,6 +67,8 @@ export const minimalAutofillProfileSchema = z.object({
   highestEducationSchool: z.string().default(''),
   highestEducationProgram: z.string().default(''),
   highestEducationDiscipline: z.string().default(''),
+  highestEducationStartYear: z.string().default(''),
+  highestEducationEndYear: z.string().default(''),
   criminalBackground: z.enum(['', 'yes', 'no', 'disclose_if_required']).default(''),
   noticePeriod: z.enum(['', 'immediate', '2_weeks', '1_month', '2_plus_months']).default(''),
   currentlyEmployed: z.enum(['', 'yes', 'no']).default(''),

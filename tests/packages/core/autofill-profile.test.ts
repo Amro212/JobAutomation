@@ -38,6 +38,8 @@ describe('autofill profile core schema', () => {
       highestEducationSchool: '',
       highestEducationProgram: '',
       highestEducationDiscipline: '',
+      highestEducationStartYear: '',
+      highestEducationEndYear: '',
       criminalBackground: '',
       noticePeriod: '',
       currentlyEmployed: '',
@@ -82,6 +84,8 @@ describe('autofill profile core schema', () => {
       highestEducationSchool: 'University of Toronto',
       highestEducationProgram: 'Bachelor of Science',
       highestEducationDiscipline: 'Computer Science',
+      highestEducationStartYear: '2021',
+      highestEducationEndYear: '2025',
       criminalBackground: 'disclose_if_required',
       noticePeriod: '2_weeks',
       currentlyEmployed: 'yes',
@@ -98,6 +102,8 @@ describe('autofill profile core schema', () => {
     expect(parsed.willingToTravel).toBe('25');
     expect(parsed.yearsOfExperience).toBe('5_10');
     expect(parsed.criminalBackground).toBe('disclose_if_required');
+    expect(parsed.highestEducationStartYear).toBe('2021');
+    expect(parsed.highestEducationEndYear).toBe('2025');
     expect(parsed.salaryExpectationCurrency).toBe('USD');
     expect(parsed.currentCountryCode).toBe('CA');
     expect(parsed.primaryCitizenshipCountryCode).toBe('CA');

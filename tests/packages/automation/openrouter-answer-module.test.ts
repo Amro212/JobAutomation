@@ -44,7 +44,13 @@ const baseApplicant = (overrides: Partial<ApplicantProfile> = {}): ApplicantProf
     noticePeriod: '2_weeks',
     startDate: '2026-05-01',
     relocation: 'yes',
-    workPreference: 'hybrid'
+    workPreference: 'hybrid',
+    highestEducation: 'bachelor',
+    highestEducationSchool: 'University of Guelph',
+    highestEducationProgram: 'Computer Engineering',
+    highestEducationDiscipline: 'Engineering',
+    highestEducationStartYear: '2021',
+    highestEducationEndYear: '2026'
   }),
   updatedAt: new Date('2026-04-09T09:00:00.000Z'),
   ...overrides
@@ -71,6 +77,8 @@ const baseJob = (overrides: Partial<JobRecord> = {}): JobRecord => ({
   reviewScoreReasoning: null,
   reviewUpdatedAt: null,
   reviewScoreUpdatedAt: null,
+  prefilterPass: null,
+  prefilterReasonsJson: null,
   discoveredAt: new Date('2026-04-09T09:00:00.000Z'),
   updatedAt: new Date('2026-04-09T09:00:00.000Z'),
   ...overrides
@@ -293,6 +301,11 @@ describe('openrouter answer module', () => {
     expect(request?.prompt).toContain('"legallyAuthorizedInCurrentCountry": "yes"');
     expect(request?.prompt).toContain('"needsSponsorshipInCurrentCountry": "no"');
     expect(request?.prompt).toContain('"noticePeriod": "2_weeks"');
+    expect(request?.prompt).toContain('"autofillProfile"');
+    expect(request?.prompt).toContain('"highestEducationSchool": "University of Guelph"');
+    expect(request?.prompt).toContain('"highestEducationProgram": "Computer Engineering"');
+    expect(request?.prompt).toContain('"highestEducationStartYear": "2021"');
+    expect(request?.prompt).toContain('"highestEducationEndYear": "2026"');
     expect(request?.prompt).toContain('"jobCountryContext"');
     expect(request?.prompt).toContain('"normalizedJobCountryCode": "CA"');
   });
@@ -635,8 +648,9 @@ describe('openrouter answer module', () => {
       expect.arrayContaining([
         expect.objectContaining({
           fieldId: 'question_10957801007',
-          action: 'skip',
-          skipReason: 'not enough direct sourcing'
+          action: 'fill',
+          value: 'LinkedIn',
+          skipReason: ''
         })
       ])
     );
@@ -644,7 +658,9 @@ describe('openrouter answer module', () => {
       expect.arrayContaining([
         expect.objectContaining({
           fieldId: 'question_10957801007',
-          category: 'model_uncertainty'
+          category: 'required_best_effort_default',
+          normalizedAction: 'fill',
+          recovered: true
         }),
         expect.objectContaining({
           fieldId: 'question_10957802007',
@@ -843,6 +859,211 @@ describe('openrouter answer module', () => {
     );
   });
 
+  test('answers required company history and conflict prompts with deterministic negative inference', async () => {
+    const provider = createProvider({ items: [] });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob({
+        companyName: 'Anduril Industries',
+        location: 'Boston, Massachusetts, United States'
+      }),
+      fields: [
+        {
+          id: 'question_11750231007',
+          label: 'HISTORY WITH ANDURIL*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_11750231007'],
+          options: []
+        },
+        {
+          id: 'question_11750232007',
+          label: 'Have you ever been employed by Anduril or any company that Anduril has acquired?*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_11750232007'],
+          options: []
+        },
+        {
+          id: 'question_11750233007',
+          label: 'CONFLICT OF INTEREST*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_11750233007'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.promptPayload.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'question_11750231007',
+          answerability: 'open_ended_best_effort',
+          intent: 'company_relationship_yes_no',
+          guidance: expect.not.stringContaining('Skip when')
+        }),
+        expect.objectContaining({
+          id: 'question_11750232007',
+          answerability: 'open_ended_best_effort',
+          intent: 'company_relationship_yes_no',
+          guidance: expect.not.stringContaining('Skip when')
+        }),
+        expect.objectContaining({
+          id: 'question_11750233007',
+          answerability: 'open_ended_best_effort',
+          intent: 'company_relationship_yes_no',
+          guidance: expect.not.stringContaining('Skip when')
+        })
+      ])
+    );
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'question_11750231007',
+        action: 'fill',
+        value: 'No',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'question_11750232007',
+        action: 'fill',
+        value: 'No',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'question_11750233007',
+        action: 'fill',
+        value: 'No',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+
+    expect(result.fieldDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: 'question_11750231007',
+          category: 'best_effort_negative_inference'
+        }),
+        expect.objectContaining({
+          fieldId: 'question_11750232007',
+          category: 'best_effort_negative_inference'
+        }),
+        expect.objectContaining({
+          fieldId: 'question_11750233007',
+          category: 'best_effort_negative_inference'
+        })
+      ])
+    );
+  });
+
+  test('treats starred labels as required and recovers provider skips for required non-file fields', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'starred_unknown',
+          action: 'skip',
+          value: null,
+          confidence: 0,
+          skipReason: 'unsupported'
+        },
+        {
+          fieldId: 'company_name',
+          action: 'skip',
+          value: null,
+          confidence: 0,
+          skipReason: 'unsupported'
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob({ companyName: 'Anduril Industries' }),
+      fields: [
+        {
+          id: 'starred_unknown',
+          label: 'Some Field*',
+          type: 'text',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#starred_unknown'],
+          options: []
+        },
+        {
+          id: 'company_name',
+          label: 'Name of the company*',
+          type: 'text',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#company_name'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.promptPayload.fields).toEqual([
+      expect.objectContaining({
+        id: 'starred_unknown',
+        required: true,
+        guidance: expect.not.stringContaining('Skip when')
+      }),
+      expect.objectContaining({
+        id: 'company_name',
+        required: true,
+        guidance: expect.not.stringContaining('Skip when')
+      })
+    ]);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'starred_unknown',
+        action: 'fill',
+        value: 'N/A',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'company_name',
+        action: 'fill',
+        value: 'Anduril Industries',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+    expect(result.fieldDiagnostics).toEqual([
+      expect.objectContaining({
+        fieldId: 'starred_unknown',
+        required: true,
+        category: 'required_best_effort_default',
+        rawAction: 'skip',
+        normalizedAction: 'fill',
+        recovered: true
+      }),
+      expect.objectContaining({
+        fieldId: 'company_name',
+        required: true,
+        category: 'required_best_effort_default',
+        rawAction: 'skip',
+        normalizedAction: 'fill',
+        recovered: true
+      })
+    ]);
+  });
+
   test('uses consent policy defaults and sensitive self-id defaults instead of skipping', async () => {
     const provider = createProvider({ items: [] });
 
@@ -953,10 +1174,10 @@ describe('openrouter answer module', () => {
       },
       {
         fieldId: '4017904003',
-        action: 'skip',
-        value: null,
-        confidence: 0,
-        skipReason: 'missing_profile_fact: no grounded structured applicant fact is available for this field'
+        action: 'fill',
+        value: 'Prefer not to say',
+        confidence: 1,
+        skipReason: ''
       }
     ]);
 
@@ -980,7 +1201,9 @@ describe('openrouter answer module', () => {
         }),
         expect.objectContaining({
           fieldId: '4017904003',
-          category: 'missing_profile_fact'
+          category: 'required_best_effort_default',
+          normalizedAction: 'fill',
+          recovered: true
         })
       ])
     );

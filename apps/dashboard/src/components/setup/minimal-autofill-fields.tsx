@@ -498,12 +498,32 @@ export function MinimalAutofillFields({ profile }: { profile: MinimalAutofillPro
                 placeholder="Major, concentration, or discipline"
               />
             </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Education start year</span>
+              <Input
+                name="autofill_highestEducationStartYear"
+                defaultValue={profile.highestEducationStartYear}
+                placeholder="e.g. 2021"
+              />
+            </label>
+
+            <label className="space-y-2 text-sm">
+              <span className="font-medium">Education end year</span>
+              <Input
+                name="autofill_highestEducationEndYear"
+                defaultValue={profile.highestEducationEndYear}
+                placeholder="e.g. 2026"
+              />
+            </label>
           </>
         ) : (
           <>
             <input type="hidden" name="autofill_highestEducationSchool" value="" />
             <input type="hidden" name="autofill_highestEducationProgram" value="" />
             <input type="hidden" name="autofill_highestEducationDiscipline" value="" />
+            <input type="hidden" name="autofill_highestEducationStartYear" value="" />
+            <input type="hidden" name="autofill_highestEducationEndYear" value="" />
           </>
         )}
 
