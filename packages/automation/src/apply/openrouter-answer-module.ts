@@ -1537,6 +1537,10 @@ function structuredFallbackValue(
 ): string | null {
   const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
 
+  if (includesAny(fingerprint, ['confirm']) && includesAny(fingerprint, ['graduation date', 'graduate', 'graduation'])) {
+    return 'Yes';
+  }
+
   if (includesAny(fingerprint, ['school', 'university', 'college'])) {
     return serializedProfile.qualifications.highestEducationSchool ?? null;
   }
@@ -1574,7 +1578,7 @@ function structuredFallbackValue(
   }
 
   if (includesAny(fingerprint, ['clearance'])) {
-    return serializedProfile.workAuthorization.clearanceStatus ?? 'No';
+    return serializedProfile.workAuthorization.clearanceStatus ?? null;
   }
 
   if (includesAny(fingerprint, ['citizen', 'citizenship'])) {
@@ -1605,8 +1609,23 @@ function structuredFallbackValue(
     );
   }
 
-  if (includesAny(fingerprint, ['race', 'ethnicity', 'hispanic'])) {
-    return serializedProfile.equalEmployment.raceEthnicity ?? 'Prefer not to say';
+  if (includesAny(fingerprint, ['hispanic'])) {
+    const raceEthnicity = normalizeTextForMatching(
+      serializedProfile.equalEmployment.raceEthnicity ?? ''
+    );
+
+    if (raceEthnicity.includes('hispanic') || raceEthnicity.includes('latino')) {
+      return raceEthnicity.includes('not_') || raceEthnicity.includes('non_') ? 'No' : 'Yes';
+    }
+
+    return 'Prefer not to say';
+  }
+
+  if (includesAny(fingerprint, ['race', 'ethnicity'])) {
+    const raceEthnicity = serializedProfile.equalEmployment.raceEthnicity;
+    return normalizeTextForMatching(raceEthnicity ?? '') === 'prefer_not_to_say'
+      ? 'Prefer not to say'
+      : raceEthnicity ?? 'Prefer not to say';
   }
 
   if (includesAny(fingerprint, ['veteran'])) {
@@ -1622,6 +1641,43 @@ function structuredFallbackValue(
   }
 
   return null;
+}
+
+function canUseStructuredSensitiveFallback(field: ScrapedApplicationField): boolean {
+  const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+
+  return includesAny(fingerprint, ['hispanic']);
+}
+
+function tryStructuredSensitiveFallbackResult(input: {
+  field: ScrapedApplicationField;
+  promptField: PromptField;
+  serializedProfile: SerializedApplicantProfile;
+  rawEntry?: ApplicationFillPlanEntry | undefined;
+  reason: string;
+}): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } | null {
+  if (input.promptField.answerability !== 'structured_profile') {
+    return null;
+  }
+
+  if (!canUseStructuredSensitiveFallback(input.field)) {
+    return null;
+  }
+
+  const textValue = structuredFallbackValue(input.field, input.serializedProfile);
+  if (!textValue || textValue.trim().length === 0) {
+    return null;
+  }
+
+  return createDeterministicFieldResult({
+    field: input.field,
+    answerability: input.promptField.answerability,
+    rawEntry: input.rawEntry,
+    textValue,
+    category: 'profile_default_sensitive_response',
+    reason: input.reason,
+    recovered: true
+  });
 }
 
 function openEndedFallbackValue(
@@ -1665,16 +1721,32 @@ function createRequiredBestEffortResult(input: {
   rawEntry?: ApplicationFillPlanEntry | undefined;
   reason: string;
 }): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } {
+  const textValue = requiredBestEffortTextValue(
+    input.field,
+    input.promptField,
+    input.serializedProfile,
+    input.job
+  );
+  const fieldFingerprint = normalizeTextForMatching(`${input.field.id} ${input.field.label}`);
+  const shouldRemainMissingStructuredFact =
+    input.promptField.answerability === 'structured_profile' &&
+    (textValue === 'N/A' || includesAny(fieldFingerprint, ['clearance', 'export control']));
+
+  if (shouldRemainMissingStructuredFact) {
+    return createSkipResult({
+      field: input.field,
+      answerability: input.promptField.answerability,
+      rawEntry: input.rawEntry,
+      skipReason: defaultSkipReasonForAnswerability(input.promptField.answerability),
+      category: skipCategoryForAnswerability(input.promptField.answerability)
+    });
+  }
+
   return createDeterministicFieldResult({
     field: input.field,
     answerability: input.promptField.answerability,
     rawEntry: input.rawEntry,
-    textValue: requiredBestEffortTextValue(
-      input.field,
-      input.promptField,
-      input.serializedProfile,
-      input.job
-    ),
+    textValue,
     category: 'required_best_effort_default',
     reason: input.reason,
     recovered: true
@@ -1743,6 +1815,17 @@ function normalizeEntryForField(
   }
 
   if (!entry) {
+    const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
+      field,
+      promptField,
+      serializedProfile,
+      reason:
+        'profile_default_sensitive_response: optional structured demographic field defaulted from applicant profile'
+    });
+    if (structuredSensitiveFallback) {
+      return structuredSensitiveFallback;
+    }
+
     if (isRequiredNonFileField(field)) {
       return createRequiredBestEffortResult({
         field,
@@ -1783,6 +1866,18 @@ function normalizeEntryForField(
   }
 
   if (entry.action === 'skip') {
+    const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
+      field,
+      promptField,
+      serializedProfile,
+      rawEntry: entry,
+      reason:
+        'profile_default_sensitive_response: provider skip recovered with applicant profile demographic defaults'
+    });
+    if (structuredSensitiveFallback) {
+      return structuredSensitiveFallback;
+    }
+
     if (isRequiredNonFileField(field)) {
       return createRequiredBestEffortResult({
         field,
@@ -1815,13 +1910,66 @@ function normalizeEntryForField(
             value: textValue,
             confidence: entry.confidence
           })
-        : createSkipResult({
-            field,
-            answerability,
-            rawEntry: entry,
-            skipReason: 'normalization_rejection: the model returned an empty fill value',
-            category: 'normalization_rejection'
-          });
+        : isRequiredNonFileField(field)
+          ? createRequiredBestEffortResult({
+              field,
+              promptField,
+              serializedProfile,
+              job,
+              rawEntry: entry,
+              reason:
+                'required_best_effort_default: required non-file field had an empty fill value and was recovered with the best available default'
+            })
+          :
+              (tryStructuredSensitiveFallbackResult({
+                field,
+                promptField,
+                serializedProfile,
+                rawEntry: entry,
+                reason:
+                  'profile_default_sensitive_response: empty model value recovered with applicant profile demographic defaults'
+              }) ??
+                createSkipResult({
+                  field,
+                  answerability,
+                  rawEntry: entry,
+                  skipReason: 'normalization_rejection: the model returned an empty fill value',
+                  category: 'normalization_rejection'
+                }));
+    }
+
+    if (entry.action === 'fill' && typeof entry.value !== 'string') {
+      if (isRequiredNonFileField(field)) {
+        return createRequiredBestEffortResult({
+          field,
+          promptField,
+          serializedProfile,
+          job,
+          rawEntry: entry,
+          reason:
+            'required_best_effort_default: required non-file field had a non-text fill value and was recovered with the best available default'
+        });
+      }
+
+      const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
+        field,
+        promptField,
+        serializedProfile,
+        rawEntry: entry,
+        reason:
+          'profile_default_sensitive_response: non-text model value recovered with applicant profile demographic defaults'
+      });
+      if (structuredSensitiveFallback) {
+        return structuredSensitiveFallback;
+      }
+
+      return createSkipResult({
+        field,
+        answerability,
+        rawEntry: entry,
+        skipReason: 'normalization_rejection: the model returned a non-text fill value',
+        category: 'normalization_rejection'
+      });
     }
 
     if (entry.action === 'select' && typeof entry.value === 'string') {
@@ -1845,6 +1993,30 @@ function normalizeEntryForField(
             skipReason: defaultSkipReasonForAnswerability(answerability),
             category: skipCategoryForAnswerability(answerability)
           });
+    }
+
+    if (isRequiredNonFileField(field)) {
+      return createRequiredBestEffortResult({
+        field,
+        promptField,
+        serializedProfile,
+        job,
+        rawEntry: entry,
+        reason:
+          'required_best_effort_default: required non-file field had an invalid combobox action/value and was recovered with the best available default'
+      });
+    }
+
+    const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
+      field,
+      promptField,
+      serializedProfile,
+      rawEntry: entry,
+      reason:
+        'profile_default_sensitive_response: invalid combobox response recovered with applicant profile demographic defaults'
+    });
+    if (structuredSensitiveFallback) {
+      return structuredSensitiveFallback;
     }
 
     return createSkipResult({
@@ -1996,6 +2168,30 @@ function normalizeEntryForField(
   }
 
   if (entry.action !== 'fill' || typeof entry.value !== 'string') {
+    if (isRequiredNonFileField(field)) {
+      return createRequiredBestEffortResult({
+        field,
+        promptField,
+        serializedProfile,
+        job,
+        rawEntry: entry,
+        reason:
+          'required_best_effort_default: required non-file field had an invalid fill payload and was recovered with the best available default'
+      });
+    }
+
+    const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
+      field,
+      promptField,
+      serializedProfile,
+      rawEntry: entry,
+      reason:
+        'profile_default_sensitive_response: invalid fill payload recovered with applicant profile demographic defaults'
+    });
+    if (structuredSensitiveFallback) {
+      return structuredSensitiveFallback;
+    }
+
     return createSkipResult({
       field,
       answerability,
@@ -2027,13 +2223,32 @@ function normalizeEntryForField(
             ? 'resume_grounded_best_effort: grounded experience answer accepted'
             : 'accepted'
       })
-    : createSkipResult({
-        field,
-        answerability,
-        rawEntry: entry,
-        skipReason: 'normalization_rejection: the model returned an empty fill value',
-        category: 'normalization_rejection'
-      });
+    : isRequiredNonFileField(field)
+      ? createRequiredBestEffortResult({
+          field,
+          promptField,
+          serializedProfile,
+          job,
+          rawEntry: entry,
+          reason:
+            'required_best_effort_default: required non-file field had an empty fill value and was recovered with the best available default'
+        })
+      :
+          (tryStructuredSensitiveFallbackResult({
+            field,
+            promptField,
+            serializedProfile,
+            rawEntry: entry,
+            reason:
+              'profile_default_sensitive_response: empty model value recovered with applicant profile demographic defaults'
+          }) ??
+            createSkipResult({
+              field,
+              answerability,
+              rawEntry: entry,
+              skipReason: 'normalization_rejection: the model returned an empty fill value',
+              category: 'normalization_rejection'
+            }));
 }
 
 function normalizeFillPlan(

@@ -1289,4 +1289,215 @@ describe('openrouter answer module', () => {
       }
     ]);
   });
+
+  test('recovers null fill payloads for education and graduation confirmation fields from structured profile facts', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'school--0',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'Unsupported'
+        },
+        {
+          fieldId: 'degree--0',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'Unsupported'
+        },
+        {
+          fieldId: 'start-year--0',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'Unsupported'
+        },
+        {
+          fieldId: 'end-year--0',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'Unsupported'
+        },
+        {
+          fieldId: 'question_graduation_confirm',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'Unsupported'
+        },
+        {
+          fieldId: 'hispanic_ethnicity',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'Unsupported'
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant({
+        autofillProfile: minimalAutofillProfileSchema.parse({
+          workAuthorizationCountriesCsv: 'CA, US',
+          requiresSponsorship: 'no',
+          highestEducation: 'bachelor',
+          highestEducationSchool: 'University of Guelph',
+          highestEducationProgram: 'Computer Engineering',
+          highestEducationDiscipline: 'Engineering',
+          highestEducationStartYear: '2021',
+          highestEducationEndYear: '2026',
+          raceEthnicity: 'prefer_not_to_say'
+        })
+      }),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'school--0',
+          label: 'School*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#school--0'],
+          options: []
+        },
+        {
+          id: 'degree--0',
+          label: 'Degree*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#degree--0'],
+          options: []
+        },
+        {
+          id: 'start-year--0',
+          label: 'Start date year*',
+          type: 'text',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#start-year--0'],
+          options: []
+        },
+        {
+          id: 'end-year--0',
+          label: 'End date year*',
+          type: 'text',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#end-year--0'],
+          options: []
+        },
+        {
+          id: 'question_graduation_confirm',
+          label: 'I confirm that my graduation date will be either Fall 2025 or Spring 2026*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_graduation_confirm'],
+          options: []
+        },
+        {
+          id: 'hispanic_ethnicity',
+          label: 'Are you Hispanic/Latino?',
+          type: 'combobox',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#hispanic_ethnicity'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.promptPayload.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'school--0' }),
+        expect.objectContaining({ id: 'degree--0' }),
+        expect.objectContaining({ id: 'start-year--0' }),
+        expect.objectContaining({ id: 'end-year--0' }),
+        expect.objectContaining({ id: 'question_graduation_confirm' }),
+        expect.objectContaining({ id: 'hispanic_ethnicity', answerability: 'structured_profile' })
+      ])
+    );
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'school--0',
+        action: 'fill',
+        value: 'University of Guelph',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'degree--0',
+        action: 'fill',
+        value: 'Computer Engineering',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'start-year--0',
+        action: 'fill',
+        value: '2021',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'end-year--0',
+        action: 'fill',
+        value: '2026',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'question_graduation_confirm',
+        action: 'fill',
+        value: 'Yes',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'hispanic_ethnicity',
+        action: 'fill',
+        value: 'Prefer not to say',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+
+    expect(result.fieldDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: 'school--0',
+          category: 'required_best_effort_default',
+          rawAction: 'fill',
+          normalizedAction: 'fill',
+          recovered: true
+        }),
+        expect.objectContaining({
+          fieldId: 'question_graduation_confirm',
+          category: 'required_best_effort_default',
+          rawAction: 'fill',
+          normalizedAction: 'fill',
+          recovered: true
+        }),
+        expect.objectContaining({
+          fieldId: 'hispanic_ethnicity',
+          category: 'profile_default_sensitive_response',
+          rawAction: 'fill',
+          normalizedAction: 'fill',
+          recovered: true
+        })
+      ])
+    );
+  });
 });
