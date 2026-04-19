@@ -1064,6 +1064,57 @@ describe('openrouter answer module', () => {
     ]);
   });
 
+  test('recovers required yes-no combobox prompts with a valid binary answer instead of N/A', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'office_open',
+          action: 'skip',
+          value: null,
+          confidence: 0,
+          skipReason: 'unsupported'
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'office_open',
+          label: 'Are you open to doing 4 days a week in the office?*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#office_open'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'office_open',
+        action: 'fill',
+        value: 'Yes',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+    expect(result.fieldDiagnostics).toEqual([
+      expect.objectContaining({
+        fieldId: 'office_open',
+        category: 'required_best_effort_default',
+        rawAction: 'skip',
+        normalizedAction: 'fill',
+        recovered: true
+      })
+    ]);
+  });
+
   test('uses consent policy defaults and sensitive self-id defaults instead of skipping', async () => {
     const provider = createProvider({ items: [] });
 

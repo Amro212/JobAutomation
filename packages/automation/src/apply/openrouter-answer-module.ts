@@ -1643,6 +1643,47 @@ function structuredFallbackValue(
   return null;
 }
 
+function binaryFallbackValue(field: ScrapedApplicationField): string | null {
+  const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+  const looksBinary =
+    includesAny(fingerprint, [
+      'are you',
+      'do you',
+      'did you',
+      'have you',
+      'will you',
+      'can you',
+      'would you',
+      'is your',
+      'confirm'
+    ]) ||
+    field.options.some((option) =>
+      [option.value, option.label].some((candidate) =>
+        ['yes', 'no'].includes(normalizeForComparison(candidate))
+      )
+    );
+
+  if (!looksBinary) {
+    return null;
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'open to',
+      'willing to',
+      'comfortable',
+      'available to',
+      'able to',
+      'agree to',
+      'confirm'
+    ])
+  ) {
+    return 'Yes';
+  }
+
+  return 'No';
+}
+
 function canUseStructuredSensitiveFallback(field: ScrapedApplicationField): boolean {
   const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
 
@@ -1709,6 +1750,7 @@ function requiredBestEffortTextValue(
     (promptField.answerability === 'open_ended_best_effort'
       ? openEndedFallbackValue(promptField, serializedProfile)
       : null) ??
+    binaryFallbackValue(field) ??
     'N/A'
   );
 }
