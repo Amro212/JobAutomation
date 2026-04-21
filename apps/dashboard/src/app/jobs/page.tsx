@@ -108,7 +108,7 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
   redirect(query.length > 0 ? `/jobs?${query}` : '/jobs');
 }
 
-async function runAllDiscoverySourcesAction(): Promise<void> {
+async function runAllDiscoverySourcesAction(_formData: FormData): Promise<void> {
   'use server';
 
   const sources = await getDiscoverySources();

@@ -68,7 +68,7 @@ function createSummary(
   };
 }
 
-function randomBetween([min, max]: [number, number]): number {
+export function randomBetween([min, max]: [number, number]): number {
   if (max <= min) {
     return min;
   }
