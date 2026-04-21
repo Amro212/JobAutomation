@@ -13,6 +13,7 @@
     "@jobautomation/db": "workspace:*",
     "@jobautomation/discovery": "workspace:*",
     "@jobautomation/llm": "workspace:*",
+    "camoufox-js": "^0.10.2",
     "playwright": "^1.52.0",
     "zod": "^4.1.5"
   }

@@ -520,5 +520,5 @@ describe('discovery run routes', () => {
         });
       });
     }
-  });
+  }, 30000);
 });

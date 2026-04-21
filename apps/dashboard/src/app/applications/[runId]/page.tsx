@@ -228,7 +228,7 @@ export default async function ApplicationRunDetailPage({
             answers in the <span className="font-medium">automation browser tab</span> until you submit—opening
             this link in Chrome or Edge starts a <span className="font-medium">new</span> session, so the form
             looks empty. With <span className="font-medium">JOBAUTOMATION_APPLICATION_BROWSER_HEADED=1</span>{' '}
-            (and without <span className="font-medium">AUTO_CLOSE_BROWSER=1</span>), the Chromium window from
+                (and without <span className="font-medium">AUTO_CLOSE_BROWSER=1</span>), the Camoufox browser window from
             the run should stay open for you to finish custom questions; use screenshots in the log table if
             you need a record after closing.
           </p>

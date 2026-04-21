@@ -108,7 +108,7 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
   redirect(query.length > 0 ? `/jobs?${query}` : '/jobs');
 }
 
-async function runAllDiscoverySourcesAction(_formData: FormData): Promise<void> {
+async function runAllDiscoverySourcesAction(): Promise<void> {
   'use server';
 
   const sources = await getDiscoverySources();
@@ -329,8 +329,8 @@ export default async function JobsPage({
           Discovery review and intake
         </h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Structured discovery is live for Greenhouse, Lever, and Ashby, and browser fallback can
-          now onboard persisted Playwright sources when a public jobs page has no supported feed.
+          Structured discovery is live for Greenhouse, Lever, and Ashby, and Camoufox fallback can
+          now onboard persisted browser sources when a public jobs page has no supported feed.
           When you have a job filter profile or preferred countries on Setup, this list defaults to{' '}
           <span className="font-medium text-foreground">My matches</span> so off-target roles stay
           out of the way—use <span className="font-medium text-foreground">All jobs</span> to see the

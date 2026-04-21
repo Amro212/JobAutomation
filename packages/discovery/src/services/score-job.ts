@@ -195,14 +195,18 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
     const message = error instanceof Error ? error.message : 'Unknown OpenRouter scoring error.';
     const normalizedMessage = message.toLowerCase();
 
-    if (normalizedMessage.includes('(http 401)') || normalizedMessage.includes('unauthorized')) {
+    if (
+      normalizedMessage.includes('(http 401)') ||
+      normalizedMessage.includes('status 401') ||
+      normalizedMessage.includes('unauthorized')
+    ) {
       throw new JobScoreError(
         'not_configured',
         'OpenRouter authentication failed. Check OPENROUTER_API_KEY and retry.'
       );
     }
 
-    if (normalizedMessage.includes('(http 402)')) {
+    if (normalizedMessage.includes('(http 402)') || normalizedMessage.includes('status 402')) {
       throw new JobScoreError(
         'not_configured',
         'OpenRouter or the model provider requires payment or credits. Add billing or top up on OpenRouter.'

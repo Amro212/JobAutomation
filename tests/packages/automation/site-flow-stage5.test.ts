@@ -122,7 +122,11 @@ describe('stage 5 site flow integration', () => {
           url: vi.fn().mockReturnValue(boardEntry.finalUrl)
         }
       },
-      openRouter: null,
+      openRouter: {
+        apiKey: 'test-key',
+        baseUrl: 'https://openrouter.example/api/v1',
+        model: 'openrouter/test-model'
+      },
       logStep: vi.fn().mockResolvedValue(undefined),
       pauseForManualReview: vi.fn().mockResolvedValue({
         id: 'run-1',

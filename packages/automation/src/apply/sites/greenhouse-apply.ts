@@ -18,6 +18,27 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       boardEntry
     });
+
+    if (!context.openRouter?.apiKey) {
+      await context.logStep(
+        'fields_scraped_ready',
+        'Scraped the visible Greenhouse application fields and stopped for Stage 3 review.',
+        {
+          boardEntry,
+          scrapedFields
+        }
+      );
+
+      return context.pauseForManualReview({
+        step: 'fields_scraped_ready',
+        message: 'Paused after scraping the visible Greenhouse application fields for Stage 3 review.',
+        details: {
+          boardEntry,
+          scrapedFields
+        }
+      });
+    }
+
     const fillPlanResult = await generateApplicationFillPlan({
       applicantProfile: context.applicantProfile,
       job: context.job,

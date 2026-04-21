@@ -270,22 +270,14 @@ describe('playwright discovery', () => {
     expect(artifacts.some((artifact) => artifact.kind === 'fallback-trace')).toBe(true);
   });
 
-  test('uses a desktop browser profile for source navigation so public boards that block headless defaults still load', async () => {
+  test('uses the Camoufox browser profile for source navigation instead of headless Chromium headers', async () => {
+    let observedUserAgent = '';
     server?.removeAllListeners('request');
     server?.on('request', (request, response) => {
       const url = request.url ?? '/';
-      const userAgent = request.headers['user-agent'] ?? '';
-      const acceptLanguage = request.headers['accept-language'] ?? '';
 
       if (url === '/jobs') {
-        const looksHeadless = userAgent.includes('HeadlessChrome');
-        const hasDesktopLanguage = acceptLanguage.includes('en-US');
-
-        if (looksHeadless || !hasDesktopLanguage) {
-          response.writeHead(403, { 'content-type': 'application/octet-stream' });
-          response.end('blocked');
-          return;
-        }
+        observedUserAgent = String(request.headers['user-agent'] ?? '');
 
         response.writeHead(200, { 'content-type': 'text/html' });
         response.end(`
@@ -352,6 +344,8 @@ describe('playwright discovery', () => {
       sourceKind: 'playwright'
     });
     expect(jobs.some((job) => job.sourceId === 'fingerprint-001')).toBe(true);
+    expect(observedUserAgent).toContain('Firefox');
+    expect(observedUserAgent).not.toContain('HeadlessChrome');
   });
 
   test('collects company job links and h2-based detail pages from generic public boards', async () => {

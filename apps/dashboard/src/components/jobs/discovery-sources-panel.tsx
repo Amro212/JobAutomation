@@ -38,7 +38,7 @@ export function DiscoverySourcesPanel({
           Structured and fallback source onboarding
         </h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Add Greenhouse, Lever, Ashby, or a persisted Playwright fallback source. Playwright
+          Add Greenhouse, Lever, Ashby, or a persisted Camoufox fallback source. Camoufox fallback
           sources use a canonical public jobs or listings URL and remain inspectable through the
           same runs, logs, and artifact views.
         </p>
@@ -59,7 +59,7 @@ export function DiscoverySourcesPanel({
             <option value="greenhouse">Greenhouse</option>
             <option value="lever">Lever</option>
             <option value="ashby">Ashby</option>
-            <option value="playwright">Playwright</option>
+            <option value="playwright">Camoufox fallback</option>
           </select>
         </label>
         <label className="space-y-2 text-sm text-foreground">

@@ -458,7 +458,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         jobId: job.id,
         level: 'info',
         message:
-          'Automation Chromium window left open: partial draft lives only in that tab. Finish custom questions there, submit when ready, then close the window.',
+          'Automation Camoufox browser window left open: partial draft lives only in that tab. Finish custom questions there, submit when ready, then close the window.',
         details: {
           applicationRunId: runningRun.id,
           siteKey: siteFlow.siteKey,
