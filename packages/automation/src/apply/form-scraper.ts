@@ -1,3 +1,4 @@
+import { parse, type HTMLElement } from 'node-html-parser';
 import type { Page } from 'playwright';
 
 import type { ApplicationBoardEntryResult } from './board-entry';
@@ -34,624 +35,625 @@ export type ScrapedApplicationField = {
   specialHandling?: ScrapedApplicationFieldSpecialHandling;
 };
 
-type BrowserScrapeResult = {
+type ParsedScrapeResult = {
   fields: ScrapedApplicationField[];
   ignoredFieldCount: number;
   groupedFieldCount: number;
   specialCases: string[];
 };
 
-const STAGE_3_LOG_PREFIX = '[Stage 3][field-scraper]';
+type MutableField = ScrapedApplicationField;
 
-// DEBUG: remove after Stage 3
+const STAGE_3_LOG_PREFIX = '[Stage 3][field-scraper]';
+const INTERACTIVE_SELECTOR = [
+  'input:not([type="hidden"])',
+  'textarea',
+  'select',
+  '[contenteditable="true"]',
+  '[contenteditable="plaintext-only"]',
+  '[role="textbox"]',
+  '[role="combobox"]'
+].join(', ');
+
 function logStage3(action: string, details: Record<string, unknown>): void {
   console.log(`${STAGE_3_LOG_PREFIX} ${action} ${JSON.stringify(details)}`);
 }
 
-function scrapeApplicationFieldsInBrowser(rootElement: HTMLElement): BrowserScrapeResult {
-  type MutableField = {
-    id: string;
-    label: string;
-    type: ScrapedApplicationFieldType;
-    required: boolean;
-    visible: boolean;
-    enabled: boolean;
-    selectorCandidates: string[];
-    options: ScrapedApplicationFieldOption[];
-    specialHandling?: ScrapedApplicationFieldSpecialHandling;
-  };
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? '').replace(/\s+/g, ' ').trim();
+}
 
-  const interactiveSelector = [
-    'input:not([type="hidden"])',
-    'textarea',
-    'select',
-    '[contenteditable="true"]',
-    '[contenteditable="plaintext-only"]',
-    '[role="textbox"]',
-    '[role="combobox"]'
-  ].join(', ');
+function isGenericLabel(value: string): boolean {
+  const normalized = normalizeText(value).toLowerCase();
+  return (
+    normalized === '' ||
+    normalized === 'text' ||
+    normalized === 'file' ||
+    normalized === 'attach' ||
+    /^[*✱]+$/.test(normalized)
+  );
+}
 
-  function normalizeText(value: string | null | undefined): string {
-    return (value ?? '').replace(/\s+/g, ' ').trim();
-  }
+function chooseBestLabel(candidates: Array<string | null | undefined>): string {
+  const normalizedCandidates = candidates.map((candidate) => normalizeText(candidate)).filter(Boolean);
+  const meaningfulCandidates = normalizedCandidates.filter((candidate) => !isGenericLabel(candidate));
 
-  function isGenericLabel(value: string): boolean {
-    const normalized = normalizeText(value).toLowerCase();
-    return (
-      normalized === '' ||
-      normalized === 'text' ||
-      normalized === 'file' ||
-      normalized === 'attach' ||
-      /^[*✱]+$/.test(normalized)
-    );
-  }
+  return meaningfulCandidates[0] ?? '';
+}
 
-  function chooseBestLabel(candidates: Array<string | null | undefined>): string {
-    const normalizedCandidates = candidates
-      .map((candidate) => normalizeText(candidate))
-      .filter(Boolean);
+function isElement(node: HTMLElement | null | undefined): node is HTMLElement {
+  return Boolean(node);
+}
 
-    const meaningfulCandidates = normalizedCandidates.filter((candidate) => !isGenericLabel(candidate));
-    if (meaningfulCandidates.length > 0) {
-      return meaningfulCandidates[0] ?? '';
-    }
-
+function textWithoutInteractiveContent(element: HTMLElement | null): string {
+  if (!element) {
     return '';
   }
 
-  function textWithoutInteractiveContent(element: Element | null): string {
-    if (!element) {
-      return '';
-    }
-
-    const clone = element.cloneNode(true) as HTMLElement;
-    if (clone.matches(interactiveSelector)) {
-      return '';
-    }
-
-    for (const interactiveElement of Array.from(clone.querySelectorAll(interactiveSelector))) {
-      interactiveElement.remove();
-    }
-
-    return normalizeText(clone.textContent);
-  }
-
-  function readLabelElementText(label: HTMLLabelElement | null): string {
-    if (!label) {
-      return '';
-    }
-
-    const fromChildren = chooseBestLabel(
-      Array.from(label.children)
-        .filter((child) => !child.matches(interactiveSelector) && !child.querySelector(interactiveSelector))
-        .map((child) => textWithoutInteractiveContent(child))
-    );
-    if (fromChildren) {
-      return fromChildren;
-    }
-
-    return textWithoutInteractiveContent(label);
-  }
-
-  function cssEscape(value: string): string {
-    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-      return CSS.escape(value);
-    }
-
-    return value.replace(/([ !"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
-  }
-
-  function isVisible(element: Element): boolean {
-    const htmlElement = element as HTMLElement;
-    if (htmlElement.hidden) {
-      return false;
-    }
-
-    const style = window.getComputedStyle(htmlElement);
-    if (style.display === 'none' || style.visibility === 'hidden') {
-      return false;
-    }
-
-    return htmlElement.getClientRects().length > 0;
-  }
-
-  function isEnabled(element: Element): boolean {
-    if (
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement ||
-      element instanceof HTMLSelectElement ||
-      element instanceof HTMLButtonElement
-    ) {
-      return !element.disabled;
-    }
-
-    return !element.hasAttribute('disabled') && element.getAttribute('aria-disabled') !== 'true';
-  }
-
-  function readLabelledByText(element: Element): string {
-    const labelledBy = element.getAttribute('aria-labelledby');
-    if (!labelledBy) {
-      return '';
-    }
-
-    return normalizeText(
-      labelledBy
-        .split(/\s+/)
-        .map((id) => document.getElementById(id))
-        .filter((node): node is HTMLElement => Boolean(node))
-        .map((node) => node.innerText || node.textContent || '')
-        .join(' ')
-    );
-  }
-
-  function findClosestLegend(element: Element): string {
-    const fieldset = element.closest('fieldset');
-    if (!fieldset) {
-      return '';
-    }
-
-    return normalizeText(fieldset.querySelector('legend')?.textContent);
-  }
-
-  function findPromptFromPreviousSiblings(element: Element): string {
-    let current: Element | null = element;
-    let depth = 0;
-
-    while (current && current !== rootElement && depth < 8) {
-      let sibling = current.previousElementSibling;
-
-      while (sibling) {
-        const siblingText = textWithoutInteractiveContent(sibling);
-        if (siblingText && !isGenericLabel(siblingText)) {
-          return siblingText;
-        }
-
-        sibling = sibling.previousElementSibling;
-      }
-
-      current = current.parentElement;
-      depth += 1;
-    }
-
+  const clone = element.clone() as HTMLElement;
+  if (clone.matches(INTERACTIVE_SELECTOR)) {
     return '';
   }
 
-  function findContainerHeading(container: Element): string {
-    for (const child of Array.from(container.children)) {
-      if (child.matches(interactiveSelector) || child.querySelector(interactiveSelector)) {
-        continue;
-      }
+  for (const interactiveElement of clone.querySelectorAll(INTERACTIVE_SELECTOR)) {
+    interactiveElement.remove();
+  }
 
-      const childText = textWithoutInteractiveContent(child);
-      if (childText && !isGenericLabel(childText)) {
-        return childText;
-      }
-    }
+  return normalizeText(clone.textContent);
+}
 
+function readLabelElementText(label: HTMLElement | null): string {
+  if (!label) {
     return '';
   }
 
-  function findSharedAncestor(elementsToGroup: Element[]): Element | null {
-    const first = elementsToGroup[0];
-    if (!first) {
-      return null;
-    }
+  const fromChildren = chooseBestLabel(
+    label.children
+      .filter((child) => !child.matches(INTERACTIVE_SELECTOR) && !child.querySelector(INTERACTIVE_SELECTOR))
+      .map((child) => textWithoutInteractiveContent(child))
+  );
+  if (fromChildren) {
+    return fromChildren;
+  }
 
-    let candidate: Element | null = first.parentElement;
-    while (candidate && candidate !== rootElement.parentElement) {
-      if (elementsToGroup.every((elementToGroup) => candidate?.contains(elementToGroup))) {
-        return candidate;
+  return textWithoutInteractiveContent(label);
+}
+
+function cssEscape(value: string): string {
+  return value.replace(/([ !"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+}
+
+function isVisible(element: HTMLElement): boolean {
+  if (element.hasAttribute('hidden') || element.getAttribute('aria-hidden') === 'true') {
+    return false;
+  }
+
+  const style = normalizeText(element.getAttribute('style'));
+  if (/display\s*:\s*none/i.test(style) || /visibility\s*:\s*hidden/i.test(style)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isEnabled(element: HTMLElement): boolean {
+  return !element.hasAttribute('disabled') && element.getAttribute('aria-disabled') !== 'true';
+}
+
+function readLabelledByText(documentRoot: HTMLElement, element: HTMLElement): string {
+  const labelledBy = element.getAttribute('aria-labelledby');
+  if (!labelledBy) {
+    return '';
+  }
+
+  return normalizeText(
+    labelledBy
+      .split(/\s+/)
+      .map((id) => documentRoot.querySelector(`#${cssEscape(id)}`))
+      .filter(isElement)
+      .map((node) => node.textContent)
+      .join(' ')
+  );
+}
+
+function findClosestLegend(element: HTMLElement): string {
+  const fieldset = element.closest('fieldset');
+  if (!fieldset) {
+    return '';
+  }
+
+  return normalizeText(fieldset.querySelector('legend')?.textContent);
+}
+
+function findPromptFromPreviousSiblings(element: HTMLElement, rootElement: HTMLElement): string {
+  let current: HTMLElement | null = element;
+  let depth = 0;
+
+  while (current && current !== rootElement && depth < 8) {
+    let sibling = current.previousElementSibling;
+
+    while (sibling) {
+      const siblingText = textWithoutInteractiveContent(sibling);
+      if (siblingText && !isGenericLabel(siblingText)) {
+        return siblingText;
       }
 
-      candidate = candidate.parentElement;
+      sibling = sibling.previousElementSibling;
     }
 
+    current = current.parentNode ?? null;
+    depth += 1;
+  }
+
+  return '';
+}
+
+function findContainerHeading(container: HTMLElement): string {
+  for (const child of container.children) {
+    if (child.matches(INTERACTIVE_SELECTOR) || child.querySelector(INTERACTIVE_SELECTOR)) {
+      continue;
+    }
+
+    const childText = textWithoutInteractiveContent(child);
+    if (childText && !isGenericLabel(childText)) {
+      return childText;
+    }
+  }
+
+  return '';
+}
+
+function findSharedAncestor(elementsToGroup: HTMLElement[], rootElement: HTMLElement): HTMLElement | null {
+  const first = elementsToGroup[0];
+  if (!first) {
     return null;
   }
 
-  function hasMultipleDirectChoiceSubgroups(
-    container: Element,
-    inputType: 'radio' | 'checkbox'
-  ): boolean {
-    if (container instanceof HTMLFieldSetElement) {
-      return false;
+  let candidate = first.parentNode ?? null;
+  while (candidate && candidate !== rootElement.parentNode) {
+    if (elementsToGroup.every((elementToGroup) => containsElement(candidate, elementToGroup))) {
+      return candidate;
     }
 
-    const nestedChoiceGroups = Array.from(
-      container.querySelectorAll('fieldset, [role="group"], [role="radiogroup"]')
-    ).filter((candidate) => {
+    candidate = candidate.parentNode ?? null;
+  }
+
+  return null;
+}
+
+function containsElement(container: HTMLElement, target: HTMLElement): boolean {
+  let current: HTMLElement | null = target;
+  while (current) {
+    if (current === container) {
+      return true;
+    }
+
+    current = current.parentNode ?? null;
+  }
+
+  return false;
+}
+
+function hasMultipleDirectChoiceSubgroups(
+  container: HTMLElement,
+  inputType: 'radio' | 'checkbox'
+): boolean {
+  if (container.rawTagName.toLowerCase() === 'fieldset') {
+    return false;
+  }
+
+  const nestedChoiceGroups = container
+    .querySelectorAll('fieldset, [role="group"], [role="radiogroup"]')
+    .filter((candidate) => {
       if (candidate === container) {
         return false;
       }
 
-      const choiceInputs = Array.from(candidate.querySelectorAll(`input[type="${inputType}"]`)).filter(
-        (input): input is HTMLInputElement => input instanceof HTMLInputElement && isVisible(input)
-      );
+      const choiceInputs = candidate
+        .querySelectorAll(`input[type="${inputType}"]`)
+        .filter((input) => isVisible(input));
       return choiceInputs.length > 0;
     });
-    if (nestedChoiceGroups.length > 1) {
-      return true;
-    }
-
-    let subgroupCount = 0;
-    for (const child of Array.from(container.children)) {
-      const childChoiceInputs = Array.from(child.querySelectorAll(`input[type="${inputType}"]`)).filter(
-        (candidate): candidate is HTMLInputElement =>
-          candidate instanceof HTMLInputElement && isVisible(candidate)
-      );
-      if (childChoiceInputs.length > 0) {
-        subgroupCount += 1;
-      }
-
-      if (subgroupCount > 1) {
-        return true;
-      }
-    }
-
-    return false;
+  if (nestedChoiceGroups.length > 1) {
+    return true;
   }
 
-  function findGroupedFieldLabel(
-    groupElements: HTMLInputElement[],
-    startingContainer?: Element | null
-  ): string {
-    const first = groupElements[0];
-    if (!first) {
-      return '';
+  let subgroupCount = 0;
+  for (const child of container.children) {
+    const childChoiceInputs = child
+      .querySelectorAll(`input[type="${inputType}"]`)
+      .filter((candidate) => isVisible(candidate));
+    if (childChoiceInputs.length > 0) {
+      subgroupCount += 1;
     }
 
-    let current: Element | null = startingContainer ?? findSharedAncestor(groupElements);
-    while (current && current !== rootElement.parentElement) {
-      const directLegend =
-        current instanceof HTMLFieldSetElement
-          ? normalizeText(current.querySelector(':scope > legend')?.textContent)
-          : '';
-      if (directLegend) {
-        return directLegend;
-      }
-
-      const labelledBy = readLabelledByText(current);
-      if (labelledBy) {
-        return labelledBy;
-      }
-
-      const ariaLabel = normalizeText(current.getAttribute('aria-label'));
-      if (ariaLabel) {
-        return ariaLabel;
-      }
-
-      if (!(current instanceof HTMLFieldSetElement)) {
-        const promptFromSiblings = findPromptFromPreviousSiblings(current);
-        if (promptFromSiblings) {
-          return promptFromSiblings;
-        }
-      }
-
-      const containerHeading = findContainerHeading(current);
-      if (containerHeading) {
-        return containerHeading;
-      }
-
-      if (current instanceof HTMLFieldSetElement) {
-        const promptFromSiblings = findPromptFromPreviousSiblings(current);
-        if (promptFromSiblings) {
-          return promptFromSiblings;
-        }
-      }
-
-      current = current.parentElement;
+    if (subgroupCount > 1) {
+      return true;
     }
+  }
 
+  return false;
+}
+
+function findGroupedFieldLabel(
+  documentRoot: HTMLElement,
+  rootElement: HTMLElement,
+  groupElements: HTMLElement[],
+  startingContainer?: HTMLElement | null
+): string {
+  const first = groupElements[0];
+  if (!first) {
     return '';
   }
 
-  function hasNearbyInteractivePeer(element: Element): boolean {
-    let current: Element | null = element.parentElement;
-    let depth = 0;
-
-    while (current && current !== rootElement && depth < 3) {
-      const peers = Array.from(current.querySelectorAll(interactiveSelector)).filter(
-        (candidate) => candidate !== element && isVisible(candidate)
-      );
-      if (peers.length > 0) {
-        return true;
-      }
-
-      current = current.parentElement;
-      depth += 1;
+  let current: HTMLElement | null = startingContainer ?? findSharedAncestor(groupElements, rootElement);
+  while (current && current !== rootElement.parentNode) {
+    const directLegend =
+      current.rawTagName.toLowerCase() === 'fieldset'
+        ? normalizeText(current.querySelector(':scope > legend')?.textContent)
+        : '';
+    if (directLegend) {
+      return directLegend;
     }
 
-    return false;
-  }
-
-  function readAssociatedLabel(element: Element): string {
-    if (
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLTextAreaElement ||
-      element instanceof HTMLSelectElement
-    ) {
-      const fromLabels = chooseBestLabel(
-        Array.from(element.labels ?? []).map((label) => readLabelElementText(label))
-      );
-      if (fromLabels) {
-        return fromLabels;
-      }
+    const labelledBy = readLabelledByText(documentRoot, current);
+    if (labelledBy) {
+      return labelledBy;
     }
 
-    const fromLabelledBy = readLabelledByText(element);
-    if (fromLabelledBy) {
-      return fromLabelledBy;
-    }
-
-    let current: Element | null = element.parentElement;
-    let depth = 0;
-    while (current && current !== rootElement && depth < 6) {
-      if (!(current instanceof HTMLFieldSetElement)) {
-        const promptFromSiblings = findPromptFromPreviousSiblings(current);
-        if (promptFromSiblings) {
-          return promptFromSiblings;
-        }
-      }
-
-      const containerHeading = findContainerHeading(current);
-      if (containerHeading) {
-        return containerHeading;
-      }
-
-      current = current.parentElement;
-      depth += 1;
-    }
-
-    const fromNearbyPrompt = findPromptFromPreviousSiblings(element);
-    if (fromNearbyPrompt) {
-      return fromNearbyPrompt;
-    }
-
-    const wrappingLabel = readLabelElementText(element.closest('label'));
-    if (wrappingLabel && !isGenericLabel(wrappingLabel)) {
-      return wrappingLabel;
-    }
-
-    const ariaLabel = normalizeText(element.getAttribute('aria-label'));
+    const ariaLabel = normalizeText(current.getAttribute('aria-label'));
     if (ariaLabel) {
       return ariaLabel;
     }
 
-    const placeholder = normalizeText(element.getAttribute('placeholder'));
-    if (placeholder) {
-      return placeholder;
+    if (current.rawTagName.toLowerCase() !== 'fieldset') {
+      const promptFromSiblings = findPromptFromPreviousSiblings(current, rootElement);
+      if (promptFromSiblings) {
+        return promptFromSiblings;
+      }
     }
 
-    return findClosestLegend(element);
+    const containerHeading = findContainerHeading(current);
+    if (containerHeading) {
+      return containerHeading;
+    }
+
+    if (current.rawTagName.toLowerCase() === 'fieldset') {
+      const promptFromSiblings = findPromptFromPreviousSiblings(current, rootElement);
+      if (promptFromSiblings) {
+        return promptFromSiblings;
+      }
+    }
+
+    current = current.parentNode ?? null;
   }
 
-  function readChoiceOptionLabel(element: HTMLInputElement): string {
-    const fromLabels = chooseBestLabel(
-      Array.from(element.labels ?? []).map((label) => readLabelElementText(label))
-    );
-    if (fromLabels) {
-      return fromLabels;
+  return '';
+}
+
+function hasNearbyInteractivePeer(element: HTMLElement, rootElement: HTMLElement): boolean {
+  let current: HTMLElement | null = element.parentNode ?? null;
+  let depth = 0;
+
+  while (current && current !== rootElement && depth < 3) {
+    const peers = current
+      .querySelectorAll(INTERACTIVE_SELECTOR)
+      .filter((candidate) => candidate !== element && isVisible(candidate));
+    if (peers.length > 0) {
+      return true;
     }
 
-    const wrappingLabel = readLabelElementText(element.closest('label'));
-    if (wrappingLabel && !isGenericLabel(wrappingLabel)) {
-      return wrappingLabel;
+    current = current.parentNode ?? null;
+    depth += 1;
+  }
+
+  return false;
+}
+
+function labelsForElement(documentRoot: HTMLElement, element: HTMLElement): HTMLElement[] {
+  const id = element.getAttribute('id');
+  if (!id) {
+    return [];
+  }
+
+  return documentRoot.querySelectorAll(`label[for="${id.replace(/"/g, '\\"')}"]`);
+}
+
+function readAssociatedLabel(
+  documentRoot: HTMLElement,
+  rootElement: HTMLElement,
+  element: HTMLElement
+): string {
+  const fromLabels = chooseBestLabel(labelsForElement(documentRoot, element).map(readLabelElementText));
+  if (fromLabels) {
+    return fromLabels;
+  }
+
+  const fromLabelledBy = readLabelledByText(documentRoot, element);
+  if (fromLabelledBy) {
+    return fromLabelledBy;
+  }
+
+  let current: HTMLElement | null = element.parentNode ?? null;
+  let depth = 0;
+  while (current && current !== rootElement && depth < 6) {
+    if (current.rawTagName.toLowerCase() !== 'fieldset') {
+      const promptFromSiblings = findPromptFromPreviousSiblings(current, rootElement);
+      if (promptFromSiblings) {
+        return promptFromSiblings;
+      }
     }
 
-    let current: Element | null = element.parentElement;
-    let depth = 0;
-    while (current && current !== rootElement && depth < 4) {
-      const optionText = textWithoutInteractiveContent(current);
-      const sameTypeInputs = Array.from(current.querySelectorAll(`input[type="${element.type}"]`)).filter(
-        (candidate): candidate is HTMLInputElement =>
-          candidate instanceof HTMLInputElement && isVisible(candidate)
-      );
-      if (optionText && !isGenericLabel(optionText) && sameTypeInputs.length === 1) {
-        return optionText;
+    const containerHeading = findContainerHeading(current);
+    if (containerHeading) {
+      return containerHeading;
+    }
+
+    current = current.parentNode ?? null;
+    depth += 1;
+  }
+
+  const fromNearbyPrompt = findPromptFromPreviousSiblings(element, rootElement);
+  if (fromNearbyPrompt) {
+    return fromNearbyPrompt;
+  }
+
+  const wrappingLabel = readLabelElementText(element.closest('label'));
+  if (wrappingLabel && !isGenericLabel(wrappingLabel)) {
+    return wrappingLabel;
+  }
+
+  const ariaLabel = normalizeText(element.getAttribute('aria-label'));
+  if (ariaLabel) {
+    return ariaLabel;
+  }
+
+  const placeholder = normalizeText(element.getAttribute('placeholder'));
+  if (placeholder) {
+    return placeholder;
+  }
+
+  return findClosestLegend(element);
+}
+
+function readChoiceOptionLabel(
+  documentRoot: HTMLElement,
+  rootElement: HTMLElement,
+  element: HTMLElement
+): string {
+  const fromLabels = chooseBestLabel(labelsForElement(documentRoot, element).map(readLabelElementText));
+  if (fromLabels) {
+    return fromLabels;
+  }
+
+  const wrappingLabel = readLabelElementText(element.closest('label'));
+  if (wrappingLabel && !isGenericLabel(wrappingLabel)) {
+    return wrappingLabel;
+  }
+
+  const elementType = normalizeText(element.getAttribute('type'));
+  let current: HTMLElement | null = element.parentNode ?? null;
+  let depth = 0;
+  while (current && current !== rootElement && depth < 4) {
+    const optionText = textWithoutInteractiveContent(current);
+    const sameTypeInputs = current
+      .querySelectorAll(`input[type="${elementType}"]`)
+      .filter((candidate) => isVisible(candidate));
+    if (optionText && !isGenericLabel(optionText) && sameTypeInputs.length === 1) {
+      return optionText;
+    }
+
+    current = current.parentNode ?? null;
+    depth += 1;
+  }
+
+  return normalizeText(element.getAttribute('value'));
+}
+
+function findChoiceGroupContainer(rootElement: HTMLElement, element: HTMLElement): HTMLElement | null {
+  const inputType = element.getAttribute('type') === 'radio' ? 'radio' : 'checkbox';
+  let current: HTMLElement | null = element.parentNode ?? null;
+  while (current && current !== rootElement) {
+    const sameTypeInputs = current
+      .querySelectorAll(`input[type="${inputType}"]`)
+      .filter((candidate) => isVisible(candidate));
+    if (sameTypeInputs.length > 1) {
+      if (hasMultipleDirectChoiceSubgroups(current, inputType)) {
+        current = current.parentNode ?? null;
+        continue;
       }
 
-      current = current.parentElement;
-      depth += 1;
+      const hasGroupPrompt =
+        Boolean(findContainerHeading(current)) ||
+        Boolean(normalizeText(current.getAttribute('aria-label'))) ||
+        Boolean(findPromptFromPreviousSiblings(current, rootElement));
+      if (hasGroupPrompt) {
+        return current;
+      }
     }
 
-    return element.value;
+    current = current.parentNode ?? null;
   }
 
-  function findChoiceGroupContainer(element: HTMLInputElement): Element | null {
-    const inputType = element.type === 'radio' ? 'radio' : 'checkbox';
-    let current: Element | null = element.parentElement;
-    while (current && current !== rootElement) {
-      const sameTypeInputs = Array.from(current.querySelectorAll(`input[type="${element.type}"]`)).filter(
-        (candidate): candidate is HTMLInputElement =>
-          candidate instanceof HTMLInputElement && isVisible(candidate)
-      );
-      if (sameTypeInputs.length > 1) {
-        if (hasMultipleDirectChoiceSubgroups(current, inputType)) {
-          current = current.parentElement;
-          continue;
-        }
+  return null;
+}
 
-        const hasGroupPrompt =
-          Boolean(findContainerHeading(current)) ||
-          Boolean(readLabelledByText(current)) ||
-          Boolean(normalizeText(current.getAttribute('aria-label'))) ||
-          Boolean(findPromptFromPreviousSiblings(current));
-        if (hasGroupPrompt) {
-          return current;
-        }
+function findBroaderChoiceGroupContainer(
+  rootElement: HTMLElement,
+  element: HTMLElement,
+  minimumInputCount: number
+): HTMLElement | null {
+  const inputType = element.getAttribute('type') === 'radio' ? 'radio' : 'checkbox';
+  let current: HTMLElement | null = element.parentNode ?? null;
+  while (current && current !== rootElement) {
+    const sameTypeInputs = current
+      .querySelectorAll(`input[type="${inputType}"]`)
+      .filter((candidate) => isVisible(candidate));
+    if (sameTypeInputs.length > minimumInputCount) {
+      if (hasMultipleDirectChoiceSubgroups(current, inputType)) {
+        current = current.parentNode ?? null;
+        continue;
       }
 
-      current = current.parentElement;
-    }
-
-    return null;
-  }
-
-  function findBroaderChoiceGroupContainer(
-    element: HTMLInputElement,
-    minimumInputCount: number
-  ): Element | null {
-    const inputType = element.type === 'radio' ? 'radio' : 'checkbox';
-    let current: Element | null = element.parentElement;
-    while (current && current !== rootElement) {
-      const sameTypeInputs = Array.from(current.querySelectorAll(`input[type="${element.type}"]`)).filter(
-        (candidate): candidate is HTMLInputElement =>
-          candidate instanceof HTMLInputElement && isVisible(candidate)
-      );
-      if (sameTypeInputs.length > minimumInputCount) {
-        if (hasMultipleDirectChoiceSubgroups(current, inputType)) {
-          current = current.parentElement;
-          continue;
-        }
-
-        const hasGroupPrompt =
-          Boolean(findContainerHeading(current)) ||
-          Boolean(readLabelledByText(current)) ||
-          Boolean(normalizeText(current.getAttribute('aria-label'))) ||
-          Boolean(findPromptFromPreviousSiblings(current));
-        if (hasGroupPrompt) {
-          return current;
-        }
+      const hasGroupPrompt =
+        Boolean(findContainerHeading(current)) ||
+        Boolean(normalizeText(current.getAttribute('aria-label'))) ||
+        Boolean(findPromptFromPreviousSiblings(current, rootElement));
+      if (hasGroupPrompt) {
+        return current;
       }
-
-      current = current.parentElement;
     }
 
-    return null;
+    current = current.parentNode ?? null;
   }
 
-  function uniqueStrings(values: string[]): string[] {
-    return Array.from(new Set(values.filter(Boolean)));
+  return null;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function selectorCandidatesForElement(element: HTMLElement): string[] {
+  const candidates: string[] = [];
+  const id = element.getAttribute('id');
+  if (id) {
+    candidates.push(`#${cssEscape(id)}`);
   }
 
-  function selectorCandidatesForElement(element: Element): string[] {
-    const candidates: string[] = [];
-    const htmlElement = element as HTMLElement;
-
-    if (htmlElement.id) {
-      candidates.push(`#${cssEscape(htmlElement.id)}`);
-    }
-
-    const name = element.getAttribute('name');
-    if (name) {
-      candidates.push(`[name="${name.replace(/"/g, '\\"')}"]`);
-    }
-
-    const dataTestId = element.getAttribute('data-testid');
-    if (dataTestId) {
-      candidates.push(`[data-testid="${dataTestId.replace(/"/g, '\\"')}"]`);
-    }
-
-    const dataQa = element.getAttribute('data-qa');
-    if (dataQa) {
-      candidates.push(`[data-qa="${dataQa.replace(/"/g, '\\"')}"]`);
-    }
-
-    const ariaLabel = normalizeText(element.getAttribute('aria-label'));
-    if (ariaLabel) {
-      candidates.push(`[aria-label="${ariaLabel.replace(/"/g, '\\"')}"]`);
-    }
-
-    const role = element.getAttribute('role');
-    if (role) {
-      candidates.push(`[role="${role.replace(/"/g, '\\"')}"]`);
-    }
-
-    return uniqueStrings(candidates);
+  const name = element.getAttribute('name');
+  if (name) {
+    candidates.push(`[name="${name.replace(/"/g, '\\"')}"]`);
   }
 
-  function inferInputType(element: Element): ScrapedApplicationFieldType {
-    if (element instanceof HTMLTextAreaElement) {
-      return 'textarea';
-    }
-
-    if (element instanceof HTMLSelectElement) {
-      return 'select';
-    }
-
-    const contentEditable = element.getAttribute('contenteditable');
-    if (contentEditable === 'true' || contentEditable === 'plaintext-only') {
-      return 'rich_text';
-    }
-
-    if (!(element instanceof HTMLInputElement)) {
-      if (element.getAttribute('role') === 'combobox') {
-        return 'combobox';
-      }
-
-      return 'rich_text';
-    }
-
-    switch (element.type) {
-      case 'email':
-        return 'email';
-      case 'tel':
-        return 'tel';
-      case 'file':
-        return 'file';
-      case 'checkbox':
-        return 'checkbox';
-      default:
-        return element.getAttribute('role') === 'combobox' ? 'combobox' : 'text';
-    }
+  const dataTestId = element.getAttribute('data-testid');
+  if (dataTestId) {
+    candidates.push(`[data-testid="${dataTestId.replace(/"/g, '\\"')}"]`);
   }
 
-  function inferSpecialHandling(
-    type: ScrapedApplicationFieldType
-  ): ScrapedApplicationFieldSpecialHandling | undefined {
-    if (type === 'file') {
-      return 'file_upload';
-    }
-
-    if (type === 'rich_text') {
-      return 'rich_text';
-    }
-
-    return undefined;
+  const dataQa = element.getAttribute('data-qa');
+  if (dataQa) {
+    candidates.push(`[data-qa="${dataQa.replace(/"/g, '\\"')}"]`);
   }
 
-  function inferRequired(element: Element): boolean {
-    return (
-      element.hasAttribute('required') ||
-      element.getAttribute('aria-required') === 'true' ||
-      element.getAttribute('aria-invalid') === 'true'
-    );
+  const ariaLabel = normalizeText(element.getAttribute('aria-label'));
+  if (ariaLabel) {
+    candidates.push(`[aria-label="${ariaLabel.replace(/"/g, '\\"')}"]`);
   }
 
-  const elements = Array.from(rootElement.querySelectorAll(interactiveSelector)).filter((element) =>
-    isVisible(element)
+  const role = element.getAttribute('role');
+  if (role) {
+    candidates.push(`[role="${role.replace(/"/g, '\\"')}"]`);
+  }
+
+  return uniqueStrings(candidates);
+}
+
+function inferInputType(element: HTMLElement): ScrapedApplicationFieldType {
+  const tagName = element.rawTagName.toLowerCase();
+  const contentEditable = element.getAttribute('contenteditable');
+
+  if (tagName === 'textarea') {
+    return 'textarea';
+  }
+
+  if (tagName === 'select') {
+    return 'select';
+  }
+
+  if (contentEditable === 'true' || contentEditable === 'plaintext-only') {
+    return 'rich_text';
+  }
+
+  if (tagName !== 'input') {
+    if (element.getAttribute('role') === 'combobox') {
+      return 'combobox';
+    }
+
+    return 'rich_text';
+  }
+
+  switch (element.getAttribute('type')) {
+    case 'email':
+      return 'email';
+    case 'tel':
+      return 'tel';
+    case 'file':
+      return 'file';
+    case 'checkbox':
+      return 'checkbox';
+    default:
+      return element.getAttribute('role') === 'combobox' ? 'combobox' : 'text';
+  }
+}
+
+function inferSpecialHandling(
+  type: ScrapedApplicationFieldType
+): ScrapedApplicationFieldSpecialHandling | undefined {
+  if (type === 'file') {
+    return 'file_upload';
+  }
+
+  if (type === 'rich_text') {
+    return 'rich_text';
+  }
+
+  return undefined;
+}
+
+function inferRequired(element: HTMLElement): boolean {
+  return (
+    element.hasAttribute('required') ||
+    element.getAttribute('aria-required') === 'true' ||
+    element.getAttribute('aria-invalid') === 'true'
   );
+}
 
-  const ignoredFieldCount = Array.from(rootElement.querySelectorAll('input[type="hidden"]')).length;
+function collectSelectOptions(element: HTMLElement): ScrapedApplicationFieldOption[] {
+  return element.querySelectorAll('option').map((option) => ({
+    value: option.getAttribute('value') ?? '',
+    label: normalizeText(option.textContent)
+  }));
+}
+
+function fieldIdFromElement(element: HTMLElement, label: string): string {
+  return (
+    normalizeText(element.getAttribute('name')) ||
+    normalizeText(element.getAttribute('id')) ||
+    normalizeText(label).toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  );
+}
+
+function scrapeApplicationFieldsFromMarkup(input: {
+  documentRoot: HTMLElement;
+  rootElement: HTMLElement;
+}): ParsedScrapeResult {
+  const elements = input.rootElement.querySelectorAll(INTERACTIVE_SELECTOR).filter((element) => isVisible(element));
+  const ignoredFieldCount = input.rootElement.querySelectorAll('input[type="hidden"]').length;
   const fields: MutableField[] = [];
   const groupedKeys = new Set<string>();
-  const groupedContainers = new Set<Element>();
+  const groupedContainers = new Set<HTMLElement>();
+  let groupedFieldCount = 0;
 
   for (const element of elements) {
-    if (!(element instanceof HTMLElement)) {
-      continue;
-    }
-
-    if (element instanceof HTMLInputElement && (element.type === 'radio' || element.type === 'checkbox')) {
-      const sameName = normalizeText(element.name);
+    const inputType = normalizeText(element.getAttribute('type'));
+    if (inputType === 'radio' || inputType === 'checkbox') {
+      const sameName = normalizeText(element.getAttribute('name'));
       const sameNamedGroup = sameName
         ? elements.filter(
-            (candidate): candidate is HTMLInputElement =>
-              candidate instanceof HTMLInputElement &&
-              candidate.type === element.type &&
-              candidate.name === element.name
+            (candidate) =>
+              candidate.rawTagName.toLowerCase() === 'input' &&
+              normalizeText(candidate.getAttribute('type')) === inputType &&
+              normalizeText(candidate.getAttribute('name')) === sameName
           )
         : [];
       const containerGroup =
         (sameNamedGroup.length > 1
-          ? findBroaderChoiceGroupContainer(element, sameNamedGroup.length)
-          : null) ?? findChoiceGroupContainer(element);
-      const containerGroupedInputs = containerGroup
-        ? Array.from(containerGroup.querySelectorAll(`input[type="${element.type}"]`)).filter(
-            (candidate): candidate is HTMLInputElement =>
-              candidate instanceof HTMLInputElement && isVisible(candidate)
-          )
-        : [];
+          ? findBroaderChoiceGroupContainer(input.rootElement, element, sameNamedGroup.length)
+          : null) ?? findChoiceGroupContainer(input.rootElement, element);
+      const containerGroupedInputs =
+        containerGroup?.querySelectorAll(`input[type="${inputType}"]`).filter((candidate) => isVisible(candidate)) ??
+        [];
       const groupedInputs =
         containerGroupedInputs.length > 1
           ? containerGroupedInputs
@@ -668,24 +670,26 @@ function scrapeApplicationFieldsInBrowser(rootElement: HTMLElement): BrowserScra
 
           groupedContainers.add(containerGroup);
         } else {
-          const groupKey = `${element.type}:${sameName}`;
+          const groupKey = `${inputType}:${sameName}`;
           if (groupedKeys.has(groupKey)) {
             continue;
           }
 
           groupedKeys.add(groupKey);
         }
-        const groupType = element.type === 'radio' ? 'radio_group' : 'checkbox_group';
+
+        const groupType = inputType === 'radio' ? 'radio_group' : 'checkbox_group';
         const groupLabel =
-          findGroupedFieldLabel(groupedInputs, containerGroup) ||
-          readAssociatedLabel(element) ||
-          normalizeText(element.name) ||
-          `${element.type} group`;
+          findGroupedFieldLabel(input.documentRoot, input.rootElement, groupedInputs, containerGroup) ||
+          readAssociatedLabel(input.documentRoot, input.rootElement, element) ||
+          sameName ||
+          `${inputType} group`;
         const options = groupedInputs.map((option) => ({
-          value: option.value || normalizeText(option.name) || normalizeText(option.id),
-          label: readChoiceOptionLabel(option) || option.value
+          value: normalizeText(option.getAttribute('value')) || normalizeText(option.getAttribute('name')) || normalizeText(option.getAttribute('id')),
+          label:
+            readChoiceOptionLabel(input.documentRoot, input.rootElement, option) ||
+            normalizeText(option.getAttribute('value'))
         }));
-        const specialHandling = inferSpecialHandling(groupType);
 
         fields.push({
           id: sameName || normalizeText(groupLabel).toLowerCase().replace(/[^a-z0-9]+/g, '_'),
@@ -695,45 +699,39 @@ function scrapeApplicationFieldsInBrowser(rootElement: HTMLElement): BrowserScra
           visible: true,
           enabled: groupedInputs.some((option) => isEnabled(option)),
           selectorCandidates: uniqueStrings([
-            ...(groupedInputs
-              .map((option) => normalizeText(option.name))
+            ...groupedInputs
+              .map((option) => normalizeText(option.getAttribute('name')))
               .filter(Boolean)
-              .map((name) => `[name="${name.replace(/"/g, '\\"')}"]`)),
+              .map((name) => `[name="${name.replace(/"/g, '\\"')}"]`),
             ...groupedInputs.flatMap((option) => selectorCandidatesForElement(option))
           ]),
-          options,
-          ...(specialHandling ? { specialHandling } : {})
+          options
         });
+        groupedFieldCount += 1;
         continue;
       }
     }
 
     const type = inferInputType(element);
-    const label = readAssociatedLabel(element) || normalizeText(element.getAttribute('name')) || type;
+    const label =
+      readAssociatedLabel(input.documentRoot, input.rootElement, element) ||
+      normalizeText(element.getAttribute('name')) ||
+      type;
     const selectorCandidates = selectorCandidatesForElement(element);
 
-    if (element instanceof HTMLInputElement && element.type === 'file' && selectorCandidates.length === 0) {
+    if (inputType === 'file' && selectorCandidates.length === 0) {
       continue;
     }
 
-    if (selectorCandidates.length === 0 && (isGenericLabel(label) || hasNearbyInteractivePeer(element))) {
+    if (selectorCandidates.length === 0 && (isGenericLabel(label) || hasNearbyInteractivePeer(element, input.rootElement))) {
       continue;
     }
 
-    const options =
-      element instanceof HTMLSelectElement
-        ? Array.from(element.options).map((option) => ({
-            value: option.value,
-            label: normalizeText(option.textContent)
-          }))
-        : [];
+    const options = type === 'select' ? collectSelectOptions(element) : [];
     const specialHandling = inferSpecialHandling(type);
 
     fields.push({
-      id:
-        normalizeText(element.getAttribute('name')) ||
-        normalizeText((element as HTMLElement).id) ||
-        normalizeText(label).toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      id: fieldIdFromElement(element, label),
       label,
       type,
       required: inferRequired(element),
@@ -752,15 +750,9 @@ function scrapeApplicationFieldsInBrowser(rootElement: HTMLElement): BrowserScra
   return {
     fields,
     ignoredFieldCount,
-    groupedFieldCount: groupedKeys.size,
+    groupedFieldCount,
     specialCases
   };
-}
-
-function getBrowserScraperSource(): string {
-  return scrapeApplicationFieldsInBrowser
-    .toString()
-    .replace(/__name\([^;]+;\s*/g, '');
 }
 
 export async function scrapeApplicationFields(input: {
@@ -783,22 +775,17 @@ export async function scrapeApplicationFields(input: {
     finalUrl: input.boardEntry.finalUrl
   });
 
-  const browserScraperSource = getBrowserScraperSource();
+  const html = await input.page.content();
+  const documentRoot = parse(html);
+  const rootElement = documentRoot.querySelectorAll(input.boardEntry.rootSelector)[input.boardEntry.rootIndex] ?? null;
+  if (!rootElement) {
+    throw new Error('Application form scraper could not resolve the current form root from page markup.');
+  }
 
-  const result = await root.evaluate<BrowserScrapeResult, string>(
-    (rootElement, source) => {
-      if (!(rootElement instanceof HTMLElement)) {
-        throw new Error('Application scraper expected an HTMLElement form root.');
-      }
-
-      const browserScrape = globalThis.eval(`(${source})`) as (
-        rootNode: HTMLElement
-      ) => BrowserScrapeResult;
-
-      return browserScrape(rootElement);
-    },
-    browserScraperSource
-  );
+  const result = scrapeApplicationFieldsFromMarkup({
+    documentRoot,
+    rootElement
+  });
 
   if (result.fields.length === 0) {
     throw new Error('Application form scraper did not find any visible fields after readiness check.');

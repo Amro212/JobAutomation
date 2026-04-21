@@ -320,7 +320,23 @@ describe('application runner', () => {
           run: siteFlowRun
         }
       ],
-      createBrowser: vi.fn(),
+      createBrowser: vi.fn().mockResolvedValue({
+        browser: null,
+        context: null,
+        identity: {
+          profileKind: 'apply',
+          board: 'greenhouse',
+          userDataDir: 'C:/profiles/apply/greenhouse',
+          os: 'windows',
+          locale: 'en-CA',
+          enableCache: true,
+          humanize: true,
+          firefoxUserPrefs: {},
+          headless: false
+        },
+        persistent: true,
+        close: vi.fn().mockResolvedValue(undefined)
+      }),
       createSession: vi.fn().mockResolvedValue({
         browser: {},
         context: {

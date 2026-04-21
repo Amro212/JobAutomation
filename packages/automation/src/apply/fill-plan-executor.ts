@@ -1,10 +1,23 @@
 import type { Locator, Page } from 'playwright';
 
+import type { InteractionPacingProfile } from './contracts';
 import type { ApplicationBoardEntryResult } from './board-entry';
 import type { ScrapedApplicationField } from './form-scraper';
 import type { ApplicationFillPlanEntry } from './openrouter-answer-module';
 
 export type ApplicationFillExecutionStatus = 'success' | 'skipped' | 'failed';
+
+export type HumanActionEngine = {
+  click: (locator: Locator) => Promise<void>;
+  typeText: (locator: Locator, value: string) => Promise<void>;
+  press: (key: string) => Promise<void>;
+  waitForPreFill: () => Promise<void>;
+  metrics: {
+    pointerActions: number;
+    typingDurationMs: number;
+    preFillDwellMs: number;
+  };
+};
 
 export type ApplicationFillExecutionResult = {
   fieldId: string;
@@ -23,11 +36,23 @@ export type ExecuteApplicationFillPlanResult = {
     skipped: number;
     failed: number;
   };
+  telemetry: {
+    totalPreFillDwellMs: number;
+    totalTypingDurationMs: number;
+    totalPointerActions: number;
+    forbiddenDirectApiUsage: string[];
+  };
 };
 
 const STAGE_5_LOG_PREFIX = '[Stage 5][fill-plan-executor]';
+const DEFAULT_PACING: Required<InteractionPacingProfile> = {
+  preFieldDelayMs: [10, 30],
+  postFieldDelayMs: [10, 30],
+  typingDelayMs: [20, 45],
+  preApplyReadDelayMs: [40, 80],
+  sectionReadDelayMs: [20, 40]
+};
 
-// DEBUG: remove after Stage 5
 function logStage5(action: string, details: Record<string, unknown>): void {
   console.log(`${STAGE_5_LOG_PREFIX} ${action} ${JSON.stringify(details)}`);
 }
@@ -40,6 +65,88 @@ function createSummary(
     success: results.filter((result) => result.status === 'success').length,
     skipped: results.filter((result) => result.status === 'skipped').length,
     failed: results.filter((result) => result.status === 'failed').length
+  };
+}
+
+function randomBetween([min, max]: [number, number]): number {
+  if (max <= min) {
+    return min;
+  }
+
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function resolvePacingProfile(
+  pacing?: InteractionPacingProfile
+): Required<InteractionPacingProfile> {
+  return {
+    preFieldDelayMs: pacing?.preFieldDelayMs ?? DEFAULT_PACING.preFieldDelayMs,
+    postFieldDelayMs: pacing?.postFieldDelayMs ?? DEFAULT_PACING.postFieldDelayMs,
+    typingDelayMs: pacing?.typingDelayMs ?? DEFAULT_PACING.typingDelayMs,
+    preApplyReadDelayMs: pacing?.preApplyReadDelayMs ?? DEFAULT_PACING.preApplyReadDelayMs,
+    sectionReadDelayMs: pacing?.sectionReadDelayMs ?? DEFAULT_PACING.sectionReadDelayMs
+  };
+}
+
+async function waitWithRange(page: Page, range: [number, number]): Promise<number> {
+  const duration = randomBetween(range);
+  await page.waitForTimeout(duration);
+  return duration;
+}
+
+function createHumanActionEngine(input: {
+  page: Page;
+  pacing?: InteractionPacingProfile;
+}): HumanActionEngine {
+  const pacing = resolvePacingProfile(input.pacing);
+  const metrics = {
+    pointerActions: 0,
+    typingDurationMs: 0,
+    preFillDwellMs: 0
+  };
+
+  return {
+    metrics,
+    async waitForPreFill() {
+      metrics.preFillDwellMs += await waitWithRange(input.page, pacing.preApplyReadDelayMs);
+    },
+    async click(locator: Locator) {
+      await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+      await waitWithRange(input.page, pacing.preFieldDelayMs);
+      await locator.hover().catch(() => undefined);
+      await locator.click();
+      metrics.pointerActions += 1;
+      await waitWithRange(input.page, pacing.postFieldDelayMs);
+    },
+    async typeText(locator: Locator, value: string) {
+      await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+      await waitWithRange(input.page, pacing.preFieldDelayMs);
+      await locator.click();
+      metrics.pointerActions += 1;
+
+      const existingInputValue = await locator.inputValue().catch(() => null);
+      const existingTextContent = await locator.textContent().catch(() => null);
+      const existingValue = (existingInputValue ?? existingTextContent ?? '').trim();
+      if (existingValue.length > 0) {
+        await input.page.keyboard.press('Control+A').catch(() => undefined);
+        await input.page.keyboard.press('Backspace').catch(() => undefined);
+      }
+
+      for (const [index, character] of Array.from(value).entries()) {
+        const keyDelay = randomBetween(pacing.typingDelayMs);
+        await input.page.keyboard.type(character, { delay: keyDelay });
+        metrics.typingDurationMs += keyDelay;
+
+        if (index > 0 && index % 5 === 0) {
+          metrics.typingDurationMs += await waitWithRange(input.page, pacing.sectionReadDelayMs);
+        }
+      }
+
+      await waitWithRange(input.page, pacing.postFieldDelayMs);
+    },
+    async press(key: string) {
+      await input.page.keyboard.press(key);
+    }
   };
 }
 
@@ -128,6 +235,7 @@ async function executeCombobox(input: {
   field: ScrapedApplicationField;
   entry: ApplicationFillPlanEntry;
   locator: Locator;
+  actionEngine: HumanActionEngine;
 }): Promise<void> {
   if (input.entry.action !== 'fill' || typeof input.entry.value !== 'string') {
     throw new Error('Combobox action requires a text fill value.');
@@ -138,8 +246,7 @@ async function executeCombobox(input: {
     throw new Error('Combobox action requires a non-empty text value.');
   }
 
-  await input.locator.click();
-  await input.locator.fill(value);
+  await input.actionEngine.typeText(input.locator, value);
 
   const option = await visibleOptionByText({
     page: input.page,
@@ -154,7 +261,7 @@ async function executeCombobox(input: {
     throw new Error(`No visible combobox option matched "${value}".`);
   }
 
-  await option.click();
+  await input.actionEngine.click(option);
 }
 
 async function firstVisibleChoiceLocator(input: {
@@ -197,6 +304,7 @@ async function executeChoiceGroup(input: {
   field: ScrapedApplicationField;
   entry: ApplicationFillPlanEntry;
   selector: string;
+  actionEngine: HumanActionEngine;
 }): Promise<void> {
   const values = choiceValues(input.entry.value);
   if (values.length === 0) {
@@ -217,7 +325,64 @@ async function executeChoiceGroup(input: {
       throw new Error(`Choice option ${value} was not visible.`);
     }
 
-    await locator.setChecked(true);
+    const alreadyChecked = await locator.isChecked().catch(() => false);
+    if (!alreadyChecked) {
+      await input.actionEngine.click(locator);
+    }
+  }
+}
+
+async function executeTextFill(input: {
+  field: ScrapedApplicationField;
+  entry: ApplicationFillPlanEntry;
+  locator: Locator;
+  actionEngine: HumanActionEngine;
+}): Promise<void> {
+  if (input.entry.action !== 'fill' || typeof input.entry.value !== 'string') {
+    throw new Error('Text field action requires a text fill value.');
+  }
+
+  await input.actionEngine.typeText(input.locator, input.entry.value);
+}
+
+async function executeSelect(input: {
+  field: ScrapedApplicationField;
+  entry: ApplicationFillPlanEntry;
+  locator: Locator;
+  actionEngine: HumanActionEngine;
+}): Promise<void> {
+  if (input.entry.action !== 'select' || typeof input.entry.value !== 'string') {
+    throw new Error('Select action requires an option value.');
+  }
+
+  const targetIndex = input.field.options.findIndex(
+    (option) =>
+      option.value === input.entry.value || normalizeOptionText(option.label) === normalizeOptionText(input.entry.value)
+  );
+  if (targetIndex < 0) {
+    throw new Error(`No known select option matched "${input.entry.value}".`);
+  }
+
+  await input.actionEngine.click(input.locator);
+  await input.actionEngine.press('Home');
+  for (let index = 0; index < targetIndex; index += 1) {
+    await input.actionEngine.press('ArrowDown');
+  }
+  await input.actionEngine.press('Enter');
+}
+
+async function executeCheckbox(input: {
+  entry: ApplicationFillPlanEntry;
+  locator: Locator;
+  actionEngine: HumanActionEngine;
+}): Promise<void> {
+  if (typeof input.entry.value !== 'boolean') {
+    throw new Error('Checkbox action requires a boolean value.');
+  }
+
+  const checked = await input.locator.isChecked().catch(() => false);
+  if (checked !== input.entry.value) {
+    await input.actionEngine.click(input.locator);
   }
 }
 
@@ -226,6 +391,7 @@ async function executeWithSelectorFallback(input: {
   root: Locator;
   field: ScrapedApplicationField;
   entry: ApplicationFillPlanEntry;
+  actionEngine: HumanActionEngine;
 }): Promise<ApplicationFillExecutionResult> {
   const errors: string[] = [];
 
@@ -249,14 +415,14 @@ async function executeWithSelectorFallback(input: {
     }
 
     try {
-      // DEBUG: remove after Stage 5
       if (input.field.type === 'combobox') {
         await executeCombobox({
           page: input.page,
           root: input.root,
           field: input.field,
           entry: input.entry,
-          locator
+          locator,
+          actionEngine: input.actionEngine
         });
         return {
           fieldId: input.field.id,
@@ -268,8 +434,19 @@ async function executeWithSelectorFallback(input: {
         };
       }
 
-      if (input.entry.action === 'fill' && typeof input.entry.value === 'string') {
-        await locator.fill(input.entry.value);
+      if (
+        input.field.type === 'text' ||
+        input.field.type === 'email' ||
+        input.field.type === 'tel' ||
+        input.field.type === 'textarea' ||
+        input.field.type === 'rich_text'
+      ) {
+        await executeTextFill({
+          field: input.field,
+          entry: input.entry,
+          locator,
+          actionEngine: input.actionEngine
+        });
         return {
           fieldId: input.field.id,
           label: input.field.label,
@@ -280,8 +457,13 @@ async function executeWithSelectorFallback(input: {
         };
       }
 
-      if (input.entry.action === 'select' && typeof input.entry.value === 'string') {
-        await locator.selectOption(input.entry.value);
+      if (input.field.type === 'select') {
+        await executeSelect({
+          field: input.field,
+          entry: input.entry,
+          locator,
+          actionEngine: input.actionEngine
+        });
         return {
           fieldId: input.field.id,
           label: input.field.label,
@@ -293,12 +475,11 @@ async function executeWithSelectorFallback(input: {
       }
 
       if (input.entry.action === 'check' && input.field.type === 'checkbox') {
-        if (typeof input.entry.value !== 'boolean') {
-          errors.push(`${selector}: checkbox action requires a boolean value`);
-          continue;
-        }
-
-        await locator.setChecked(input.entry.value);
+        await executeCheckbox({
+          entry: input.entry,
+          locator,
+          actionEngine: input.actionEngine
+        });
         return {
           fieldId: input.field.id,
           label: input.field.label,
@@ -315,7 +496,8 @@ async function executeWithSelectorFallback(input: {
           root: input.root,
           field: input.field,
           entry: input.entry,
-          selector
+          selector,
+          actionEngine: input.actionEngine
         });
         return {
           fieldId: input.field.id,
@@ -333,7 +515,8 @@ async function executeWithSelectorFallback(input: {
           root: input.root,
           field: input.field,
           entry: input.entry,
-          selector
+          selector,
+          actionEngine: input.actionEngine
         });
         return {
           fieldId: input.field.id,
@@ -365,12 +548,19 @@ export async function executeApplicationFillPlan(input: {
   boardEntry: ApplicationBoardEntryResult;
   fields: ScrapedApplicationField[];
   fillPlan: ApplicationFillPlanEntry[];
+  pacing?: InteractionPacingProfile;
 }): Promise<ExecuteApplicationFillPlanResult> {
   const root = input.page
     .locator(input.boardEntry.rootSelector)
     .nth(input.boardEntry.rootIndex);
   const fieldById = new Map(input.fields.map((field) => [field.id, field]));
   const results: ApplicationFillExecutionResult[] = [];
+  const actionEngine = createHumanActionEngine({
+    page: input.page,
+    pacing: input.pacing
+  });
+
+  await actionEngine.waitForPreFill();
 
   for (const entry of input.fillPlan) {
     const field = fieldById.get(entry.fieldId);
@@ -410,7 +600,8 @@ export async function executeApplicationFillPlan(input: {
       page: input.page,
       root,
       field,
-      entry
+      entry,
+      actionEngine
     });
     logStage5(result.status === 'success' ? 'action_success' : 'action_failed', result);
     results.push(result);
@@ -421,6 +612,12 @@ export async function executeApplicationFillPlan(input: {
 
   return {
     results,
-    summary
+    summary,
+    telemetry: {
+      totalPreFillDwellMs: actionEngine.metrics.preFillDwellMs,
+      totalTypingDurationMs: actionEngine.metrics.typingDurationMs,
+      totalPointerActions: actionEngine.metrics.pointerActions,
+      forbiddenDirectApiUsage: []
+    }
   };
 }

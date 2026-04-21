@@ -3,6 +3,11 @@ import { reachApplicationForm } from '../board-entry';
 import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
+import {
+  detectApplicationChallenge,
+  warmApplicationFormBeforeFill,
+  warmApplicationPageBeforeEntry
+} from '../trust-runtime';
 
 export const leverApplicationSite: SupportedApplicationSite = {
   siteKey: 'lever',
@@ -10,10 +15,42 @@ export const leverApplicationSite: SupportedApplicationSite = {
     return job.sourceKind === 'lever';
   },
   async run(context) {
+    const preEntryWarmup = await warmApplicationPageBeforeEntry({
+      page: context.session.page,
+      board: 'lever',
+      pacing: context.session.pacing
+    });
     const boardEntry = await reachApplicationForm({
       page: context.session.page,
       board: 'lever'
     });
+    const preFillWarmup = await warmApplicationFormBeforeFill({
+      page: context.session.page,
+      board: 'lever',
+      boardEntry,
+      pacing: context.session.pacing
+    });
+    const preFillChallenge = await detectApplicationChallenge({
+      page: context.session.page,
+      board: 'lever',
+      phase: 'before_scrape'
+    });
+    if (preFillChallenge) {
+      return context.pauseForManualReview({
+        step: preFillChallenge.phase,
+        message: preFillChallenge.message,
+        stopReason: preFillChallenge.kind,
+        details: {
+          challengeSignal: preFillChallenge,
+          boardEntry,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content()
+        }
+      });
+    }
+
     const scrapedFields = await scrapeApplicationFields({
       page: context.session.page,
       boardEntry
@@ -25,7 +62,10 @@ export const leverApplicationSite: SupportedApplicationSite = {
         'Scraped the visible Lever application fields and stopped for Stage 3 review.',
         {
           boardEntry,
-          scrapedFields
+          scrapedFields,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null
         }
       );
 
@@ -34,7 +74,10 @@ export const leverApplicationSite: SupportedApplicationSite = {
         message: 'Paused after scraping the visible Lever application fields for Stage 3 review.',
         details: {
           boardEntry,
-          scrapedFields
+          scrapedFields,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null
         }
       });
     }
@@ -49,8 +92,32 @@ export const leverApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       boardEntry,
       fields: scrapedFields,
-      fillPlan: fillPlanResult.fillPlan
+      fillPlan: fillPlanResult.fillPlan,
+      pacing: context.session.pacing
     });
+    const postFillChallenge = await detectApplicationChallenge({
+      page: context.session.page,
+      board: 'lever',
+      phase: 'after_fill'
+    });
+    if (postFillChallenge) {
+      return context.pauseForManualReview({
+        step: postFillChallenge.phase,
+        message: postFillChallenge.message,
+        stopReason: postFillChallenge.kind,
+        details: {
+          challengeSignal: postFillChallenge,
+          boardEntry,
+          scrapedFields,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content()
+        }
+      });
+    }
 
     await context.logStep(
       'fill_plan_executed',
@@ -64,7 +131,10 @@ export const leverApplicationSite: SupportedApplicationSite = {
         responseJson: fillPlanResult.responseJson,
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
-        executionResult
+        executionResult,
+        preEntryWarmup,
+        preFillWarmup,
+        profileDirectory: context.session.identity.userDataDir ?? null
       }
     );
 
@@ -80,7 +150,10 @@ export const leverApplicationSite: SupportedApplicationSite = {
         responseJson: fillPlanResult.responseJson,
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
-        executionResult
+        executionResult,
+        preEntryWarmup,
+        preFillWarmup,
+        profileDirectory: context.session.identity.userDataDir ?? null
       }
     });
   }
