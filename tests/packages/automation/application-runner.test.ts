@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { ApplicantProfile } from '../../../packages/core/src/applicant-profile';
 import { minimalAutofillProfileSchema } from '../../../packages/core/src/autofill-profile';
@@ -73,6 +73,91 @@ const baseArtifact = (overrides: Partial<ArtifactRecord> = {}): ArtifactRecord =
 });
 
 describe('application runner', () => {
+  afterEach(() => {
+    delete process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_ALLOWLIST;
+    delete process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_STRICT;
+  });
+
+  test('skips application runs when target URL is outside the authorized domain allowlist', async () => {
+    process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_ALLOWLIST = 'allowed.example.com';
+
+    const job = baseJob({
+      sourceUrl: 'https://job-boards.greenhouse.io/example/jobs/1'
+    });
+    const applicantProfile = baseApplicant({
+      jobKeywordProfile: null,
+      jobKeywordProfileGeneratedAt: null
+    });
+    const browserFactory = vi.fn();
+    const siteFlowRun = vi.fn();
+
+    const result = await runApplication({
+      jobId: job.id,
+      jobsRepository: {
+        findById: vi.fn().mockResolvedValue(job)
+      },
+      applicantProfileRepository: {
+        get: vi.fn().mockResolvedValue(applicantProfile)
+      },
+      applicationRunsRepository: {
+        create: vi.fn().mockImplementation(async (input) => ({
+          id: 'run-allowlist',
+          jobId: input.jobId,
+          siteKey: input.siteKey,
+          status: input.status,
+          currentStep: input.currentStep,
+          stopReason: input.stopReason ?? null,
+          prefilterReasons: input.prefilterReasons ?? [],
+          reviewUrl: null,
+          resumeArtifactId: null,
+          coverLetterArtifactId: null,
+          createdAt: new Date('2026-03-13T10:10:00.000Z'),
+          startedAt: null,
+          completedAt: null,
+          updatedAt: new Date('2026-03-13T10:10:00.000Z')
+        })),
+        update: vi.fn().mockImplementation(async (_id, patch) => ({
+          id: 'run-allowlist',
+          jobId: job.id,
+          siteKey: 'greenhouse',
+          status: patch.status ?? 'pending',
+          currentStep: patch.currentStep ?? 'queued',
+          stopReason: patch.stopReason ?? null,
+          prefilterReasons: patch.prefilterReasons ?? [],
+          reviewUrl: patch.reviewUrl ?? null,
+          resumeArtifactId: null,
+          coverLetterArtifactId: null,
+          createdAt: new Date('2026-03-13T10:10:00.000Z'),
+          startedAt: null,
+          completedAt: new Date('2026-03-13T10:11:00.000Z'),
+          updatedAt: new Date('2026-03-13T10:11:00.000Z')
+        }))
+      },
+      artifactsRepository: {
+        listByJobAndKind: vi.fn().mockResolvedValue([]),
+        findById: vi.fn()
+      },
+      logEventsRepository: {
+        create: vi.fn().mockResolvedValue(undefined)
+      },
+      siteFlows: [
+        {
+          siteKey: 'greenhouse',
+          supports: vi.fn().mockReturnValue(true),
+          run: siteFlowRun
+        }
+      ],
+      createBrowser: browserFactory
+    });
+
+    expect(result.status).toBe('skipped');
+    expect(result.currentStep).toBe('scope_denied');
+    expect(result.stopReason).toBe('domain_not_authorized');
+    expect(browserFactory).not.toHaveBeenCalled();
+    expect(siteFlowRun).not.toHaveBeenCalled();
+
+  });
+
   test('skips prefiltered jobs before creating a browser session', async () => {
     const job = baseJob({
       title: 'Senior Sales Manager',

@@ -15,6 +15,7 @@ export async function pauseApplicationRun(input: {
   step: string;
   siteKey: string;
   message: string;
+  stopReason?: string;
   details?: Record<string, unknown>;
   artifactsRootDir: string;
   applicationRunsRepository: {
@@ -122,7 +123,7 @@ export async function pauseApplicationRun(input: {
   return input.applicationRunsRepository.update(input.run.id, {
     status: 'paused',
     currentStep: input.step,
-    stopReason: 'manual_review_required',
+    stopReason: input.stopReason ?? 'manual_review_required',
     reviewUrl: input.page.url(),
     completedAt: new Date(),
     updatedAt: new Date()

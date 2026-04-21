@@ -44,6 +44,7 @@ export type ApplicationSiteFlowContext = {
     message: string;
     reviewUrl?: string | null;
     details?: Record<string, unknown>;
+    stopReason?: string;
   }) => Promise<ApplicationRunRecordLike>;
 };
 

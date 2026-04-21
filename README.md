@@ -39,6 +39,18 @@ corepack pnpm install
 corepack pnpm browser:install
 ```
 
+### Authorized Browser Automation Scope
+
+Browser-backed discovery and apply flows support an explicit target-domain allowlist:
+
+- `JOBAUTOMATION_AUTHORIZED_DOMAIN_ALLOWLIST`: comma-separated domains (supports `*.wildcard` rules)
+- `JOBAUTOMATION_AUTHORIZED_DOMAIN_STRICT=1`: deny all runs when allowlist is not configured
+
+Optional polling jitter controls for form readiness checks:
+
+- `JOBAUTOMATION_APPLICATION_POLL_MIN_MS`
+- `JOBAUTOMATION_APPLICATION_POLL_MAX_MS`
+
 ---
 
 *This project is currently in the early build phase.*

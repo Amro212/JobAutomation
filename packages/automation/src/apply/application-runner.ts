@@ -23,6 +23,7 @@ import { pauseApplicationRun } from './pause-application-run';
 import { createApplicationSession } from './session-manager';
 import { stopBeforeSubmit } from './stop-before-submit';
 import { createDiscoveryBrowser } from '../playwright/browser';
+import { evaluateAuthorizedDomainPolicy } from '../playwright/authorized-domain-policy';
 
 type JobsRepository = {
   findById: (id: string) => Promise<JobRecord | null>;
@@ -216,6 +217,54 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     return skippedRun;
   }
 
+  const scopeDecision = evaluateAuthorizedDomainPolicy(job.sourceUrl);
+  if (!scopeDecision.allowed) {
+    await logRunEvent(input.logEventsRepository, {
+      applicationRunId: run.id,
+      jobId: job.id,
+      level: 'warn',
+      message: 'Skipped application run because the target URL is outside the authorized domain policy.',
+      details: {
+        applicationRunId: run.id,
+        siteKey: siteFlow.siteKey,
+        step: 'scope_denied',
+        scopeReason: scopeDecision.reason,
+        targetUrl: job.sourceUrl,
+        targetHost: scopeDecision.host,
+        authorizedAllowlist: scopeDecision.allowlist,
+        strictScopeMode: scopeDecision.strict
+      }
+    });
+
+    const skippedRun = await input.applicationRunsRepository.update(run.id, {
+      status: 'skipped',
+      currentStep: 'scope_denied',
+      stopReason: 'domain_not_authorized',
+      completedAt: new Date(),
+      updatedAt: new Date()
+    });
+    if (!skippedRun) {
+      throw new Error(`Application run ${run.id} was not found for scope-denied update.`);
+    }
+    return skippedRun;
+  }
+
+  await logRunEvent(input.logEventsRepository, {
+    applicationRunId: run.id,
+    jobId: job.id,
+    level: 'info',
+    message: 'Application target URL passed authorized domain policy checks.',
+    details: {
+      applicationRunId: run.id,
+      siteKey: siteFlow.siteKey,
+      step: 'scope_allowed',
+      targetUrl: job.sourceUrl,
+      targetHost: scopeDecision.host,
+      authorizedAllowlist: scopeDecision.allowlist,
+      strictScopeMode: scopeDecision.strict
+    }
+  });
+
   const artifacts = await resolveArtifacts({
     jobId: job.id,
     run: existingRun,
@@ -369,7 +418,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           }
         });
       },
-      pauseForManualReview: async ({ step, message, reviewUrl, details }) => {
+      pauseForManualReview: async ({ step, message, reviewUrl, details, stopReason }) => {
         finalTraceStopped = true;
         return pauseApplicationRun({
           run: runningRun,
@@ -380,6 +429,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           step,
           siteKey: siteFlow.siteKey,
           message,
+          ...(stopReason !== undefined ? { stopReason } : {}),
           ...(details !== undefined ? { details } : {}),
           artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
           applicationRunsRepository: {
