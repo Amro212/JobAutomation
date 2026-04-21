@@ -1,19 +1,31 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Browser } from 'playwright';
-
-import type { ApplicationSession } from './contracts';
+import { resolveRuntimeTimezone } from '../playwright/browser';
+import type {
+  ApplicationSession,
+  ApplicationSessionOptions,
+  ApplicationSessionRuntime
+} from './contracts';
 
 export async function createApplicationSession(input: {
-  browser: Browser;
-  runId: string;
-  artifactsRootDir: string;
-  startUrl?: string;
-}): Promise<ApplicationSession> {
-  const context = await input.browser.newContext({
-    locale: 'en-US'
-  });
+  runtime: ApplicationSessionRuntime;
+} & ApplicationSessionOptions): Promise<ApplicationSession> {
+  const context =
+    input.runtime.context ??
+    (await input.runtime.browser?.newContext({
+      locale: Array.isArray(input.identity.locale)
+        ? (input.identity.locale[0] ?? 'en-US')
+        : input.identity.locale,
+      timezoneId: resolveRuntimeTimezone()
+    }));
+
+  if (!context) {
+    throw new Error('Application session runtime did not provide a browser context.');
+  }
+
+  const ownsContext = input.runtime.context == null;
+
   await context.tracing.start({
     screenshots: true,
     snapshots: true
@@ -30,9 +42,11 @@ export async function createApplicationSession(input: {
   const tracePath = join(traceDir, 'trace.zip');
 
   return {
-    browser: input.browser,
+    browser: input.runtime.browser,
     context,
     page,
+    identity: input.identity,
+    ...(input.pacing ? { pacing: input.pacing } : {}),
     async finalizeTrace() {
       await mkdir(traceDir, { recursive: true });
       await context.tracing.stop({
@@ -41,8 +55,15 @@ export async function createApplicationSession(input: {
       return tracePath;
     },
     async close() {
-      await context.close();
-      await input.browser.close();
+      if (ownsContext) {
+        await context.close();
+        if (input.runtime.browser) {
+          await input.runtime.browser.close();
+        }
+        return;
+      }
+
+      await input.runtime.close();
     }
   };
 }

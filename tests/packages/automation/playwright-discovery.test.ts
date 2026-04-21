@@ -15,8 +15,18 @@ import {
   createDatabaseClient,
   migrateDatabase
 } from '../../../packages/db/src';
+import type { JobListFilters } from '../../../packages/core/src/job';
 
 import { runPlaywrightDiscovery } from '../../../packages/automation/src/discovery/playwright-discovery-adapter';
+
+const PLAYWRIGHT_LIST_FILTERS: JobListFilters = {
+  sourceKind: 'playwright',
+  status: undefined,
+  remoteType: undefined,
+  title: undefined,
+  location: undefined,
+  companyName: undefined
+};
 
 function createTestDatabasePath(): string {
   const path = fileURLToPath(
@@ -110,6 +120,8 @@ describe('playwright discovery', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    delete process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_ALLOWLIST;
+    delete process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_STRICT;
 
     if (server) {
       await new Promise<void>((resolve, reject) => {
@@ -163,9 +175,7 @@ describe('playwright discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const { jobs } = await jobsRepository.list({
-      sourceKind: 'playwright'
-    });
+    const { jobs } = await jobsRepository.list(PLAYWRIGHT_LIST_FILTERS);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.sourceKind).toBe('playwright');
     expect(jobs[0]?.sourceId).toBe('platform-001');
@@ -184,6 +194,38 @@ describe('playwright discovery', () => {
       'fallback-screenshot',
       'fallback-trace'
     ]);
+  });
+
+  test('fails fast when the source URL is outside the authorized domain allowlist', async () => {
+    process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_ALLOWLIST = 'allowed.example.com';
+
+    const source = await sourcesRepository.upsert({
+      sourceKind: 'playwright',
+      sourceKey: `${baseUrl}/jobs`,
+      label: 'Scope Restricted Careers',
+      enabled: true
+    });
+    const run = await runsRepository.create({
+      sourceKind: 'playwright',
+      discoverySourceId: source.id,
+      status: 'pending'
+    });
+
+    const result = await runPlaywrightDiscovery({
+      run,
+      source,
+      jobsRepository,
+      runsRepository,
+      logEventsRepository,
+      artifactsRepository,
+      artifactsRootDir
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.errorMessage).toContain('authorized domain policy');
+
+    const logs = await logEventsRepository.listByDiscoveryRun(run.id);
+    expect(logs.some((entry) => entry.level === 'error')).toBe(true);
   });
 
   test('persists evidence and failure logs when deterministic Playwright extraction cannot produce a valid job', async () => {
@@ -270,22 +312,14 @@ describe('playwright discovery', () => {
     expect(artifacts.some((artifact) => artifact.kind === 'fallback-trace')).toBe(true);
   });
 
-  test('uses a desktop browser profile for source navigation so public boards that block headless defaults still load', async () => {
+  test('uses the Camoufox browser profile for source navigation instead of headless Chromium headers', async () => {
+    let observedUserAgent = '';
     server?.removeAllListeners('request');
     server?.on('request', (request, response) => {
       const url = request.url ?? '/';
-      const userAgent = request.headers['user-agent'] ?? '';
-      const acceptLanguage = request.headers['accept-language'] ?? '';
 
       if (url === '/jobs') {
-        const looksHeadless = userAgent.includes('HeadlessChrome');
-        const hasDesktopLanguage = acceptLanguage.includes('en-US');
-
-        if (looksHeadless || !hasDesktopLanguage) {
-          response.writeHead(403, { 'content-type': 'application/octet-stream' });
-          response.end('blocked');
-          return;
-        }
+        observedUserAgent = String(request.headers['user-agent'] ?? '');
 
         response.writeHead(200, { 'content-type': 'text/html' });
         response.end(`
@@ -348,10 +382,10 @@ describe('playwright discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const { jobs } = await jobsRepository.list({
-      sourceKind: 'playwright'
-    });
+    const { jobs } = await jobsRepository.list(PLAYWRIGHT_LIST_FILTERS);
     expect(jobs.some((job) => job.sourceId === 'fingerprint-001')).toBe(true);
+    expect(observedUserAgent).toContain('Firefox');
+    expect(observedUserAgent).not.toContain('HeadlessChrome');
   });
 
   test('collects company job links and h2-based detail pages from generic public boards', async () => {
@@ -421,9 +455,7 @@ describe('playwright discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const { jobs } = await jobsRepository.list({
-      sourceKind: 'playwright'
-    });
+    const { jobs } = await jobsRepository.list(PLAYWRIGHT_LIST_FILTERS);
     const matchedJob = jobs.find((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'));
     expect(matchedJob?.title).toBe('Sales Representative');
   });
@@ -493,9 +525,7 @@ describe('playwright discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const { jobs } = await jobsRepository.list({
-      sourceKind: 'playwright'
-    });
+    const { jobs } = await jobsRepository.list(PLAYWRIGHT_LIST_FILTERS);
     expect(jobs.some((job) => job.sourceUrl.includes('linkedin.com'))).toBe(false);
     expect(jobs.some((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'))).toBe(true);
   });
@@ -574,9 +604,7 @@ describe('playwright discovery', () => {
 
     expect(result.status).toBe('completed');
 
-    const { jobs } = await jobsRepository.list({
-      sourceKind: 'playwright'
-    });
+    const { jobs } = await jobsRepository.list(PLAYWRIGHT_LIST_FILTERS);
     const matchedJob = jobs.find((job) => job.sourceUrl.includes('/companies/example/jobs/67955262-sales-representative'));
     expect(matchedJob?.title).toBe('Sales Representative');
   });

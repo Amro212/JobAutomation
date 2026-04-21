@@ -31,7 +31,11 @@ export const workspaceProjects = [
     test: {
       name: 'automation',
       environment: 'node',
-      include: ['tests/packages/automation/**/*.test.ts']
+      include: ['tests/packages/automation/**/*.test.ts'],
+      fileParallelism: false,
+      maxWorkers: 1,
+      minWorkers: 1,
+      testTimeout: 60_000
     }
   },
   {

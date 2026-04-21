@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 
 import type { Page } from 'playwright';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { reachApplicationForm } from '../../../packages/automation/src/apply/board-entry';
 import { scrapeApplicationFields } from '../../../packages/automation/src/apply/form-scraper';
@@ -765,5 +765,48 @@ describe('application field scraper', () => {
         type: 'radio_group'
       })
     ]);
+  });
+
+  test('scrapes apply fields without using page-world evaluate APIs', async () => {
+    await startServer({
+      '/no-eval': `
+        <html>
+          <body>
+            <section id="application">
+              <label for="first_name">First Name</label>
+              <input id="first_name" name="first_name" />
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" />
+            </section>
+          </body>
+        </html>
+      `
+    });
+
+    await withPage(async (page) => {
+      await page.goto(`${baseUrl}/no-eval`, { waitUntil: 'domcontentloaded' });
+      const boardEntry = await reachApplicationForm({ page, board: 'greenhouse' });
+
+      const locatorPrototype = Object.getPrototypeOf(page.locator('body')) as {
+        evaluate: (...args: unknown[]) => Promise<unknown>;
+      };
+      const evaluateSpy = vi.spyOn(locatorPrototype, 'evaluate');
+
+      try {
+        const fields = await scrapeApplicationFields({ page, boardEntry });
+        expect(fields).toEqual(
+          expect.arrayContaining([
+          expect.objectContaining({
+            id: 'first_name',
+            label: 'First Name',
+            type: 'text'
+          })
+          ])
+        );
+        expect(evaluateSpy).not.toHaveBeenCalled();
+      } finally {
+        evaluateSpy.mockRestore();
+      }
+    });
   });
 });

@@ -17,11 +17,9 @@ import {
 import type { Browser, BrowserContext, Page } from 'playwright';
 
 import { createDiscoveryBrowser } from '../playwright/browser';
+import { evaluateAuthorizedDomainPolicy } from '../playwright/authorized-domain-policy';
 import type { ExtractedPlaywrightJob } from './extractors/base-extractor';
 import { createGenericListingExtractor } from './extractors/generic-listing-extractor';
-
-const DEFAULT_DISCOVERY_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36';
 
 type PersistedArtifact = {
   id: string;
@@ -276,13 +274,41 @@ async function collectJobs(input: {
 export async function runPlaywrightDiscovery(
   input: PlaywrightDiscoveryAdapterInput
 ): Promise<DiscoveryRunRecord> {
+  const scopeDecision = evaluateAuthorizedDomainPolicy(input.source.sourceKey);
+  if (!scopeDecision.allowed) {
+    const scopeError = `Discovery source is outside the authorized domain policy: ${scopeDecision.reason}.`;
+
+    await logRunEvent(input.logEventsRepository, {
+      runId: input.run.id,
+      level: 'error',
+      message: `Failed ${input.source.sourceKind} source ${input.source.label}.`,
+      details: {
+        ...createLogDetails({
+          source: input.source,
+          pageUrl: input.source.sourceKey,
+          extractorId: 'generic-listing'
+        }),
+        errorMessage: scopeError,
+        scopeReason: scopeDecision.reason,
+        targetHost: scopeDecision.host,
+        authorizedAllowlist: scopeDecision.allowlist,
+        strictScopeMode: scopeDecision.strict
+      }
+    });
+
+    return input.runsRepository.markFinished({
+      id: input.run.id,
+      status: 'failed',
+      jobCount: 0,
+      newJobCount: 0,
+      updatedJobCount: 0,
+      errorMessage: scopeError
+    });
+  }
+
   const browser = await (input.createBrowser ?? createDiscoveryBrowser)();
   const context = await browser.newContext({
-    locale: 'en-US',
-    userAgent: process.env.PLAYWRIGHT_DISCOVERY_USER_AGENT ?? DEFAULT_DISCOVERY_USER_AGENT,
-    extraHTTPHeaders: {
-      'accept-language': 'en-US,en;q=0.9'
-    }
+    locale: 'en-US'
   });
   const artifactIds: string[] = [];
   const currentPageUrlRef = {
@@ -338,7 +364,7 @@ export async function runPlaywrightDiscovery(
       adapter: createPlaywrightSourceAdapter(input.source),
       jobs,
       jobsRepository: input.jobsRepository,
-      capturedAt: input.capturedAt
+      ...(input.capturedAt !== undefined ? { capturedAt: input.capturedAt } : {})
     });
   } catch (error) {
     errorMessage = error instanceof Error ? error.message : 'Unknown Playwright discovery error.';

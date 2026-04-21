@@ -59,6 +59,43 @@ const INTERACTIVE_FIELD_SELECTOR = [
 ].join(', ');
 
 const MIN_VISIBLE_FIELDS = 2;
+const DEFAULT_POLL_MIN_DELAY_MS = 80;
+const DEFAULT_POLL_MAX_DELAY_MS = 180;
+
+function parsePositiveInt(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.floor(parsed);
+}
+
+function resolvePollDelayBounds(): { min: number; max: number } {
+  const minFromEnv = parsePositiveInt(process.env.JOBAUTOMATION_APPLICATION_POLL_MIN_MS);
+  const maxFromEnv = parsePositiveInt(process.env.JOBAUTOMATION_APPLICATION_POLL_MAX_MS);
+
+  const min = minFromEnv ?? DEFAULT_POLL_MIN_DELAY_MS;
+  const max = maxFromEnv ?? DEFAULT_POLL_MAX_DELAY_MS;
+
+  if (min > max) {
+    return { min: max, max: min };
+  }
+
+  return { min, max };
+}
+
+function randomPollDelayMs(bounds: { min: number; max: number }): number {
+  if (bounds.min === bounds.max) {
+    return bounds.min;
+  }
+
+  return Math.floor(Math.random() * (bounds.max - bounds.min + 1)) + bounds.min;
+}
 
 async function countVisibleInteractiveFields(root: Locator): Promise<number> {
   const fields = root.locator(INTERACTIVE_FIELD_SELECTOR);
@@ -122,6 +159,7 @@ async function waitForApplicationForm(
   timeoutMs = 3_000
 ): Promise<ApplicationFormSnapshot | null> {
   const deadline = Date.now() + timeoutMs;
+  const delayBounds = resolvePollDelayBounds();
 
   while (Date.now() <= deadline) {
     const snapshot = await inspectApplicationForm(page, board);
@@ -129,7 +167,7 @@ async function waitForApplicationForm(
       return snapshot;
     }
 
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(randomPollDelayMs(delayBounds));
   }
 
   return null;

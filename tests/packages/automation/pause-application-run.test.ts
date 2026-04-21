@@ -219,4 +219,82 @@ describe('pause application run', () => {
     expect(readFileSync(jsonPath, 'utf8')).toContain('promptPayload');
     expect(readFileSync(jsonPath, 'utf8')).toContain('fieldDiagnostics');
   });
+
+  test('uses an explicit stop reason when provided', async () => {
+    const artifactsRootDir = mkdtempSync(join(tmpdir(), 'jobautomation-pause-custom-stop-'));
+    tempDirs.push(artifactsRootDir);
+
+    const page = {
+      screenshot: vi.fn().mockResolvedValue(Buffer.from('fake-png')),
+      url: vi.fn().mockReturnValue('https://careers.example.com/jobs/1')
+    };
+
+    const update = vi.fn().mockImplementation(async (_id, patch) => ({
+      id: 'run-custom-stop',
+      jobId: 'job-1',
+      siteKey: 'greenhouse',
+      status: patch.status,
+      currentStep: patch.currentStep,
+      stopReason: patch.stopReason,
+      prefilterReasons: [],
+      reviewUrl: patch.reviewUrl,
+      resumeArtifactId: null,
+      coverLetterArtifactId: null,
+      createdAt: new Date('2026-03-13T10:10:00.000Z'),
+      startedAt: null,
+      completedAt: new Date('2026-03-13T10:11:00.000Z'),
+      updatedAt: new Date('2026-03-13T10:11:00.000Z')
+    }));
+
+    await pauseApplicationRun({
+      run: {
+        id: 'run-custom-stop',
+        jobId: 'job-1',
+        siteKey: 'greenhouse',
+        status: 'running',
+        currentStep: 'challenge_detected',
+        stopReason: null,
+        prefilterReasons: [],
+        reviewUrl: null,
+        resumeArtifactId: null,
+        coverLetterArtifactId: null,
+        createdAt: new Date('2026-03-13T10:10:00.000Z'),
+        startedAt: null,
+        completedAt: null,
+        updatedAt: new Date('2026-03-13T10:10:30.000Z')
+      },
+      page,
+      step: 'challenge_detected',
+      siteKey: 'greenhouse',
+      message: 'Paused because a challenge was detected.',
+      stopReason: 'challenge_detected',
+      artifactsRootDir,
+      applicationRunsRepository: {
+        update
+      },
+      artifactsRepository: {
+        create: vi
+          .fn()
+          .mockResolvedValueOnce({ id: 'artifact-screenshot', kind: 'application-screenshot' })
+          .mockResolvedValueOnce({ id: 'artifact-trace', kind: 'application-trace' })
+      },
+      logEventsRepository: {
+        create: vi.fn().mockResolvedValue(undefined)
+      },
+      finalizeTrace: vi.fn(async (tracePath: string) => {
+        await import('node:fs/promises').then(({ mkdir, writeFile }) =>
+          mkdir(join(tracePath, '..'), { recursive: true }).then(() =>
+            writeFile(tracePath, Buffer.from('fake-trace'))
+          )
+        );
+      })
+    });
+
+    expect(update).toHaveBeenCalledWith(
+      'run-custom-stop',
+      expect.objectContaining({
+        stopReason: 'challenge_detected'
+      })
+    );
+  });
 });

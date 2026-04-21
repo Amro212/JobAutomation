@@ -3,6 +3,11 @@ import { reachApplicationForm } from '../board-entry';
 import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
+import {
+  detectApplicationChallenge,
+  warmApplicationFormBeforeFill,
+  warmApplicationPageBeforeEntry
+} from '../trust-runtime';
 
 export const ashbyApplicationSite: SupportedApplicationSite = {
   siteKey: 'ashby',
@@ -10,14 +15,73 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
     return job.sourceKind === 'ashby';
   },
   async run(context) {
+    const preEntryWarmup = await warmApplicationPageBeforeEntry({
+      page: context.session.page,
+      board: 'ashby',
+      pacing: context.session.pacing
+    });
     const boardEntry = await reachApplicationForm({
       page: context.session.page,
       board: 'ashby'
     });
+    const preFillWarmup = await warmApplicationFormBeforeFill({
+      page: context.session.page,
+      board: 'ashby',
+      boardEntry,
+      pacing: context.session.pacing
+    });
+    const preFillChallenge = await detectApplicationChallenge({
+      page: context.session.page,
+      board: 'ashby',
+      phase: 'before_scrape'
+    });
+    if (preFillChallenge) {
+      return context.pauseForManualReview({
+        step: preFillChallenge.phase,
+        message: preFillChallenge.message,
+        stopReason: preFillChallenge.kind,
+        details: {
+          challengeSignal: preFillChallenge,
+          boardEntry,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content()
+        }
+      });
+    }
+
     const scrapedFields = await scrapeApplicationFields({
       page: context.session.page,
       boardEntry
     });
+
+    if (!context.openRouter?.apiKey) {
+      await context.logStep(
+        'fields_scraped_ready',
+        'Scraped the visible Ashby application fields and stopped for Stage 3 review.',
+        {
+          boardEntry,
+          scrapedFields,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null
+        }
+      );
+
+      return context.pauseForManualReview({
+        step: 'fields_scraped_ready',
+        message: 'Paused after scraping the visible Ashby application fields for Stage 3 review.',
+        details: {
+          boardEntry,
+          scrapedFields,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null
+        }
+      });
+    }
+
     const fillPlanResult = await generateApplicationFillPlan({
       applicantProfile: context.applicantProfile,
       job: context.job,
@@ -28,8 +92,32 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       boardEntry,
       fields: scrapedFields,
-      fillPlan: fillPlanResult.fillPlan
+      fillPlan: fillPlanResult.fillPlan,
+      pacing: context.session.pacing
     });
+    const postFillChallenge = await detectApplicationChallenge({
+      page: context.session.page,
+      board: 'ashby',
+      phase: 'after_fill'
+    });
+    if (postFillChallenge) {
+      return context.pauseForManualReview({
+        step: postFillChallenge.phase,
+        message: postFillChallenge.message,
+        stopReason: postFillChallenge.kind,
+        details: {
+          challengeSignal: postFillChallenge,
+          boardEntry,
+          scrapedFields,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content()
+        }
+      });
+    }
 
     await context.logStep(
       'fill_plan_executed',
@@ -43,7 +131,10 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
         responseJson: fillPlanResult.responseJson,
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
-        executionResult
+        executionResult,
+        preEntryWarmup,
+        preFillWarmup,
+        profileDirectory: context.session.identity.userDataDir ?? null
       }
     );
 
@@ -59,7 +150,10 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
         responseJson: fillPlanResult.responseJson,
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
-        executionResult
+        executionResult,
+        preEntryWarmup,
+        preFillWarmup,
+        profileDirectory: context.session.identity.userDataDir ?? null
       }
     });
   }

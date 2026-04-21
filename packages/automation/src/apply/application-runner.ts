@@ -12,17 +12,17 @@ import type {
   PrefilterReason
 } from '@jobautomation/core';
 import type { OpenRouterConfig } from '@jobautomation/llm';
-import type { Browser } from 'playwright';
-
 import type {
   ApplicationArtifacts,
+  ApplicationSessionRuntime,
   ApplicationRunRecordLike,
   SupportedApplicationSite
 } from './contracts';
 import { pauseApplicationRun } from './pause-application-run';
 import { createApplicationSession } from './session-manager';
 import { stopBeforeSubmit } from './stop-before-submit';
-import { createDiscoveryBrowser } from '../playwright/browser';
+import { createApplicationBrowserRuntime } from '../playwright/browser';
+import { evaluateAuthorizedDomainPolicy } from '../playwright/authorized-domain-policy';
 
 type JobsRepository = {
   findById: (id: string) => Promise<JobRecord | null>;
@@ -92,9 +92,32 @@ export type RunApplicationInput = {
   siteFlows: SupportedApplicationSite[];
   openRouter?: OpenRouterConfig | null;
   artifactsRootDir?: string;
-  createBrowser?: () => Promise<Browser>;
+  createBrowser?: () => Promise<ApplicationSessionRuntime>;
   createSession?: typeof createApplicationSession;
 };
+
+function resolveApplyHeadless(): boolean {
+  const headedOverride = process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED;
+  if (headedOverride === '1') {
+    return false;
+  }
+
+  if (headedOverride === '0') {
+    return true;
+  }
+
+  const ci = normalizeEnvFlag(process.env.CI);
+  return ci;
+}
+
+function normalizeEnvFlag(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized !== '0' && normalized !== 'false' && normalized !== 'no';
+}
 
 function sanitizeSegment(value: string): string {
   return value.replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
@@ -216,6 +239,54 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     return skippedRun;
   }
 
+  const scopeDecision = evaluateAuthorizedDomainPolicy(job.sourceUrl);
+  if (!scopeDecision.allowed) {
+    await logRunEvent(input.logEventsRepository, {
+      applicationRunId: run.id,
+      jobId: job.id,
+      level: 'warn',
+      message: 'Skipped application run because the target URL is outside the authorized domain policy.',
+      details: {
+        applicationRunId: run.id,
+        siteKey: siteFlow.siteKey,
+        step: 'scope_denied',
+        scopeReason: scopeDecision.reason,
+        targetUrl: job.sourceUrl,
+        targetHost: scopeDecision.host,
+        authorizedAllowlist: scopeDecision.allowlist,
+        strictScopeMode: scopeDecision.strict
+      }
+    });
+
+    const skippedRun = await input.applicationRunsRepository.update(run.id, {
+      status: 'skipped',
+      currentStep: 'scope_denied',
+      stopReason: 'domain_not_authorized',
+      completedAt: new Date(),
+      updatedAt: new Date()
+    });
+    if (!skippedRun) {
+      throw new Error(`Application run ${run.id} was not found for scope-denied update.`);
+    }
+    return skippedRun;
+  }
+
+  await logRunEvent(input.logEventsRepository, {
+    applicationRunId: run.id,
+    jobId: job.id,
+    level: 'info',
+    message: 'Application target URL passed authorized domain policy checks.',
+    details: {
+      applicationRunId: run.id,
+      siteKey: siteFlow.siteKey,
+      step: 'scope_allowed',
+      targetUrl: job.sourceUrl,
+      targetHost: scopeDecision.host,
+      authorizedAllowlist: scopeDecision.allowlist,
+      strictScopeMode: scopeDecision.strict
+    }
+  });
+
   const artifacts = await resolveArtifacts({
     jobId: job.id,
     run: existingRun,
@@ -246,18 +317,22 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     }
   });
 
-  const browser = await (
+  const browserRuntime = await (
     input.createBrowser ??
     (() =>
-      createDiscoveryBrowser({
-        headless: process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED !== '1'
+      createApplicationBrowserRuntime({
+        board: siteFlow.siteKey,
+        identity: {
+          headless: resolveApplyHeadless()
+        }
       }))
   )();
   const session = await (input.createSession ?? createApplicationSession)({
-    browser,
+    runtime: browserRuntime,
     runId: runningRun.id,
     artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
-    startUrl: job.sourceUrl
+    startUrl: job.sourceUrl,
+    identity: browserRuntime.identity
   });
 
   let finalTraceStopped = false;
@@ -369,7 +444,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           }
         });
       },
-      pauseForManualReview: async ({ step, message, reviewUrl, details }) => {
+      pauseForManualReview: async ({ step, message, reviewUrl, details, stopReason }) => {
         finalTraceStopped = true;
         return pauseApplicationRun({
           run: runningRun,
@@ -380,6 +455,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           step,
           siteKey: siteFlow.siteKey,
           message,
+          ...(stopReason !== undefined ? { stopReason } : {}),
           ...(details !== undefined ? { details } : {}),
           artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
           applicationRunsRepository: {
@@ -410,7 +486,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
       }
     });
 
-    const headedApply = process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED === '1';
+    const headedApply = session.identity.headless === false;
     const forceCloseBrowser = process.env.JOBAUTOMATION_APPLICATION_AUTO_CLOSE_BROWSER === '1';
     if (result.status === 'paused' && headedApply && !forceCloseBrowser) {
       leaveBrowserOpenForManualReview = true;
@@ -458,7 +534,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         jobId: job.id,
         level: 'info',
         message:
-          'Automation Chromium window left open: partial draft lives only in that tab. Finish custom questions there, submit when ready, then close the window.',
+          'Automation Camoufox browser window left open: partial draft lives only in that tab. Finish custom questions there, submit when ready, then close the window.',
         details: {
           applicationRunId: runningRun.id,
           siteKey: siteFlow.siteKey,

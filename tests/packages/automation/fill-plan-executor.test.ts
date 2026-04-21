@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 
 import type { Page } from 'playwright';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { ApplicationBoardEntryResult } from '../../../packages/automation/src/apply/board-entry';
 import { executeApplicationFillPlan } from '../../../packages/automation/src/apply/fill-plan-executor';
@@ -793,5 +793,197 @@ describe('application fill plan executor', () => {
         selector: '#last_name'
       })
     ]);
+  });
+
+  test('avoids direct bulk setter APIs for human-style interactions', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <input id="first_name" name="first_name" />
+            <select id="country" name="country">
+              <option value="">Select a country</option>
+              <option value="ca">Canada</option>
+              <option value="us">United States</option>
+            </select>
+            <label>
+              <input id="privacy" type="checkbox" name="privacy" />
+              I accept
+            </label>
+            <fieldset>
+              <legend>Work authorization</legend>
+              <label>
+                <input type="radio" name="work_auth" value="yes" />
+                Yes
+              </label>
+              <label>
+                <input type="radio" name="work_auth" value="no" />
+                No
+              </label>
+            </fieldset>
+          </section>
+        </body>
+      </html>
+    `);
+
+    await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const locatorPrototype = Object.getPrototypeOf(page.locator('body')) as {
+        fill: (...args: unknown[]) => Promise<void>;
+        selectOption: (...args: unknown[]) => Promise<void>;
+        setChecked: (...args: unknown[]) => Promise<void>;
+      };
+      const fillSpy = vi.spyOn(locatorPrototype, 'fill');
+      const selectOptionSpy = vi.spyOn(locatorPrototype, 'selectOption');
+      const setCheckedSpy = vi.spyOn(locatorPrototype, 'setChecked');
+
+      try {
+        await executeApplicationFillPlan({
+          page,
+          boardEntry: boardEntry(),
+          fields: [
+            {
+              id: 'first_name',
+              label: 'First Name',
+              type: 'text',
+              required: true,
+              visible: true,
+              enabled: true,
+              selectorCandidates: ['#first_name'],
+              options: []
+            },
+            {
+              id: 'country',
+              label: 'Country',
+              type: 'select',
+              required: true,
+              visible: true,
+              enabled: true,
+              selectorCandidates: ['#country'],
+              options: [
+                { value: '', label: 'Select a country' },
+                { value: 'ca', label: 'Canada' },
+                { value: 'us', label: 'United States' }
+              ]
+            },
+            {
+              id: 'privacy',
+              label: 'Privacy',
+              type: 'checkbox',
+              required: true,
+              visible: true,
+              enabled: true,
+              selectorCandidates: ['#privacy'],
+              options: []
+            },
+            {
+              id: 'work_auth',
+              label: 'Work authorization',
+              type: 'radio_group',
+              required: true,
+              visible: true,
+              enabled: true,
+              selectorCandidates: ['[name="work_auth"]'],
+              options: [
+                { value: 'yes', label: 'Yes' },
+                { value: 'no', label: 'No' }
+              ]
+            }
+          ],
+          fillPlan: [
+            {
+              fieldId: 'first_name',
+              action: 'fill',
+              value: 'Taylor',
+              confidence: 1,
+              skipReason: ''
+            },
+            {
+              fieldId: 'country',
+              action: 'select',
+              value: 'ca',
+              confidence: 1,
+              skipReason: ''
+            },
+            {
+              fieldId: 'privacy',
+              action: 'check',
+              value: true,
+              confidence: 1,
+              skipReason: ''
+            },
+            {
+              fieldId: 'work_auth',
+              action: 'click',
+              value: 'yes',
+              confidence: 1,
+              skipReason: ''
+            }
+          ]
+        });
+      } finally {
+        expect(fillSpy).not.toHaveBeenCalled();
+        expect(selectOptionSpy).not.toHaveBeenCalled();
+        expect(setCheckedSpy).not.toHaveBeenCalled();
+        fillSpy.mockRestore();
+        selectOptionSpy.mockRestore();
+        setCheckedSpy.mockRestore();
+      }
+    });
+  });
+
+  test('types text character-by-character instead of writing the full value at once', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <input id="first_name" name="first_name" />
+            <script>
+              const events = [];
+              const input = document.getElementById('first_name');
+              input.addEventListener('keydown', (event) => {
+                events.push(event.key);
+                input.dataset.keys = JSON.stringify(events);
+              });
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        fields: [
+          {
+            id: 'first_name',
+            label: 'First Name',
+            type: 'text',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#first_name'],
+            options: []
+          }
+        ],
+        fillPlan: [
+          {
+            fieldId: 'first_name',
+            action: 'fill',
+            value: 'Taylor',
+            confidence: 1,
+            skipReason: ''
+          }
+        ]
+      });
+
+      return page.locator('#first_name').getAttribute('data-keys');
+    });
+
+    expect(JSON.parse(result ?? '[]')).toEqual(['T', 'a', 'y', 'l', 'o', 'r']);
   });
 });
