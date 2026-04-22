@@ -9,16 +9,28 @@ import {
   addJobToShortlist,
   createApplicationRun,
   getJob,
+  getJobArtifacts,
   getJobReviewCapabilities,
   removeJobFromShortlist,
   scoreJobReview,
-  updateJobReview
+  updateJobReview,
 } from '@/lib/api';
 
-function buildJobDetailHref(jobId: string, values: Record<string, string>): string {
+function buildJobDetailHref(
+  jobId: string,
+  values: Record<string, string>
+): string {
   const searchParams = new URLSearchParams(values);
   const query = searchParams.toString();
   return query.length > 0 ? `/jobs/${jobId}?${query}` : `/jobs/${jobId}`;
+}
+
+function hasGeneratedResumePdfArtifact(
+  artifacts: Array<{ kind: string; format: string }>
+): boolean {
+  return artifacts.some(
+    (artifact) => artifact.format === 'pdf' && artifact.kind === 'resume-variant'
+  );
 }
 
 export default async function JobDetailPage({
@@ -30,7 +42,7 @@ export default async function JobDetailPage({
   const { jobId } = await params;
   const [job, capabilities] = await Promise.all([
     getJob(jobId),
-    getJobReviewCapabilities()
+    getJobReviewCapabilities(),
   ]);
 
   if (!job) {
@@ -45,6 +57,8 @@ export default async function JobDetailPage({
     );
   }
 
+  const artifacts = await getJobArtifacts(jobId);
+
   async function saveReviewAction(formData: FormData): Promise<void> {
     'use server';
 
@@ -55,13 +69,14 @@ export default async function JobDetailPage({
           | 'reviewing'
           | 'shortlisted'
           | 'archived',
-        reviewNotes: String(formData.get('reviewNotes') ?? '')
+        reviewNotes: String(formData.get('reviewNotes') ?? ''),
       });
       revalidatePath('/jobs');
       revalidatePath('/shortlist');
       revalidatePath(`/jobs/${jobId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save review.';
+      const message =
+        error instanceof Error ? error.message : 'Failed to save review.';
       redirect(buildJobDetailHref(jobId, { error: message }));
     }
 
@@ -77,7 +92,8 @@ export default async function JobDetailPage({
       revalidatePath('/shortlist');
       revalidatePath(`/jobs/${jobId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to shortlist job.';
+      const message =
+        error instanceof Error ? error.message : 'Failed to shortlist job.';
       redirect(buildJobDetailHref(jobId, { error: message }));
     }
 
@@ -94,11 +110,15 @@ export default async function JobDetailPage({
       revalidatePath(`/jobs/${jobId}`);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to remove job from shortlist.';
+        error instanceof Error
+          ? error.message
+          : 'Failed to remove job from shortlist.';
       redirect(buildJobDetailHref(jobId, { error: message }));
     }
 
-    redirect(buildJobDetailHref(jobId, { message: 'Job moved back to reviewing.' }));
+    redirect(
+      buildJobDetailHref(jobId, { message: 'Job moved back to reviewing.' })
+    );
   }
 
   async function scoreAction(): Promise<void> {
@@ -108,17 +128,30 @@ export default async function JobDetailPage({
       await scoreJobReview(jobId);
       revalidatePath(`/jobs/${jobId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to score job.';
+      const message =
+        error instanceof Error ? error.message : 'Failed to score job.';
       redirect(buildJobDetailHref(jobId, { error: message }));
     }
 
-    redirect(buildJobDetailHref(jobId, { message: 'Summary and score updated.' }));
+    redirect(
+      buildJobDetailHref(jobId, { message: 'Summary and score updated.' })
+    );
   }
 
   async function startApplicationRunAction(): Promise<void> {
     'use server';
 
     let runId = '';
+    const currentArtifacts = await getJobArtifacts(jobId);
+    if (!hasGeneratedResumePdfArtifact(currentArtifacts)) {
+      redirect(
+        buildJobDetailHref(jobId, {
+          error:
+            'Generate tailored artifacts before starting an application run.',
+        })
+      );
+    }
+
     try {
       const result = await createApplicationRun({ jobId });
       runId = result.run.id;
@@ -127,12 +160,16 @@ export default async function JobDetailPage({
       revalidatePath(`/jobs/${jobId}`);
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to start the application run.';
+        error instanceof Error
+          ? error.message
+          : 'Failed to start the application run.';
       redirect(buildJobDetailHref(jobId, { error: message }));
     }
 
     redirect(`/applications/${runId}`);
   }
+
+  const canStartApplicationRun = hasGeneratedResumePdfArtifact(artifacts);
 
   return (
     <section className="space-y-6">
@@ -141,7 +178,9 @@ export default async function JobDetailPage({
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Job Detail
           </p>
-          <h2 className="mt-2 text-2xl font-semibold text-foreground">{job.title}</h2>
+          <h2 className="mt-2 text-2xl font-semibold text-foreground">
+            {job.title}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {job.companyName} - {job.location || 'Unspecified'}
           </p>
@@ -150,7 +189,17 @@ export default async function JobDetailPage({
               <Link href={`/jobs/${jobId}/artifacts`}>View artifacts</Link>
             </Button>
             <form action={startApplicationRunAction}>
-              <Button variant="default" size="sm" type="submit">
+              <Button
+                variant="default"
+                size="sm"
+                type="submit"
+                disabled={!canStartApplicationRun}
+                title={
+                  canStartApplicationRun
+                    ? undefined
+                    : 'Generate tailored artifacts before starting an application run.'
+                }
+              >
                 Start application run
               </Button>
             </form>
@@ -160,6 +209,11 @@ export default async function JobDetailPage({
               </a>
             </Button>
           </div>
+          {!canStartApplicationRun ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Generate tailored artifacts before starting an application run.
+            </p>
+          ) : null}
         </div>
         <dl className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
@@ -195,7 +249,8 @@ export default async function JobDetailPage({
           </div>
         </dl>
         <div className="mt-6 whitespace-pre-wrap rounded-lg bg-muted/50 p-4 text-sm leading-6 text-muted-foreground">
-          {job.descriptionText || 'No description text was captured for this job.'}
+          {job.descriptionText ||
+            'No description text was captured for this job.'}
         </div>
       </div>
 

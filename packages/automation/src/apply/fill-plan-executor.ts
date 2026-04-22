@@ -1,9 +1,13 @@
 import type { Locator, Page } from 'playwright';
 
-import type { InteractionPacingProfile } from './contracts';
+import type {
+  ApplicationArtifacts,
+  InteractionPacingProfile,
+} from './contracts';
 import type { ApplicationBoardEntryResult } from './board-entry';
 import type { ScrapedApplicationField } from './form-scraper';
 import type { ApplicationFillPlanEntry } from './openrouter-answer-module';
+import { uploadArtifactFile } from './file-upload';
 
 export type ApplicationFillExecutionStatus = 'success' | 'skipped' | 'failed';
 
@@ -50,7 +54,7 @@ const DEFAULT_PACING: Required<InteractionPacingProfile> = {
   postFieldDelayMs: [10, 30],
   typingDelayMs: [20, 45],
   preApplyReadDelayMs: [40, 80],
-  sectionReadDelayMs: [20, 40]
+  sectionReadDelayMs: [20, 40],
 };
 
 function logStage5(action: string, details: Record<string, unknown>): void {
@@ -64,7 +68,7 @@ function createSummary(
     total: results.length,
     success: results.filter((result) => result.status === 'success').length,
     skipped: results.filter((result) => result.status === 'skipped').length,
-    failed: results.filter((result) => result.status === 'failed').length
+    failed: results.filter((result) => result.status === 'failed').length,
   };
 }
 
@@ -81,14 +85,20 @@ function resolvePacingProfile(
 ): Required<InteractionPacingProfile> {
   return {
     preFieldDelayMs: pacing?.preFieldDelayMs ?? DEFAULT_PACING.preFieldDelayMs,
-    postFieldDelayMs: pacing?.postFieldDelayMs ?? DEFAULT_PACING.postFieldDelayMs,
+    postFieldDelayMs:
+      pacing?.postFieldDelayMs ?? DEFAULT_PACING.postFieldDelayMs,
     typingDelayMs: pacing?.typingDelayMs ?? DEFAULT_PACING.typingDelayMs,
-    preApplyReadDelayMs: pacing?.preApplyReadDelayMs ?? DEFAULT_PACING.preApplyReadDelayMs,
-    sectionReadDelayMs: pacing?.sectionReadDelayMs ?? DEFAULT_PACING.sectionReadDelayMs
+    preApplyReadDelayMs:
+      pacing?.preApplyReadDelayMs ?? DEFAULT_PACING.preApplyReadDelayMs,
+    sectionReadDelayMs:
+      pacing?.sectionReadDelayMs ?? DEFAULT_PACING.sectionReadDelayMs,
   };
 }
 
-async function waitWithRange(page: Page, range: [number, number]): Promise<number> {
+async function waitWithRange(
+  page: Page,
+  range: [number, number]
+): Promise<number> {
   const duration = randomBetween(range);
   await page.waitForTimeout(duration);
   return duration;
@@ -102,13 +112,16 @@ function createHumanActionEngine(input: {
   const metrics = {
     pointerActions: 0,
     typingDurationMs: 0,
-    preFillDwellMs: 0
+    preFillDwellMs: 0,
   };
 
   return {
     metrics,
     async waitForPreFill() {
-      metrics.preFillDwellMs += await waitWithRange(input.page, pacing.preApplyReadDelayMs);
+      metrics.preFillDwellMs += await waitWithRange(
+        input.page,
+        pacing.preApplyReadDelayMs
+      );
     },
     async click(locator: Locator) {
       await locator.scrollIntoViewIfNeeded().catch(() => undefined);
@@ -126,7 +139,11 @@ function createHumanActionEngine(input: {
 
       const existingInputValue = await locator.inputValue().catch(() => null);
       const existingTextContent = await locator.textContent().catch(() => null);
-      const existingValue = (existingInputValue ?? existingTextContent ?? '').trim();
+      const existingValue = (
+        existingInputValue ??
+        existingTextContent ??
+        ''
+      ).trim();
       if (existingValue.length > 0) {
         await input.page.keyboard.press('Control+A').catch(() => undefined);
         await input.page.keyboard.press('Backspace').catch(() => undefined);
@@ -138,7 +155,10 @@ function createHumanActionEngine(input: {
         metrics.typingDurationMs += keyDelay;
 
         if (index > 0 && index % 5 === 0) {
-          metrics.typingDurationMs += await waitWithRange(input.page, pacing.sectionReadDelayMs);
+          metrics.typingDurationMs += await waitWithRange(
+            input.page,
+            pacing.sectionReadDelayMs
+          );
         }
       }
 
@@ -146,7 +166,7 @@ function createHumanActionEngine(input: {
     },
     async press(key: string) {
       await input.page.keyboard.press(key);
-    }
+    },
   };
 }
 
@@ -162,6 +182,24 @@ async function firstVisibleLocator(input: {
 
   const pageLevel = input.page.locator(input.selector).first();
   if (await pageLevel.isVisible().catch(() => false)) {
+    return pageLevel;
+  }
+
+  return null;
+}
+
+async function firstAttachedLocator(input: {
+  page: Page;
+  root: Locator;
+  selector: string;
+}): Promise<Locator | null> {
+  const scoped = input.root.locator(input.selector).first();
+  if ((await scoped.count().catch(() => 0)) > 0) {
+    return scoped;
+  }
+
+  const pageLevel = input.page.locator(input.selector).first();
+  if ((await pageLevel.count().catch(() => 0)) > 0) {
     return pageLevel;
   }
 
@@ -202,8 +240,11 @@ function comboboxCandidateLabels(input: {
   return Array.from(
     new Set(
       [
-        ...matchingFieldOptions.flatMap((option) => [option.label, option.value]),
-        input.value
+        ...matchingFieldOptions.flatMap((option) => [
+          option.label,
+          option.value,
+        ]),
+        input.value,
       ].filter((candidate) => candidate.trim().length > 0)
     )
   );
@@ -215,12 +256,16 @@ async function visibleOptionByText(input: {
   labels: string[];
 }): Promise<Locator | null> {
   for (const label of input.labels) {
-    const scopedOption = input.root.getByRole('option', { name: label, exact: true }).first();
+    const scopedOption = input.root
+      .getByRole('option', { name: label, exact: true })
+      .first();
     if (await scopedOption.isVisible().catch(() => false)) {
       return scopedOption;
     }
 
-    const pageOption = input.page.getByRole('option', { name: label, exact: true }).first();
+    const pageOption = input.page
+      .getByRole('option', { name: label, exact: true })
+      .first();
     if (await pageOption.isVisible().catch(() => false)) {
       return pageOption;
     }
@@ -253,8 +298,8 @@ async function executeCombobox(input: {
     root: input.root,
     labels: comboboxCandidateLabels({
       field: input.field,
-      value
-    })
+      value,
+    }),
   });
 
   if (!option) {
@@ -275,7 +320,7 @@ async function firstVisibleChoiceLocator(input: {
   const byValue = await firstVisibleLocator({
     page: input.page,
     root: input.root,
-    selector: valueSelector
+    selector: valueSelector,
   });
   if (byValue) {
     return byValue;
@@ -312,13 +357,15 @@ async function executeChoiceGroup(input: {
   }
 
   for (const value of values) {
-    const option = input.field.options.find((candidate) => candidate.value === value);
+    const option = input.field.options.find(
+      (candidate) => candidate.value === value
+    );
     const locator = await firstVisibleChoiceLocator({
       page: input.page,
       root: input.root,
       selector: input.selector,
       value,
-      ...(option?.label ? { label: option.label } : {})
+      ...(option?.label ? { label: option.label } : {}),
     });
 
     if (!locator) {
@@ -351,13 +398,18 @@ async function executeSelect(input: {
   locator: Locator;
   actionEngine: HumanActionEngine;
 }): Promise<void> {
-  if (input.entry.action !== 'select' || typeof input.entry.value !== 'string') {
+  if (
+    input.entry.action !== 'select' ||
+    typeof input.entry.value !== 'string'
+  ) {
     throw new Error('Select action requires an option value.');
   }
 
   const targetIndex = input.field.options.findIndex(
     (option) =>
-      option.value === input.entry.value || normalizeOptionText(option.label) === normalizeOptionText(input.entry.value)
+      option.value === input.entry.value ||
+      normalizeOptionText(option.label) ===
+        normalizeOptionText(input.entry.value)
   );
   if (targetIndex < 0) {
     throw new Error(`No known select option matched "${input.entry.value}".`);
@@ -386,6 +438,144 @@ async function executeCheckbox(input: {
   }
 }
 
+function uploadArtifactForField(input: {
+  artifacts?: ApplicationArtifacts;
+  field: ScrapedApplicationField;
+}): {
+  kind: 'resume' | 'coverLetter' | null;
+  label: string;
+  artifact: ApplicationArtifacts[keyof ApplicationArtifacts] | null;
+} {
+  const normalized = `${input.field.id} ${input.field.label}`.toLowerCase();
+
+  if (/(resume|cv|curriculum vitae)/i.test(normalized)) {
+    return {
+      kind: 'resume',
+      label: 'resume',
+      artifact: input.artifacts?.resume ?? null,
+    };
+  }
+
+  if (/(cover[\s_-]*letter|coverletter)/i.test(normalized)) {
+    return {
+      kind: 'coverLetter',
+      label: 'cover letter',
+      artifact: input.artifacts?.coverLetter ?? null,
+    };
+  }
+
+  return {
+    kind: null,
+    label: 'upload',
+    artifact: null,
+  };
+}
+
+async function executeFileUploadWithSelectorFallback(input: {
+  page: Page;
+  root: Locator;
+  field: ScrapedApplicationField;
+  entry: ApplicationFillPlanEntry;
+  artifacts?: ApplicationArtifacts;
+  pacing?: InteractionPacingProfile;
+}): Promise<ApplicationFillExecutionResult> {
+  if (input.artifacts === undefined) {
+    return {
+      fieldId: input.field.id,
+      label: input.field.label,
+      action: input.entry.action,
+      status: 'skipped',
+      message: input.entry.skipReason || 'Field was skipped by fill plan.',
+    };
+  }
+
+  const pacing = resolvePacingProfile(input.pacing);
+  const upload = uploadArtifactForField({
+    artifacts: input.artifacts,
+    field: input.field,
+  });
+
+  if (!upload.kind) {
+    return {
+      fieldId: input.field.id,
+      label: input.field.label,
+      action: input.entry.action,
+      status: input.field.required ? 'failed' : 'skipped',
+      message:
+        'No matching upload artifact type could be inferred for this file field.',
+    };
+  }
+
+  if (!upload.artifact) {
+    return {
+      fieldId: input.field.id,
+      label: input.field.label,
+      action: input.entry.action,
+      status: input.field.required ? 'failed' : 'skipped',
+      message: input.field.required
+        ? `Required ${upload.label} artifact is missing.`
+        : `Optional ${upload.label} artifact is missing.`,
+    };
+  }
+
+  const errors: string[] = [];
+
+  for (const selector of input.field.selectorCandidates) {
+    logStage5('selector_attempt', {
+      fieldId: input.field.id,
+      label: input.field.label,
+      action: input.entry.action,
+      selector,
+    });
+
+    const locator = await firstAttachedLocator({
+      page: input.page,
+      root: input.root,
+      selector,
+    });
+
+    if (!locator) {
+      errors.push(`${selector}: not attached`);
+      continue;
+    }
+
+    try {
+      await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+      await waitWithRange(input.page, pacing.preFieldDelayMs);
+      await uploadArtifactFile({
+        artifact: upload.artifact,
+        locator,
+        required: input.field.required,
+      });
+      await waitWithRange(input.page, pacing.postFieldDelayMs);
+
+      return {
+        fieldId: input.field.id,
+        label: input.field.label,
+        action: input.entry.action,
+        status: 'success',
+        selector,
+        message: `Uploaded ${upload.label} artifact.`,
+      };
+    } catch (error) {
+      errors.push(
+        `${selector}: ${error instanceof Error ? error.message : 'unknown error'}`
+      );
+    }
+  }
+
+  return {
+    fieldId: input.field.id,
+    label: input.field.label,
+    action: input.entry.action,
+    status: 'failed',
+    message:
+      errors.length > 0
+        ? errors.join(' | ')
+        : 'No selector candidates were available.',
+  };
+}
+
 async function executeWithSelectorFallback(input: {
   page: Page;
   root: Locator;
@@ -400,13 +590,13 @@ async function executeWithSelectorFallback(input: {
       fieldId: input.field.id,
       label: input.field.label,
       action: input.entry.action,
-      selector
+      selector,
     });
 
     const locator = await firstVisibleLocator({
       page: input.page,
       root: input.root,
-      selector
+      selector,
     });
 
     if (!locator) {
@@ -422,7 +612,7 @@ async function executeWithSelectorFallback(input: {
           field: input.field,
           entry: input.entry,
           locator,
-          actionEngine: input.actionEngine
+          actionEngine: input.actionEngine,
         });
         return {
           fieldId: input.field.id,
@@ -430,7 +620,7 @@ async function executeWithSelectorFallback(input: {
           action: input.entry.action,
           status: 'success',
           selector,
-          message: 'Selected combobox option.'
+          message: 'Selected combobox option.',
         };
       }
 
@@ -445,7 +635,7 @@ async function executeWithSelectorFallback(input: {
           field: input.field,
           entry: input.entry,
           locator,
-          actionEngine: input.actionEngine
+          actionEngine: input.actionEngine,
         });
         return {
           fieldId: input.field.id,
@@ -453,7 +643,7 @@ async function executeWithSelectorFallback(input: {
           action: input.entry.action,
           status: 'success',
           selector,
-          message: 'Filled field.'
+          message: 'Filled field.',
         };
       }
 
@@ -462,7 +652,7 @@ async function executeWithSelectorFallback(input: {
           field: input.field,
           entry: input.entry,
           locator,
-          actionEngine: input.actionEngine
+          actionEngine: input.actionEngine,
         });
         return {
           fieldId: input.field.id,
@@ -470,7 +660,7 @@ async function executeWithSelectorFallback(input: {
           action: input.entry.action,
           status: 'success',
           selector,
-          message: 'Selected option.'
+          message: 'Selected option.',
         };
       }
 
@@ -478,7 +668,7 @@ async function executeWithSelectorFallback(input: {
         await executeCheckbox({
           entry: input.entry,
           locator,
-          actionEngine: input.actionEngine
+          actionEngine: input.actionEngine,
         });
         return {
           fieldId: input.field.id,
@@ -486,18 +676,21 @@ async function executeWithSelectorFallback(input: {
           action: input.entry.action,
           status: 'success',
           selector,
-          message: input.entry.value ? 'Checked field.' : 'Unchecked field.'
+          message: input.entry.value ? 'Checked field.' : 'Unchecked field.',
         };
       }
 
-      if (input.entry.action === 'check' && input.field.type === 'checkbox_group') {
+      if (
+        input.entry.action === 'check' &&
+        input.field.type === 'checkbox_group'
+      ) {
         await executeChoiceGroup({
           page: input.page,
           root: input.root,
           field: input.field,
           entry: input.entry,
           selector,
-          actionEngine: input.actionEngine
+          actionEngine: input.actionEngine,
         });
         return {
           fieldId: input.field.id,
@@ -505,18 +698,21 @@ async function executeWithSelectorFallback(input: {
           action: input.entry.action,
           status: 'success',
           selector,
-          message: 'Checked choice options.'
+          message: 'Checked choice options.',
         };
       }
 
-      if (input.entry.action === 'click' && input.field.type === 'radio_group') {
+      if (
+        input.entry.action === 'click' &&
+        input.field.type === 'radio_group'
+      ) {
         await executeChoiceGroup({
           page: input.page,
           root: input.root,
           field: input.field,
           entry: input.entry,
           selector,
-          actionEngine: input.actionEngine
+          actionEngine: input.actionEngine,
         });
         return {
           fieldId: input.field.id,
@@ -524,13 +720,15 @@ async function executeWithSelectorFallback(input: {
           action: input.entry.action,
           status: 'success',
           selector,
-          message: 'Selected radio option.'
+          message: 'Selected radio option.',
         };
       }
 
       errors.push(`${selector}: unsupported action or value`);
     } catch (error) {
-      errors.push(`${selector}: ${error instanceof Error ? error.message : 'unknown error'}`);
+      errors.push(
+        `${selector}: ${error instanceof Error ? error.message : 'unknown error'}`
+      );
     }
   }
 
@@ -539,13 +737,17 @@ async function executeWithSelectorFallback(input: {
     label: input.field.label,
     action: input.entry.action,
     status: 'failed',
-    message: errors.length > 0 ? errors.join(' | ') : 'No selector candidates were available.'
+    message:
+      errors.length > 0
+        ? errors.join(' | ')
+        : 'No selector candidates were available.',
   };
 }
 
 export async function executeApplicationFillPlan(input: {
   page: Page;
   boardEntry: ApplicationBoardEntryResult;
+  artifacts?: ApplicationArtifacts;
   fields: ScrapedApplicationField[];
   fillPlan: ApplicationFillPlanEntry[];
   pacing?: InteractionPacingProfile;
@@ -557,7 +759,7 @@ export async function executeApplicationFillPlan(input: {
   const results: ApplicationFillExecutionResult[] = [];
   const actionEngine = createHumanActionEngine({
     page: input.page,
-    pacing: input.pacing
+    pacing: input.pacing,
   });
 
   await actionEngine.waitForPreFill();
@@ -567,7 +769,7 @@ export async function executeApplicationFillPlan(input: {
 
     logStage5('action_start', {
       fieldId: entry.fieldId,
-      action: entry.action
+      action: entry.action,
     });
 
     if (!field) {
@@ -576,20 +778,41 @@ export async function executeApplicationFillPlan(input: {
         label: '',
         action: entry.action,
         status: 'failed',
-        message: 'Fill plan entry did not match a scraped field.'
+        message: 'Fill plan entry did not match a scraped field.',
       };
       logStage5('action_failed', result);
       results.push(result);
       continue;
     }
 
-    if (entry.action === 'skip' || field.type === 'file') {
+    if (field.type === 'file' || field.specialHandling === 'file_upload') {
+      const result = await executeFileUploadWithSelectorFallback({
+        page: input.page,
+        root,
+        field,
+        entry,
+        artifacts: input.artifacts,
+        pacing: input.pacing,
+      });
+      logStage5(
+        result.status === 'success'
+          ? 'action_success'
+          : result.status === 'skipped'
+            ? 'action_skipped'
+            : 'action_failed',
+        result
+      );
+      results.push(result);
+      continue;
+    }
+
+    if (entry.action === 'skip') {
       const result: ApplicationFillExecutionResult = {
         fieldId: field.id,
         label: field.label,
         action: entry.action,
         status: 'skipped',
-        message: entry.skipReason || 'Field was skipped by fill plan.'
+        message: entry.skipReason || 'Field was skipped by fill plan.',
       };
       logStage5('action_skipped', result);
       results.push(result);
@@ -601,9 +824,12 @@ export async function executeApplicationFillPlan(input: {
       root,
       field,
       entry,
-      actionEngine
+      actionEngine,
     });
-    logStage5(result.status === 'success' ? 'action_success' : 'action_failed', result);
+    logStage5(
+      result.status === 'success' ? 'action_success' : 'action_failed',
+      result
+    );
     results.push(result);
   }
 
@@ -617,7 +843,7 @@ export async function executeApplicationFillPlan(input: {
       totalPreFillDwellMs: actionEngine.metrics.preFillDwellMs,
       totalTypingDurationMs: actionEngine.metrics.typingDurationMs,
       totalPointerActions: actionEngine.metrics.pointerActions,
-      forbiddenDirectApiUsage: []
-    }
+      forbiddenDirectApiUsage: [],
+    },
   };
 }

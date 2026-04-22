@@ -1,4 +1,7 @@
 import { createServer } from 'node:http';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { Page } from 'playwright';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -12,6 +15,7 @@ import { createDiscoveryBrowser } from '../../../packages/automation/src/playwri
 describe('application fill plan executor', () => {
   let server: ReturnType<typeof createServer> | null = null;
   let baseUrl = '';
+  const tempDirs: string[] = [];
 
   afterEach(async () => {
     if (server) {
@@ -29,6 +33,13 @@ describe('application fill plan executor', () => {
 
     server = null;
     baseUrl = '';
+
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
   });
 
   async function startServer(html: string): Promise<void> {
@@ -46,7 +57,11 @@ describe('application fill plan executor', () => {
 
         const address = server?.address();
         if (!address || typeof address === 'string') {
-          reject(new Error('Fill plan executor test server address was not available.'));
+          reject(
+            new Error(
+              'Fill plan executor test server address was not available.'
+            )
+          );
           return;
         }
 
@@ -77,7 +92,7 @@ describe('application fill plan executor', () => {
       finalUrl: `${baseUrl}/`,
       readyFieldCount: 4,
       rootSelector: '#application',
-      rootIndex: 0
+      rootIndex: 0,
     };
   }
 
@@ -107,7 +122,7 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#missing_first_name', '#first_name'],
-          options: []
+          options: [],
         },
         {
           id: 'email',
@@ -117,7 +132,7 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#email'],
-          options: []
+          options: [],
         },
         {
           id: 'summary',
@@ -127,7 +142,7 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#summary'],
-          options: []
+          options: [],
         },
         {
           id: 'cover_letter',
@@ -138,8 +153,8 @@ describe('application fill plan executor', () => {
           enabled: true,
           selectorCandidates: ['#cover_letter'],
           options: [],
-          specialHandling: 'rich_text'
-        }
+          specialHandling: 'rich_text',
+        },
       ];
       const fillPlan: ApplicationFillPlanEntry[] = [
         {
@@ -147,36 +162,36 @@ describe('application fill plan executor', () => {
           action: 'fill',
           value: 'Taylor',
           confidence: 1,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'email',
           action: 'fill',
           value: 'taylor@example.com',
           confidence: 1,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'summary',
           action: 'fill',
           value: 'Browser automation engineer',
           confidence: 0.9,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'cover_letter',
           action: 'fill',
           value: 'I build reliable internal tools.',
           confidence: 0.9,
-          skipReason: ''
-        }
+          skipReason: '',
+        },
       ];
 
       const executionResult = await executeApplicationFillPlan({
         page,
         boardEntry: boardEntry(),
         fields,
-        fillPlan
+        fillPlan,
       });
 
       return {
@@ -184,7 +199,7 @@ describe('application fill plan executor', () => {
         firstName: await page.locator('#first_name').inputValue(),
         email: await page.locator('#email').inputValue(),
         summary: await page.locator('#summary').inputValue(),
-        coverLetter: await page.locator('#cover_letter').textContent()
+        coverLetter: await page.locator('#cover_letter').textContent(),
       };
     });
 
@@ -196,29 +211,29 @@ describe('application fill plan executor', () => {
       total: 4,
       success: 4,
       skipped: 0,
-      failed: 0
+      failed: 0,
     });
     expect(result.executionResult.results).toEqual([
       expect.objectContaining({
         fieldId: 'first_name',
         status: 'success',
-        selector: '#first_name'
+        selector: '#first_name',
       }),
       expect.objectContaining({
         fieldId: 'email',
         status: 'success',
-        selector: '#email'
+        selector: '#email',
       }),
       expect.objectContaining({
         fieldId: 'summary',
         status: 'success',
-        selector: '#summary'
+        selector: '#summary',
       }),
       expect.objectContaining({
         fieldId: 'cover_letter',
         status: 'success',
-        selector: '#cover_letter'
-      })
+        selector: '#cover_letter',
+      }),
     ]);
   });
 
@@ -252,9 +267,9 @@ describe('application fill plan executor', () => {
           options: [
             { value: '', label: 'Select a country' },
             { value: 'ca', label: 'Canada' },
-            { value: 'us', label: 'United States' }
-          ]
-        }
+            { value: 'us', label: 'United States' },
+          ],
+        },
       ];
       const fillPlan: ApplicationFillPlanEntry[] = [
         {
@@ -262,20 +277,20 @@ describe('application fill plan executor', () => {
           action: 'select',
           value: 'ca',
           confidence: 0.95,
-          skipReason: ''
-        }
+          skipReason: '',
+        },
       ];
 
       const executionResult = await executeApplicationFillPlan({
         page,
         boardEntry: boardEntry(),
         fields,
-        fillPlan
+        fillPlan,
       });
 
       return {
         executionResult,
-        country: await page.locator('#country').inputValue()
+        country: await page.locator('#country').inputValue(),
       };
     });
 
@@ -284,14 +299,14 @@ describe('application fill plan executor', () => {
       total: 1,
       success: 1,
       skipped: 0,
-      failed: 0
+      failed: 0,
     });
     expect(result.executionResult.results[0]).toEqual(
       expect.objectContaining({
         fieldId: 'country',
         action: 'select',
         status: 'success',
-        selector: '#country'
+        selector: '#country',
       })
     );
   });
@@ -348,8 +363,8 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#office'],
-          options: []
-        }
+          options: [],
+        },
       ];
       const fillPlan: ApplicationFillPlanEntry[] = [
         {
@@ -357,21 +372,21 @@ describe('application fill plan executor', () => {
           action: 'fill',
           value: 'Yes',
           confidence: 1,
-          skipReason: ''
-        }
+          skipReason: '',
+        },
       ];
 
       const executionResult = await executeApplicationFillPlan({
         page,
         boardEntry: boardEntry(),
         fields,
-        fillPlan
+        fillPlan,
       });
 
       return {
         executionResult,
         selected: await page.locator('#office').getAttribute('data-selected'),
-        value: await page.locator('#office').inputValue()
+        value: await page.locator('#office').inputValue(),
       };
     });
 
@@ -381,7 +396,7 @@ describe('application fill plan executor', () => {
       total: 1,
       success: 1,
       skipped: 0,
-      failed: 0
+      failed: 0,
     });
     expect(result.executionResult.results[0]).toEqual(
       expect.objectContaining({
@@ -389,7 +404,7 @@ describe('application fill plan executor', () => {
         action: 'fill',
         status: 'success',
         selector: '#office',
-        message: 'Selected combobox option.'
+        message: 'Selected combobox option.',
       })
     );
   });
@@ -448,8 +463,8 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#office'],
-          options: []
-        }
+          options: [],
+        },
       ];
       const fillPlan: ApplicationFillPlanEntry[] = [
         {
@@ -457,20 +472,20 @@ describe('application fill plan executor', () => {
           action: 'fill',
           value: 'N/A',
           confidence: 1,
-          skipReason: ''
-        }
+          skipReason: '',
+        },
       ];
 
       const executionResult = await executeApplicationFillPlan({
         page,
         boardEntry: boardEntry(),
         fields,
-        fillPlan
+        fillPlan,
       });
 
       return {
         executionResult,
-        selected: await page.locator('#office').getAttribute('data-selected')
+        selected: await page.locator('#office').getAttribute('data-selected'),
       };
     });
 
@@ -479,14 +494,14 @@ describe('application fill plan executor', () => {
       total: 1,
       success: 0,
       skipped: 0,
-      failed: 1
+      failed: 1,
     });
     expect(result.executionResult.results[0]).toEqual(
       expect.objectContaining({
         fieldId: 'office',
         action: 'fill',
         status: 'failed',
-        message: expect.stringContaining('No visible combobox option matched')
+        message: expect.stringContaining('No visible combobox option matched'),
       })
     );
   });
@@ -547,7 +562,7 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#privacy'],
-          options: []
+          options: [],
         },
         {
           id: 'newsletter',
@@ -557,7 +572,7 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#newsletter'],
-          options: []
+          options: [],
         },
         {
           id: 'skills',
@@ -570,8 +585,8 @@ describe('application fill plan executor', () => {
           options: [
             { value: 'typescript', label: 'TypeScript' },
             { value: 'playwright', label: 'Playwright' },
-            { value: 'react', label: 'React' }
-          ]
+            { value: 'react', label: 'React' },
+          ],
         },
         {
           id: 'work_auth',
@@ -583,9 +598,9 @@ describe('application fill plan executor', () => {
           selectorCandidates: ['[name="work_auth"]'],
           options: [
             { value: 'yes', label: 'Yes' },
-            { value: 'no', label: 'No' }
-          ]
-        }
+            { value: 'no', label: 'No' },
+          ],
+        },
       ];
       const fillPlan: ApplicationFillPlanEntry[] = [
         {
@@ -593,47 +608,57 @@ describe('application fill plan executor', () => {
           action: 'check',
           value: true,
           confidence: 1,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'newsletter',
           action: 'check',
           value: false,
           confidence: 1,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'skills',
           action: 'check',
           value: ['typescript', 'playwright'],
           confidence: 0.9,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'work_auth',
           action: 'click',
           value: 'yes',
           confidence: 0.9,
-          skipReason: ''
-        }
+          skipReason: '',
+        },
       ];
 
       const executionResult = await executeApplicationFillPlan({
         page,
         boardEntry: boardEntry(),
         fields,
-        fillPlan
+        fillPlan,
       });
 
       return {
         executionResult,
         privacy: await page.locator('#privacy').isChecked(),
         newsletter: await page.locator('#newsletter').isChecked(),
-        typescript: await page.locator('input[name="skills"][value="typescript"]').isChecked(),
-        playwright: await page.locator('input[name="skills"][value="playwright"]').isChecked(),
-        react: await page.locator('input[name="skills"][value="react"]').isChecked(),
-        yes: await page.locator('input[name="work_auth"][value="yes"]').isChecked(),
-        no: await page.locator('input[name="work_auth"][value="no"]').isChecked()
+        typescript: await page
+          .locator('input[name="skills"][value="typescript"]')
+          .isChecked(),
+        playwright: await page
+          .locator('input[name="skills"][value="playwright"]')
+          .isChecked(),
+        react: await page
+          .locator('input[name="skills"][value="react"]')
+          .isChecked(),
+        yes: await page
+          .locator('input[name="work_auth"][value="yes"]')
+          .isChecked(),
+        no: await page
+          .locator('input[name="work_auth"][value="no"]')
+          .isChecked(),
       };
     });
 
@@ -648,7 +673,7 @@ describe('application fill plan executor', () => {
       total: 4,
       success: 4,
       skipped: 0,
-      failed: 0
+      failed: 0,
     });
   });
 
@@ -676,7 +701,7 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#optional_question'],
-          options: []
+          options: [],
         },
         {
           id: 'resume',
@@ -687,7 +712,7 @@ describe('application fill plan executor', () => {
           enabled: true,
           selectorCandidates: ['#resume'],
           options: [],
-          specialHandling: 'file_upload'
+          specialHandling: 'file_upload',
         },
         {
           id: 'ghost',
@@ -697,7 +722,7 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#ghost'],
-          options: []
+          options: [],
         },
         {
           id: 'last_name',
@@ -707,8 +732,8 @@ describe('application fill plan executor', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#last_name'],
-          options: []
-        }
+          options: [],
+        },
       ];
       const fillPlan: ApplicationFillPlanEntry[] = [
         {
@@ -716,48 +741,48 @@ describe('application fill plan executor', () => {
           action: 'skip',
           value: null,
           confidence: 0,
-          skipReason: 'optional'
+          skipReason: 'optional',
         },
         {
           fieldId: 'resume',
           action: 'fill',
           value: 'resume.pdf',
           confidence: 0.5,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'missing_from_scrape',
           action: 'fill',
           value: 'missing',
           confidence: 1,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'ghost',
           action: 'fill',
           value: 'unreachable',
           confidence: 1,
-          skipReason: ''
+          skipReason: '',
         },
         {
           fieldId: 'last_name',
           action: 'fill',
           value: 'Example',
           confidence: 1,
-          skipReason: ''
-        }
+          skipReason: '',
+        },
       ];
 
       const executionResult = await executeApplicationFillPlan({
         page,
         boardEntry: boardEntry(),
         fields,
-        fillPlan
+        fillPlan,
       });
 
       return {
         executionResult,
-        lastName: await page.locator('#last_name').inputValue()
+        lastName: await page.locator('#last_name').inputValue(),
       };
     });
 
@@ -766,33 +791,272 @@ describe('application fill plan executor', () => {
       total: 5,
       success: 1,
       skipped: 2,
-      failed: 2
+      failed: 2,
     });
     expect(result.executionResult.results).toEqual([
       expect.objectContaining({
         fieldId: 'optional_question',
         status: 'skipped',
-        message: 'optional'
+        message: 'optional',
       }),
       expect.objectContaining({
         fieldId: 'resume',
-        status: 'skipped'
+        status: 'skipped',
       }),
       expect.objectContaining({
         fieldId: 'missing_from_scrape',
         status: 'failed',
-        message: 'Fill plan entry did not match a scraped field.'
+        message: 'Fill plan entry did not match a scraped field.',
       }),
       expect.objectContaining({
         fieldId: 'ghost',
-        status: 'failed'
+        status: 'failed',
       }),
       expect.objectContaining({
         fieldId: 'last_name',
         status: 'success',
-        selector: '#last_name'
-      })
+        selector: '#last_name',
+      }),
     ]);
+  });
+
+  test('uploads resume and cover letter artifacts for scraped file fields', async () => {
+    const artifactsDir = mkdtempSync(join(tmpdir(), 'jobautomation-uploads-'));
+    tempDirs.push(artifactsDir);
+    const resumePath = join(artifactsDir, 'tailored-resume.pdf');
+    const coverLetterPath = join(artifactsDir, 'tailored-cover-letter.pdf');
+    writeFileSync(resumePath, '%PDF-1.4 resume');
+    writeFileSync(coverLetterPath, '%PDF-1.4 cover letter');
+
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <label for="resume">Resume/CV</label>
+            <input id="resume" name="resume" type="file" />
+            <label for="cover_letter">Cover Letter</label>
+            <input id="cover_letter" name="cover_letter" type="file" />
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        artifacts: {
+          resume: {
+            id: 'resume-artifact',
+            jobId: 'job-1',
+            discoveryRunId: null,
+            applicationRunId: null,
+            applicantProfileId: null,
+            applicantProfileUpdatedAt: null,
+            version: 2,
+            kind: 'resume-variant',
+            format: 'pdf',
+            fileName: 'tailored-resume.pdf',
+            storagePath: resumePath,
+            createdAt: new Date('2026-04-21T10:00:00.000Z'),
+          },
+          coverLetter: {
+            id: 'cover-letter-artifact',
+            jobId: 'job-1',
+            discoveryRunId: null,
+            applicationRunId: null,
+            applicantProfileId: null,
+            applicantProfileUpdatedAt: null,
+            version: 2,
+            kind: 'cover-letter',
+            format: 'pdf',
+            fileName: 'tailored-cover-letter.pdf',
+            storagePath: coverLetterPath,
+            createdAt: new Date('2026-04-21T10:00:00.000Z'),
+          },
+        },
+        fields: [
+          {
+            id: 'resume',
+            label: 'Resume/CV',
+            type: 'file',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#resume'],
+            options: [],
+            specialHandling: 'file_upload',
+          },
+          {
+            id: 'cover_letter',
+            label: 'Cover Letter',
+            type: 'file',
+            required: false,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#cover_letter'],
+            options: [],
+            specialHandling: 'file_upload',
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: 'resume',
+            action: 'skip',
+            value: null,
+            confidence: 0,
+            skipReason: 'file_upload_handled_later',
+          },
+          {
+            fieldId: 'cover_letter',
+            action: 'skip',
+            value: null,
+            confidence: 0,
+            skipReason: 'file_upload_handled_later',
+          },
+        ],
+      });
+
+      return {
+        executionResult,
+        resumeFileName: await page
+          .locator('#resume')
+          .evaluate(
+            (element) => (element as HTMLInputElement).files?.[0]?.name ?? null
+          ),
+        coverLetterFileName: await page
+          .locator('#cover_letter')
+          .evaluate(
+            (element) => (element as HTMLInputElement).files?.[0]?.name ?? null
+          ),
+      };
+    });
+
+    expect(result.resumeFileName).toBe('tailored-resume.pdf');
+    expect(result.coverLetterFileName).toBe('tailored-cover-letter.pdf');
+    expect(result.executionResult.summary).toEqual({
+      total: 2,
+      success: 2,
+      skipped: 0,
+      failed: 0,
+    });
+    expect(result.executionResult.results).toEqual([
+      expect.objectContaining({
+        fieldId: 'resume',
+        action: 'skip',
+        status: 'success',
+        selector: '#resume',
+        message: 'Uploaded resume artifact.',
+      }),
+      expect.objectContaining({
+        fieldId: 'cover_letter',
+        action: 'skip',
+        status: 'success',
+        selector: '#cover_letter',
+        message: 'Uploaded cover letter artifact.',
+      }),
+    ]);
+  });
+
+  test('uploads resume artifact for combined resume and cover letter file fields', async () => {
+    const artifactsDir = mkdtempSync(join(tmpdir(), 'jobautomation-uploads-'));
+    tempDirs.push(artifactsDir);
+    const resumePath = join(artifactsDir, 'tailored-resume.pdf');
+    const coverLetterPath = join(artifactsDir, 'tailored-cover-letter.pdf');
+    writeFileSync(resumePath, '%PDF-1.4 resume');
+    writeFileSync(coverLetterPath, '%PDF-1.4 cover letter');
+
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <label for="combined_upload">Resume/CV and Cover Letter</label>
+            <input id="combined_upload" name="combined_upload" type="file" />
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        artifacts: {
+          resume: {
+            id: 'resume-artifact',
+            jobId: 'job-1',
+            discoveryRunId: null,
+            applicationRunId: null,
+            applicantProfileId: null,
+            applicantProfileUpdatedAt: null,
+            version: 2,
+            kind: 'resume-variant',
+            format: 'pdf',
+            fileName: 'tailored-resume.pdf',
+            storagePath: resumePath,
+            createdAt: new Date('2026-04-21T10:00:00.000Z'),
+          },
+          coverLetter: {
+            id: 'cover-letter-artifact',
+            jobId: 'job-1',
+            discoveryRunId: null,
+            applicationRunId: null,
+            applicantProfileId: null,
+            applicantProfileUpdatedAt: null,
+            version: 2,
+            kind: 'cover-letter',
+            format: 'pdf',
+            fileName: 'tailored-cover-letter.pdf',
+            storagePath: coverLetterPath,
+            createdAt: new Date('2026-04-21T10:00:00.000Z'),
+          },
+        },
+        fields: [
+          {
+            id: 'combined_upload',
+            label: 'Resume/CV and Cover Letter',
+            type: 'file',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#combined_upload'],
+            options: [],
+            specialHandling: 'file_upload',
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: 'combined_upload',
+            action: 'skip',
+            value: null,
+            confidence: 0,
+            skipReason: 'file_upload_handled_later',
+          },
+        ],
+      });
+
+      return {
+        executionResult,
+        fileName: await page
+          .locator('#combined_upload')
+          .evaluate(
+            (element) => (element as HTMLInputElement).files?.[0]?.name ?? null
+          ),
+      };
+    });
+
+    expect(result.fileName).toBe('tailored-resume.pdf');
+    expect(result.executionResult.results[0]).toEqual(
+      expect.objectContaining({
+        fieldId: 'combined_upload',
+        status: 'success',
+        message: 'Uploaded resume artifact.',
+      })
+    );
   });
 
   test('avoids direct bulk setter APIs for human-style interactions', async () => {
@@ -851,7 +1115,7 @@ describe('application fill plan executor', () => {
               visible: true,
               enabled: true,
               selectorCandidates: ['#first_name'],
-              options: []
+              options: [],
             },
             {
               id: 'country',
@@ -864,8 +1128,8 @@ describe('application fill plan executor', () => {
               options: [
                 { value: '', label: 'Select a country' },
                 { value: 'ca', label: 'Canada' },
-                { value: 'us', label: 'United States' }
-              ]
+                { value: 'us', label: 'United States' },
+              ],
             },
             {
               id: 'privacy',
@@ -875,7 +1139,7 @@ describe('application fill plan executor', () => {
               visible: true,
               enabled: true,
               selectorCandidates: ['#privacy'],
-              options: []
+              options: [],
             },
             {
               id: 'work_auth',
@@ -887,9 +1151,9 @@ describe('application fill plan executor', () => {
               selectorCandidates: ['[name="work_auth"]'],
               options: [
                 { value: 'yes', label: 'Yes' },
-                { value: 'no', label: 'No' }
-              ]
-            }
+                { value: 'no', label: 'No' },
+              ],
+            },
           ],
           fillPlan: [
             {
@@ -897,30 +1161,30 @@ describe('application fill plan executor', () => {
               action: 'fill',
               value: 'Taylor',
               confidence: 1,
-              skipReason: ''
+              skipReason: '',
             },
             {
               fieldId: 'country',
               action: 'select',
               value: 'ca',
               confidence: 1,
-              skipReason: ''
+              skipReason: '',
             },
             {
               fieldId: 'privacy',
               action: 'check',
               value: true,
               confidence: 1,
-              skipReason: ''
+              skipReason: '',
             },
             {
               fieldId: 'work_auth',
               action: 'click',
               value: 'yes',
               confidence: 1,
-              skipReason: ''
-            }
-          ]
+              skipReason: '',
+            },
+          ],
         });
       } finally {
         expect(fillSpy).not.toHaveBeenCalled();
@@ -967,8 +1231,8 @@ describe('application fill plan executor', () => {
             visible: true,
             enabled: true,
             selectorCandidates: ['#first_name'],
-            options: []
-          }
+            options: [],
+          },
         ],
         fillPlan: [
           {
@@ -976,9 +1240,9 @@ describe('application fill plan executor', () => {
             action: 'fill',
             value: 'Taylor',
             confidence: 1,
-            skipReason: ''
-          }
-        ]
+            skipReason: '',
+          },
+        ],
       });
 
       return page.locator('#first_name').getAttribute('data-keys');

@@ -5,13 +5,13 @@ import {
   artifactRecordSchema,
   jobRecordSchema,
   logEventRecordSchema,
-  type ApplicationRunStatus
+  type ApplicationRunStatus,
 } from '@jobautomation/core';
 import {
   ashbyApplicationSite,
   greenhouseApplicationSite,
   leverApplicationSite,
-  runApplication
+  runApplication,
 } from '@jobautomation/automation';
 import type { FastifyPluginAsync } from 'fastify';
 
@@ -21,7 +21,9 @@ type CreateApplicationRunPayload = {
 
 function parseCreatePayload(body: unknown): CreateApplicationRunPayload {
   const jobId =
-    typeof body === 'object' && body !== null && typeof (body as { jobId?: unknown }).jobId === 'string'
+    typeof body === 'object' &&
+    body !== null &&
+    typeof (body as { jobId?: unknown }).jobId === 'string'
       ? (body as { jobId: string }).jobId
       : null;
 
@@ -49,6 +51,14 @@ function statusMessageForRun(status: ApplicationRunStatus): string {
   }
 }
 
+function hasGeneratedResumePdfArtifact(
+  artifacts: Array<{ kind: string; format: string }>
+): boolean {
+  return artifacts.some(
+    (artifact) => artifact.format === 'pdf' && artifact.kind === 'resume-variant'
+  );
+}
+
 export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
   app.get('/application-runs', async () => {
     const runs = await app.repositories.applicationRuns.list();
@@ -62,13 +72,15 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
 
         return {
           run: applicationRunRecordSchema.parse(run),
-          job: jobRecordSchema.parse(job)
+          job: jobRecordSchema.parse(job),
         };
       })
     );
 
     return {
-      runs: summaries.filter((value): value is NonNullable<typeof value> => value !== null)
+      runs: summaries.filter(
+        (value): value is NonNullable<typeof value> => value !== null
+      ),
     };
   });
 
@@ -83,20 +95,24 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
     const job = await app.repositories.jobs.findById(run.jobId);
 
     if (!job) {
-      return reply.code(404).send({ message: 'Application run job not found.' });
+      return reply
+        .code(404)
+        .send({ message: 'Application run job not found.' });
     }
 
     const [logs, artifacts] = await Promise.all([
       app.repositories.logEvents.listByApplicationRun(runId),
-      app.repositories.artifacts.listByApplicationRun(runId)
+      app.repositories.artifacts.listByApplicationRun(runId),
     ]);
 
     return {
       run: applicationRunRecordSchema.parse(run),
       job: jobRecordSchema.parse(job),
       logs: logs.map((entry) => logEventRecordSchema.parse(entry)),
-      artifacts: artifacts.map((artifact) => artifactRecordSchema.parse(artifact)),
-      statusMessage: statusMessageForRun(run.status)
+      artifacts: artifacts.map((artifact) =>
+        artifactRecordSchema.parse(artifact)
+      ),
+      statusMessage: statusMessageForRun(run.status),
     };
   });
 
@@ -108,8 +124,19 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ message: 'Job not found.' });
     }
 
+    const artifacts = await app.repositories.artifacts.listByJob(job.id);
+    if (!hasGeneratedResumePdfArtifact(artifacts)) {
+      return reply
+        .code(409)
+        .send({
+          message:
+            'Generate tailored artifacts before starting an application run.',
+        });
+    }
+
     const applicationFillPlanModel =
-      app.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ?? app.config.OPENROUTER_JOB_SUMMARY_MODEL;
+      app.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
+      app.config.OPENROUTER_JOB_SUMMARY_MODEL;
 
     if (app.config.OPENROUTER_API_KEY && !applicationFillPlanModel) {
       throw new Error(
@@ -124,20 +151,27 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       applicationRunsRepository: app.repositories.applicationRuns,
       artifactsRepository: app.repositories.artifacts,
       logEventsRepository: app.repositories.logEvents,
-      siteFlows: [greenhouseApplicationSite, leverApplicationSite, ashbyApplicationSite],
+      siteFlows: [
+        greenhouseApplicationSite,
+        leverApplicationSite,
+        ashbyApplicationSite,
+      ],
       openRouter: app.config.OPENROUTER_API_KEY
         ? {
             apiKey: app.config.OPENROUTER_API_KEY,
             baseUrl: app.config.OPENROUTER_API_BASE_URL,
-            model: applicationFillPlanModel!
+            model: applicationFillPlanModel!,
           }
         : null,
-      artifactsRootDir: join(dirname(app.config.JOB_AUTOMATION_DB_PATH), 'artifacts')
+      artifactsRootDir: join(
+        dirname(app.config.JOB_AUTOMATION_DB_PATH),
+        'artifacts'
+      ),
     });
 
     return {
       run: applicationRunRecordSchema.parse(run),
-      job: jobRecordSchema.parse(job)
+      job: jobRecordSchema.parse(job),
     };
   });
 };

@@ -6,7 +6,7 @@ import { generateApplicationFillPlan } from '../openrouter-answer-module';
 import {
   detectApplicationChallenge,
   warmApplicationFormBeforeFill,
-  warmApplicationPageBeforeEntry
+  warmApplicationPageBeforeEntry,
 } from '../trust-runtime';
 
 export const leverApplicationSite: SupportedApplicationSite = {
@@ -18,22 +18,22 @@ export const leverApplicationSite: SupportedApplicationSite = {
     const preEntryWarmup = await warmApplicationPageBeforeEntry({
       page: context.session.page,
       board: 'lever',
-      pacing: context.session.pacing
+      pacing: context.session.pacing,
     });
     const boardEntry = await reachApplicationForm({
       page: context.session.page,
-      board: 'lever'
+      board: 'lever',
     });
     const preFillWarmup = await warmApplicationFormBeforeFill({
       page: context.session.page,
       board: 'lever',
       boardEntry,
-      pacing: context.session.pacing
+      pacing: context.session.pacing,
     });
     const preFillChallenge = await detectApplicationChallenge({
       page: context.session.page,
       board: 'lever',
-      phase: 'before_scrape'
+      phase: 'before_scrape',
     });
     if (preFillChallenge) {
       return context.pauseForManualReview({
@@ -46,14 +46,14 @@ export const leverApplicationSite: SupportedApplicationSite = {
           preEntryWarmup,
           preFillWarmup,
           profileDirectory: context.session.identity.userDataDir ?? null,
-          pageHtml: await context.session.page.content()
-        }
+          pageHtml: await context.session.page.content(),
+        },
       });
     }
 
     const scrapedFields = await scrapeApplicationFields({
       page: context.session.page,
-      boardEntry
+      boardEntry,
     });
 
     if (!context.openRouter?.apiKey) {
@@ -65,20 +65,21 @@ export const leverApplicationSite: SupportedApplicationSite = {
           scrapedFields,
           preEntryWarmup,
           preFillWarmup,
-          profileDirectory: context.session.identity.userDataDir ?? null
+          profileDirectory: context.session.identity.userDataDir ?? null,
         }
       );
 
       return context.pauseForManualReview({
         step: 'fields_scraped_ready',
-        message: 'Paused after scraping the visible Lever application fields for Stage 3 review.',
+        message:
+          'Paused after scraping the visible Lever application fields for Stage 3 review.',
         details: {
           boardEntry,
           scrapedFields,
           preEntryWarmup,
           preFillWarmup,
-          profileDirectory: context.session.identity.userDataDir ?? null
-        }
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        },
       });
     }
 
@@ -86,19 +87,20 @@ export const leverApplicationSite: SupportedApplicationSite = {
       applicantProfile: context.applicantProfile,
       job: context.job,
       fields: scrapedFields,
-      openRouter: context.openRouter ?? null
+      openRouter: context.openRouter ?? null,
     });
     const executionResult = await executeApplicationFillPlan({
       page: context.session.page,
       boardEntry,
+      artifacts: context.artifacts,
       fields: scrapedFields,
       fillPlan: fillPlanResult.fillPlan,
-      pacing: context.session.pacing
+      pacing: context.session.pacing,
     });
     const postFillChallenge = await detectApplicationChallenge({
       page: context.session.page,
       board: 'lever',
-      phase: 'after_fill'
+      phase: 'after_fill',
     });
     if (postFillChallenge) {
       return context.pauseForManualReview({
@@ -114,8 +116,8 @@ export const leverApplicationSite: SupportedApplicationSite = {
           preEntryWarmup,
           preFillWarmup,
           profileDirectory: context.session.identity.userDataDir ?? null,
-          pageHtml: await context.session.page.content()
-        }
+          pageHtml: await context.session.page.content(),
+        },
       });
     }
 
@@ -134,7 +136,7 @@ export const leverApplicationSite: SupportedApplicationSite = {
         executionResult,
         preEntryWarmup,
         preFillWarmup,
-        profileDirectory: context.session.identity.userDataDir ?? null
+        profileDirectory: context.session.identity.userDataDir ?? null,
       }
     );
 
@@ -153,8 +155,8 @@ export const leverApplicationSite: SupportedApplicationSite = {
         executionResult,
         preEntryWarmup,
         preFillWarmup,
-        profileDirectory: context.session.identity.userDataDir ?? null
-      }
+        profileDirectory: context.session.identity.userDataDir ?? null,
+      },
     });
-  }
+  },
 };

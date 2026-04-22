@@ -10,7 +10,7 @@ const boardEntryBySite = {
     finalUrl: 'https://job-boards.greenhouse.io/example/jobs/1',
     readyFieldCount: 1,
     rootSelector: '#application',
-    rootIndex: 0
+    rootIndex: 0,
   },
   ashby: {
     board: 'ashby',
@@ -19,7 +19,7 @@ const boardEntryBySite = {
     finalUrl: 'https://jobs.ashbyhq.com/example/1',
     readyFieldCount: 1,
     rootSelector: '[role="tabpanel"]',
-    rootIndex: 0
+    rootIndex: 0,
   },
   lever: {
     board: 'lever',
@@ -28,8 +28,8 @@ const boardEntryBySite = {
     finalUrl: 'https://jobs.lever.co/example/1',
     readyFieldCount: 1,
     rootSelector: '[data-qa="application-form"]',
-    rootIndex: 0
-  }
+    rootIndex: 0,
+  },
 } as const;
 
 const scrapedFieldsBySite = {
@@ -42,8 +42,8 @@ const scrapedFieldsBySite = {
       visible: true,
       enabled: true,
       selectorCandidates: ['#first_name'],
-      options: []
-    }
+      options: [],
+    },
   ],
   ashby: [
     {
@@ -54,8 +54,8 @@ const scrapedFieldsBySite = {
       visible: true,
       enabled: true,
       selectorCandidates: ['#phone'],
-      options: []
-    }
+      options: [],
+    },
   ],
   lever: [
     {
@@ -66,9 +66,9 @@ const scrapedFieldsBySite = {
       visible: true,
       enabled: true,
       selectorCandidates: ['#location'],
-      options: []
-    }
-  ]
+      options: [],
+    },
+  ],
 } as const;
 
 const fillPlanBySite = {
@@ -78,8 +78,8 @@ const fillPlanBySite = {
       action: 'fill',
       value: 'Taylor',
       confidence: 1,
-      skipReason: ''
-    }
+      skipReason: '',
+    },
   ],
   ashby: [
     {
@@ -87,8 +87,8 @@ const fillPlanBySite = {
       action: 'fill',
       value: '555-0100',
       confidence: 1,
-      skipReason: ''
-    }
+      skipReason: '',
+    },
   ],
   lever: [
     {
@@ -96,9 +96,9 @@ const fillPlanBySite = {
       action: 'fill',
       value: 'Toronto',
       confidence: 1,
-      skipReason: ''
-    }
-  ]
+      skipReason: '',
+    },
+  ],
 } as const;
 
 describe('stage 5 site flow integration', () => {
@@ -109,22 +109,23 @@ describe('stage 5 site flow integration', () => {
   test.each([
     {
       siteKey: 'greenhouse',
-      modulePath: '../../../packages/automation/src/apply/sites/greenhouse-apply',
+      modulePath:
+        '../../../packages/automation/src/apply/sites/greenhouse-apply',
       exportName: 'greenhouseApplicationSite',
-      title: 'Greenhouse'
+      title: 'Greenhouse',
     },
     {
       siteKey: 'ashby',
       modulePath: '../../../packages/automation/src/apply/sites/ashby-apply',
       exportName: 'ashbyApplicationSite',
-      title: 'Ashby'
+      title: 'Ashby',
     },
     {
       siteKey: 'lever',
       modulePath: '../../../packages/automation/src/apply/sites/lever-apply',
       exportName: 'leverApplicationSite',
-      title: 'Lever'
-    }
+      title: 'Lever',
+    },
   ])(
     'executes the generated fill plan only after trust warm-up for $title',
     async ({ siteKey, modulePath, exportName }) => {
@@ -143,8 +144,8 @@ describe('stage 5 site flow integration', () => {
           normalizedAction: 'fill',
           expectedActions: ['fill'],
           reason: 'accepted',
-          recovered: false
-        }
+          recovered: false,
+        },
       ];
       const executionResult = {
         results: [
@@ -154,21 +155,21 @@ describe('stage 5 site flow integration', () => {
             action: 'fill',
             status: 'success',
             selector: scrapedFields[0].selectorCandidates[0],
-            message: 'Filled field.'
-          }
+            message: 'Filled field.',
+          },
         ],
         summary: {
           total: 1,
           success: 1,
           skipped: 0,
-          failed: 0
+          failed: 0,
         },
         telemetry: {
           totalPreFillDwellMs: 100,
           totalTypingDurationMs: 80,
           totalPointerActions: 2,
-          forbiddenDirectApiUsage: []
-        }
+          forbiddenDirectApiUsage: [],
+        },
       };
 
       const reachApplicationForm = vi.fn().mockResolvedValue(boardEntry);
@@ -179,42 +180,52 @@ describe('stage 5 site flow integration', () => {
         promptPayload: { fields: [] },
         responseJson: { items: fillPlan },
         fieldDiagnostics,
-        fillPlan
+        fillPlan,
       });
-      const executeApplicationFillPlan = vi.fn().mockResolvedValue(executionResult);
+      const executeApplicationFillPlan = vi
+        .fn()
+        .mockResolvedValue(executionResult);
       const warmApplicationPageBeforeEntry = vi.fn().mockResolvedValue({
-        totalDwellMs: 1200
+        totalDwellMs: 1200,
       });
       const warmApplicationFormBeforeFill = vi.fn().mockResolvedValue({
-        totalDwellMs: 900
+        totalDwellMs: 900,
       });
       const detectApplicationChallenge = vi.fn().mockResolvedValue(null);
 
       vi.doMock('../../../packages/automation/src/apply/board-entry', () => ({
-        reachApplicationForm
+        reachApplicationForm,
       }));
       vi.doMock('../../../packages/automation/src/apply/form-scraper', () => ({
-        scrapeApplicationFields
+        scrapeApplicationFields,
       }));
-      vi.doMock('../../../packages/automation/src/apply/openrouter-answer-module', () => ({
-        generateApplicationFillPlan
-      }));
-      vi.doMock('../../../packages/automation/src/apply/fill-plan-executor', () => ({
-        executeApplicationFillPlan
-      }));
+      vi.doMock(
+        '../../../packages/automation/src/apply/openrouter-answer-module',
+        () => ({
+          generateApplicationFillPlan,
+        })
+      );
+      vi.doMock(
+        '../../../packages/automation/src/apply/fill-plan-executor',
+        () => ({
+          executeApplicationFillPlan,
+        })
+      );
       vi.doMock('../../../packages/automation/src/apply/trust-runtime', () => ({
         warmApplicationPageBeforeEntry,
         warmApplicationFormBeforeFill,
-        detectApplicationChallenge
+        detectApplicationChallenge,
       }));
 
       const importedModule = await import(modulePath);
-      const site = importedModule[exportName as keyof typeof importedModule] as {
+      const site = importedModule[
+        exportName as keyof typeof importedModule
+      ] as {
         run: (context: ApplicationSiteFlowContext) => Promise<unknown>;
       };
       const context = createContext({
         siteKey,
-        finalUrl: boardEntry.finalUrl
+        finalUrl: boardEntry.finalUrl,
       });
 
       await site.run(context);
@@ -222,20 +233,21 @@ describe('stage 5 site flow integration', () => {
       expect(warmApplicationPageBeforeEntry).toHaveBeenCalledWith({
         page: context.session.page,
         board: siteKey,
-        pacing: context.session.pacing
+        pacing: context.session.pacing,
       });
       expect(warmApplicationFormBeforeFill).toHaveBeenCalledWith({
         page: context.session.page,
         board: siteKey,
         boardEntry,
-        pacing: context.session.pacing
+        pacing: context.session.pacing,
       });
       expect(executeApplicationFillPlan).toHaveBeenCalledWith({
         page: context.session.page,
         boardEntry,
+        artifacts: context.artifacts,
         fields: scrapedFields,
         fillPlan,
-        pacing: context.session.pacing
+        pacing: context.session.pacing,
       });
       expect(context.pauseForManualReview).toHaveBeenCalledWith({
         step: 'fill_plan_executed',
@@ -247,8 +259,8 @@ describe('stage 5 site flow integration', () => {
           executionResult,
           preEntryWarmup: { totalDwellMs: 1200 },
           preFillWarmup: { totalDwellMs: 900 },
-          profileDirectory: 'C:/profiles/apply/board'
-        })
+          profileDirectory: 'C:/profiles/apply/board',
+        }),
       });
     }
   );
@@ -258,48 +270,54 @@ describe('stage 5 site flow integration', () => {
     const challengeSignal = {
       kind: 'email_verification_required',
       phase: 'before_scrape',
-      message: 'Greenhouse requested email verification before form completion.',
+      message:
+        'Greenhouse requested email verification before form completion.',
       url: boardEntry.finalUrl,
-      selectors: ['iframe[src*="recaptcha"]']
+      selectors: ['iframe[src*="recaptcha"]'],
     };
     const reachApplicationForm = vi.fn().mockResolvedValue(boardEntry);
     const scrapeApplicationFields = vi.fn();
     const executeApplicationFillPlan = vi.fn();
     const warmApplicationPageBeforeEntry = vi.fn().mockResolvedValue({
-      totalDwellMs: 1200
+      totalDwellMs: 1200,
     });
     const warmApplicationFormBeforeFill = vi.fn().mockResolvedValue({
-      totalDwellMs: 900
+      totalDwellMs: 900,
     });
     const detectApplicationChallenge = vi
       .fn()
       .mockResolvedValueOnce(challengeSignal);
 
     vi.doMock('../../../packages/automation/src/apply/board-entry', () => ({
-      reachApplicationForm
+      reachApplicationForm,
     }));
     vi.doMock('../../../packages/automation/src/apply/form-scraper', () => ({
-      scrapeApplicationFields
+      scrapeApplicationFields,
     }));
-    vi.doMock('../../../packages/automation/src/apply/fill-plan-executor', () => ({
-      executeApplicationFillPlan
-    }));
-    vi.doMock('../../../packages/automation/src/apply/openrouter-answer-module', () => ({
-      generateApplicationFillPlan: vi.fn()
-    }));
+    vi.doMock(
+      '../../../packages/automation/src/apply/fill-plan-executor',
+      () => ({
+        executeApplicationFillPlan,
+      })
+    );
+    vi.doMock(
+      '../../../packages/automation/src/apply/openrouter-answer-module',
+      () => ({
+        generateApplicationFillPlan: vi.fn(),
+      })
+    );
     vi.doMock('../../../packages/automation/src/apply/trust-runtime', () => ({
       warmApplicationPageBeforeEntry,
       warmApplicationFormBeforeFill,
-      detectApplicationChallenge
+      detectApplicationChallenge,
     }));
 
-    const { greenhouseApplicationSite } = await import(
-      '../../../packages/automation/src/apply/sites/greenhouse-apply'
-    );
+    const { greenhouseApplicationSite } =
+      await import('../../../packages/automation/src/apply/sites/greenhouse-apply');
     const context = createContext({
       siteKey: 'greenhouse',
       finalUrl: boardEntry.finalUrl,
-      pageHtml: '<html><body>challenge</body></html>'
+      pageHtml: '<html><body>challenge</body></html>',
     });
 
     await greenhouseApplicationSite.run(context);
@@ -308,7 +326,8 @@ describe('stage 5 site flow integration', () => {
     expect(executeApplicationFillPlan).not.toHaveBeenCalled();
     expect(context.pauseForManualReview).toHaveBeenCalledWith({
       step: 'before_scrape',
-      message: 'Greenhouse requested email verification before form completion.',
+      message:
+        'Greenhouse requested email verification before form completion.',
       stopReason: 'email_verification_required',
       details: expect.objectContaining({
         challengeSignal,
@@ -316,8 +335,8 @@ describe('stage 5 site flow integration', () => {
         preEntryWarmup: { totalDwellMs: 1200 },
         preFillWarmup: { totalDwellMs: 900 },
         profileDirectory: 'C:/profiles/apply/board',
-        pageHtml: '<html><body>challenge</body></html>'
-      })
+        pageHtml: '<html><body>challenge</body></html>',
+      }),
     });
   });
 });
@@ -331,7 +350,7 @@ function createContext(input: {
     applicantProfile: null,
     artifacts: {
       resume: null,
-      coverLetter: null
+      coverLetter: null,
     },
     job: {
       id: 'job-1',
@@ -339,15 +358,17 @@ function createContext(input: {
       sourceUrl: input.finalUrl,
       companyName: 'Example Corp',
       title: 'Platform Engineer',
-      location: 'Toronto'
+      location: 'Toronto',
     },
     run: {
-      id: 'run-1'
+      id: 'run-1',
     },
     session: {
       page: {
         url: vi.fn().mockReturnValue(input.finalUrl),
-        content: vi.fn().mockResolvedValue(input.pageHtml ?? '<html><body>ok</body></html>')
+        content: vi
+          .fn()
+          .mockResolvedValue(input.pageHtml ?? '<html><body>ok</body></html>'),
       },
       identity: {
         profileKind: 'apply',
@@ -358,31 +379,31 @@ function createContext(input: {
         enableCache: true,
         humanize: true,
         firefoxUserPrefs: {},
-        headless: false
+        headless: false,
       },
       pacing: {
         preApplyReadDelayMs: [100, 120],
         sectionReadDelayMs: [60, 80],
         preFieldDelayMs: [40, 60],
         postFieldDelayMs: [30, 50],
-        typingDelayMs: [20, 40]
-      }
+        typingDelayMs: [20, 40],
+      },
     },
     openRouter: {
       apiKey: 'test-key',
       baseUrl: 'https://openrouter.example/api/v1',
-      model: 'openrouter/test-model'
+      model: 'openrouter/test-model',
     },
     logStep: vi.fn().mockResolvedValue(undefined),
     captureScreenshot: vi.fn().mockResolvedValue({
       artifactId: 'artifact-1',
-      storagePath: 'C:/tmp/screenshot.png'
+      storagePath: 'C:/tmp/screenshot.png',
     }),
     stopBeforeSubmit: vi.fn(),
     pauseForManualReview: vi.fn().mockResolvedValue({
       id: 'run-1',
       status: 'paused',
-      currentStep: 'fill_plan_executed'
-    })
+      currentStep: 'fill_plan_executed',
+    }),
   } as unknown as ApplicationSiteFlowContext;
 }
