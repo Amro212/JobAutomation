@@ -76,12 +76,22 @@ export type GmailApiClient = {
   };
 };
 
+export type EmailVerificationDebugLog = (
+  event: string,
+  details?: Record<string, unknown>
+) => Promise<void> | void;
+
+export function isEnabledForGmailVerification(
+  config: ApplicantEmailVerificationConfig | undefined | null
+): config is ApplicantEmailVerificationConfig {
+  return Boolean(config?.enabled && config.provider === 'gmail_oauth');
+}
+
 export function isConfiguredForGmailVerification(
   config: ApplicantEmailVerificationConfig | undefined | null
 ): config is ApplicantEmailVerificationConfig {
   return Boolean(
-    config?.enabled &&
-      config.provider === 'gmail_oauth' &&
+    isEnabledForGmailVerification(config) &&
       config.gmailUserEmail.trim() &&
       config.gmailClientId.trim() &&
       config.gmailClientSecret.trim() &&

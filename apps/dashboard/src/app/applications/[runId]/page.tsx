@@ -39,6 +39,27 @@ function statusSummary(status: string, stopReason: string | null): string {
   if (status === 'paused' && stopReason === 'manual_review_required') {
     return 'Paused at final review and waiting for a human to submit.';
   }
+  if (status === 'paused' && stopReason === 'not_configured') {
+    return 'Greenhouse reached email verification, but Gmail OAuth is incomplete.';
+  }
+  if (status === 'paused' && stopReason === 'submit_button_not_found') {
+    return 'Greenhouse submit button was not found, so verification flow never started.';
+  }
+  if (status === 'paused' && stopReason === 'challenge_not_visible') {
+    return 'Greenhouse submit was attempted, but verification challenge did not appear.';
+  }
+  if (status === 'paused' && stopReason === 'code_input_not_found') {
+    return 'Greenhouse verification challenge appeared, but code input was not found.';
+  }
+  if (status === 'paused' && stopReason === 'timeout') {
+    return 'Greenhouse verification email was not found before timeout.';
+  }
+  if (status === 'paused' && stopReason === 'auth_failed') {
+    return 'Greenhouse verification email retrieval failed due to Gmail auth error.';
+  }
+  if (status === 'paused' && stopReason === 'email_verification_code_entered') {
+    return 'Greenhouse verification code was entered and run paused before final resubmit.';
+  }
 
   switch (status) {
     case 'paused':

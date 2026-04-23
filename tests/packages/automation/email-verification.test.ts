@@ -4,6 +4,7 @@ import {
   extractGreenhouseVerificationCode,
   pollGmailForGreenhouseVerificationCode,
 } from '../../../packages/automation/src/apply/email-verification/gmail-provider';
+import { resolveEmailVerificationConfig } from '../../../packages/automation/src/apply/email-verification/env-config';
 import { submitGreenhouseApplicationAndEnterVerificationCode } from '../../../packages/automation/src/apply/email-verification/greenhouse-verification';
 
 const sampleHtml = `
@@ -80,8 +81,15 @@ describe('greenhouse email verification', () => {
       inputValue: vi.fn().mockResolvedValue(''),
       textContent: vi.fn().mockResolvedValue('')
     };
+    const segmentedInputs = {
+      count: vi.fn().mockResolvedValue(8),
+      evaluateAll: vi.fn().mockResolvedValue(['K', 'D', 'p', 'j', 'D', 'h', 'q', 'X'])
+    };
     const page = {
       locator: vi.fn((selector: string) => {
+        if (selector === 'input[id^="security-input-"]') {
+          return segmentedInputs;
+        }
         if (selector.includes('submit')) {
           return { first: () => submitButton };
         }
@@ -119,5 +127,37 @@ describe('greenhouse email verification', () => {
 
     expect(submitButton.click).toHaveBeenCalledTimes(1);
     expect(page.keyboard.type).toHaveBeenCalledWith('KDpjDhqX', expect.anything());
+  });
+
+  test('merges missing Gmail OAuth fields from env when profile config is enabled but incomplete', () => {
+    process.env.JOBAUTOMATION_GREENHOUSE_EMAIL_VERIFICATION_ENABLED = '1';
+    process.env.JOBAUTOMATION_GMAIL_USER_EMAIL = 'amromousa8@gmail.com';
+    process.env.JOBAUTOMATION_GMAIL_CLIENT_ID = 'env-client-id';
+    process.env.JOBAUTOMATION_GMAIL_CLIENT_SECRET = 'env-client-secret';
+    process.env.JOBAUTOMATION_GMAIL_REFRESH_TOKEN = 'env-refresh-token';
+
+    expect(
+      resolveEmailVerificationConfig({
+        enabled: true,
+        provider: 'gmail_oauth',
+        gmailUserEmail: 'amromousa8@gmail.com',
+        gmailClientId: '',
+        gmailClientSecret: '',
+        gmailRefreshToken: '',
+      })
+    ).toEqual({
+      enabled: true,
+      provider: 'gmail_oauth',
+      gmailUserEmail: 'amromousa8@gmail.com',
+      gmailClientId: 'env-client-id',
+      gmailClientSecret: 'env-client-secret',
+      gmailRefreshToken: 'env-refresh-token',
+    });
+
+    delete process.env.JOBAUTOMATION_GREENHOUSE_EMAIL_VERIFICATION_ENABLED;
+    delete process.env.JOBAUTOMATION_GMAIL_USER_EMAIL;
+    delete process.env.JOBAUTOMATION_GMAIL_CLIENT_ID;
+    delete process.env.JOBAUTOMATION_GMAIL_CLIENT_SECRET;
+    delete process.env.JOBAUTOMATION_GMAIL_REFRESH_TOKEN;
   });
 });
