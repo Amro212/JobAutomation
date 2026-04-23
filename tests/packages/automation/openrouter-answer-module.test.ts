@@ -1115,6 +1115,182 @@ describe('openrouter answer module', () => {
     ]);
   });
 
+  test('answers country-specific legal work authorization from citizenship despite bad model output', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'canada_work_auth',
+          action: 'fill',
+          value: 'No',
+          confidence: 1,
+          skipReason: ''
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant({
+        autofillProfile: minimalAutofillProfileSchema.parse({
+          workAuthorizationCountriesCsv: '',
+          requiresSponsorship: 'yes',
+          requiresSponsorshipCountriesCsv: 'US',
+          currentCountryCode: 'CA',
+          primaryCitizenshipCountryCode: 'CA',
+          currentCountryResidenceStatus: 'citizen',
+          legallyAuthorizedInCurrentCountry: 'yes',
+          needsSponsorshipInCurrentCountry: 'no'
+        })
+      }),
+      job: baseJob({
+        location: 'Canada - Calgary'
+      }),
+      fields: [
+        {
+          id: 'canada_work_auth',
+          label: 'Are you legally entitled to work for any employer in Canada?*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#canada_work_auth'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.promptPayload.fields).toEqual([
+      expect.objectContaining({
+        id: 'canada_work_auth',
+        answerability: 'structured_profile',
+        targetCountryCode: 'CA'
+      })
+    ]);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'canada_work_auth',
+        action: 'fill',
+        value: 'Yes',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+    expect(result.fieldDiagnostics).toEqual([
+      expect.objectContaining({
+        fieldId: 'canada_work_auth',
+        category: 'accepted',
+        rawAction: 'fill',
+        normalizedAction: 'fill',
+        recovered: true
+      })
+    ]);
+  });
+
+  test('recovers optional direct profile comboboxes from structured identity facts', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'country',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'unsupported'
+        },
+        {
+          fieldId: 'phone_country',
+          action: 'fill',
+          value: null,
+          confidence: 0,
+          skipReason: 'unsupported'
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'country',
+          label: 'Country',
+          type: 'combobox',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#country'],
+          options: []
+        },
+        {
+          id: 'phone_country',
+          label: 'Phone',
+          type: 'combobox',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#phone_country'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'country',
+        action: 'fill',
+        value: 'Canada',
+        confidence: 1,
+        skipReason: ''
+      },
+      {
+        fieldId: 'phone_country',
+        action: 'fill',
+        value: '555-0100',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+  });
+
+  test('maps prefer-not-to-say demographic defaults onto disclose-style options', async () => {
+    const provider = createProvider({ items: [] });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant({
+        autofillProfile: minimalAutofillProfileSchema.parse({
+          raceEthnicity: 'prefer_not_to_say'
+        })
+      }),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'ethnicity',
+          label: 'What race or ethnicity do you identify with?',
+          type: 'radio_group',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['[name="ethnicity"]'],
+          options: [
+            { value: 'White', label: 'White' },
+            { value: 'Prefer not to disclose', label: 'Prefer not to disclose' }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'ethnicity',
+        action: 'click',
+        value: 'Prefer not to disclose',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+  });
+
   test('uses consent policy defaults and sensitive self-id defaults instead of skipping', async () => {
     const provider = createProvider({ items: [] });
 

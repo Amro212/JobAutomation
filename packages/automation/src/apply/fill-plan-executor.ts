@@ -274,6 +274,58 @@ async function visibleOptionByText(input: {
   return null;
 }
 
+async function firstVisibleOption(input: {
+  page: Page;
+  root: Locator;
+}): Promise<Locator | null> {
+  const scopedOption = input.root.getByRole('option').first();
+  if (await scopedOption.isVisible().catch(() => false)) {
+    return scopedOption;
+  }
+
+  const pageOption = input.page.getByRole('option').first();
+  if (await pageOption.isVisible().catch(() => false)) {
+    return pageOption;
+  }
+
+  return null;
+}
+
+async function waitForComboboxOption(input: {
+  page: Page;
+  root: Locator;
+  labels: string[];
+  timeoutMs?: number;
+  pollMs?: number;
+}): Promise<Locator | null> {
+  const timeoutMs = input.timeoutMs ?? 2_000;
+  const pollMs = input.pollMs ?? 100;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const exactMatch = await visibleOptionByText({
+      page: input.page,
+      root: input.root,
+      labels: input.labels,
+    });
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    const firstVisible = await firstVisibleOption({
+      page: input.page,
+      root: input.root,
+    });
+    if (firstVisible) {
+      return firstVisible;
+    }
+
+    await input.page.waitForTimeout(pollMs);
+  }
+
+  return null;
+}
+
 async function executeCombobox(input: {
   page: Page;
   root: Locator;
@@ -293,7 +345,7 @@ async function executeCombobox(input: {
 
   await input.actionEngine.typeText(input.locator, value);
 
-  const option = await visibleOptionByText({
+  const option = await waitForComboboxOption({
     page: input.page,
     root: input.root,
     labels: comboboxCandidateLabels({
@@ -303,7 +355,7 @@ async function executeCombobox(input: {
   });
 
   if (!option) {
-    throw new Error(`No visible combobox option matched "${value}".`);
+    throw new Error(`No visible combobox option appeared for "${value}".`);
   }
 
   await input.actionEngine.click(option);

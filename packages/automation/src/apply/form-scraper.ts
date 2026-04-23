@@ -565,11 +565,11 @@ function inferInputType(element: HTMLElement): ScrapedApplicationFieldType {
     return 'rich_text';
   }
 
-  if (tagName !== 'input') {
-    if (element.getAttribute('role') === 'combobox') {
-      return 'combobox';
-    }
+  if (hasComboboxHints(element)) {
+    return 'combobox';
+  }
 
+  if (tagName !== 'input') {
     return 'rich_text';
   }
 
@@ -583,7 +583,7 @@ function inferInputType(element: HTMLElement): ScrapedApplicationFieldType {
     case 'checkbox':
       return 'checkbox';
     default:
-      return element.getAttribute('role') === 'combobox' ? 'combobox' : 'text';
+      return 'text';
   }
 }
 
@@ -599,6 +599,36 @@ function inferSpecialHandling(
   }
 
   return undefined;
+}
+
+function hasComboboxHints(element: HTMLElement): boolean {
+  const role = normalizeText(element.getAttribute('role')).toLowerCase();
+  if (role === 'combobox') {
+    return true;
+  }
+
+  const ariaAutocomplete = normalizeText(
+    element.getAttribute('aria-autocomplete')
+  ).toLowerCase();
+  if (ariaAutocomplete === 'list' || ariaAutocomplete === 'both') {
+    return true;
+  }
+
+  if (normalizeText(element.getAttribute('list'))) {
+    return true;
+  }
+
+  const ariaControls = normalizeText(element.getAttribute('aria-controls'));
+  const ariaHaspopup = normalizeText(
+    element.getAttribute('aria-haspopup')
+  ).toLowerCase();
+
+  return Boolean(
+    ariaControls &&
+      (ariaAutocomplete.length > 0 ||
+        ariaHaspopup === 'listbox' ||
+        element.getAttribute('aria-expanded') !== null)
+  );
 }
 
 function inferRequired(element: HTMLElement): boolean {

@@ -638,6 +638,31 @@ function inferCountryCodeFromText(value: string): string | null {
   return matches.length === 1 ? matches[0]?.code ?? null : null;
 }
 
+function countryLabelForCode(countryCode: string | null): string | null {
+  if (!countryCode) {
+    return null;
+  }
+
+  return FILTER_COUNTRIES.find((country) => country.code === countryCode)?.label ?? countryCode;
+}
+
+function isWorkAuthorizationPrompt(fingerprint: string): boolean {
+  return includesAny(fingerprint, [
+    'work authorization',
+    'authorized to work',
+    'legally authorized',
+    'legally entitled to work',
+    'legally eligible to work',
+    'eligible to work',
+    'entitled to work',
+    'work for any employer',
+    'sponsorship',
+    'sponsor',
+    'visa',
+    'work permit'
+  ]);
+}
+
 function isProfessionalExperienceBinaryPrompt(fingerprint: string): boolean {
   return (
     includesAny(fingerprint, ['professional setting', 'professionally']) &&
@@ -653,6 +678,10 @@ function isProfessionalExperienceBinaryPrompt(fingerprint: string): boolean {
 }
 
 function isCompanyRelationshipPrompt(fingerprint: string): boolean {
+  if (isWorkAuthorizationPrompt(fingerprint)) {
+    return false;
+  }
+
   return includesAny(fingerprint, [
     'history with',
     'ever been employed by',
@@ -814,17 +843,10 @@ function classifyFieldAnswerability(field: ScrapedApplicationField): PromptField
   }
 
   if (
+    isWorkAuthorizationPrompt(fingerprint) ||
     includesAny(fingerprint, [
-      'work authorization',
-      'authorized to work',
-      'legally authorized',
-      'legally eligible to work',
-      'eligible to work',
-      'sponsorship',
       'citizen',
       'citizenship',
-      'visa',
-      'work permit',
       'residence status',
       'clearance',
       'export control',
@@ -1034,21 +1056,41 @@ function normalizeForComparison(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function optionAliases(candidate: string): string[] {
+  const normalizedCandidate = normalizeForComparison(candidate);
+  const aliases = new Set([normalizedCandidate]);
+
+  if (
+    ['prefer not to say', 'prefer not to disclose', 'choose not to disclose'].includes(
+      normalizedCandidate
+    )
+  ) {
+    aliases.add('prefer not to say');
+    aliases.add('prefer not to disclose');
+    aliases.add('choose not to disclose');
+    aliases.add('decline to disclose');
+  }
+
+  return Array.from(aliases);
+}
+
 function resolveOptionValue(
   options: ScrapedApplicationFieldOption[],
   candidate: string
 ): string | null {
-  const normalizedCandidate = normalizeForComparison(candidate);
-  if (!normalizedCandidate) {
+  const candidateAliases = optionAliases(candidate);
+  if (candidateAliases.length === 0 || candidateAliases[0]?.length === 0) {
     return null;
   }
 
   for (const option of options) {
-    if (normalizeForComparison(option.value) === normalizedCandidate) {
+    const optionValueAliases = optionAliases(option.value);
+    if (optionValueAliases.some((alias) => candidateAliases.includes(alias))) {
       return option.value;
     }
 
-    if (normalizeForComparison(option.label) === normalizedCandidate) {
+    const optionLabelAliases = optionAliases(option.label);
+    if (optionLabelAliases.some((alias) => candidateAliases.includes(alias))) {
       return option.value;
     }
   }
@@ -1516,6 +1558,14 @@ function identityFallbackValue(
     return serializedProfile.identity.phone || null;
   }
 
+  if (includesAny(fingerprint, ['country'])) {
+    return (
+      countryLabelForCode(serializedProfile.workAuthorization.currentCountryCode) ??
+      (serializedProfile.identity.location || null) ??
+      null
+    );
+  }
+
   if (includesAny(fingerprint, ['linkedin'])) {
     return serializedProfile.identity.linkedinUrl || null;
   }
@@ -1643,6 +1693,128 @@ function structuredFallbackValue(
   return null;
 }
 
+function resolveTargetCountryCode(
+  promptField: PromptField,
+  job: GenerateApplicationFillPlanInput['job']
+): string | null {
+  return promptField.targetCountryCode ?? inferCountryCodeFromText(job.location);
+}
+
+function canWorkInTargetCountry(
+  field: ScrapedApplicationField,
+  serializedProfile: SerializedApplicantProfile,
+  targetCountryCode: string | null
+): boolean | null {
+  const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+  const workAuthorization = serializedProfile.workAuthorization;
+
+  if (!targetCountryCode) {
+    return workAuthorization.legallyAuthorizedInCurrentCountry === 'no'
+      ? false
+      : workAuthorization.legallyAuthorizedInCurrentCountry === 'yes'
+        ? true
+        : null;
+  }
+
+  if (workAuthorization.requiresSponsorshipCountryCodes.includes(targetCountryCode)) {
+    return false;
+  }
+
+  if (workAuthorization.authorizedWithoutSponsorshipCountryCodes.includes(targetCountryCode)) {
+    return true;
+  }
+
+  if (workAuthorization.primaryCitizenshipCountryCode === targetCountryCode) {
+    return true;
+  }
+
+  if (workAuthorization.currentCountryCode !== targetCountryCode) {
+    return null;
+  }
+
+  if (workAuthorization.needsSponsorshipInCurrentCountry === 'yes') {
+    return false;
+  }
+
+  if (
+    ['citizen', 'permanent_resident', 'open_work_permit'].includes(
+      workAuthorization.currentCountryResidenceStatus ?? ''
+    )
+  ) {
+    return true;
+  }
+
+  if (workAuthorization.currentCountryResidenceStatus === 'employer_specific_work_visa') {
+    return includesAny(fingerprint, ['any employer']) ? false : true;
+  }
+
+  if (workAuthorization.legallyAuthorizedInCurrentCountry === 'yes') {
+    return true;
+  }
+
+  if (workAuthorization.legallyAuthorizedInCurrentCountry === 'no') {
+    return false;
+  }
+
+  return null;
+}
+
+function resolveStructuredLegalTextValue(
+  field: ScrapedApplicationField,
+  promptField: PromptField,
+  serializedProfile: SerializedApplicantProfile,
+  job: GenerateApplicationFillPlanInput['job']
+): string | null {
+  if (promptField.answerability !== 'structured_profile') {
+    return null;
+  }
+
+  const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+  if (!isWorkAuthorizationPrompt(fingerprint)) {
+    return null;
+  }
+
+  const targetCountryCode = resolveTargetCountryCode(promptField, job);
+  const canWork = canWorkInTargetCountry(field, serializedProfile, targetCountryCode);
+
+  if (includesAny(fingerprint, ['sponsorship', 'sponsor'])) {
+    if (!promptField.targetCountryCode) {
+      return null;
+    }
+
+    if (
+      targetCountryCode &&
+      serializedProfile.workAuthorization.requiresSponsorshipCountryCodes.includes(
+        targetCountryCode
+      )
+    ) {
+      return 'Yes';
+    }
+
+    if (targetCountryCode && canWork === true) {
+      return 'No';
+    }
+
+    return serializedProfile.workAuthorization.requiresSponsorship === true ? 'Yes' : 'No';
+  }
+
+  if (
+    includesAny(fingerprint, [
+      'authorized to work',
+      'legally authorized',
+      'legally entitled to work',
+      'legally eligible to work',
+      'eligible to work',
+      'entitled to work',
+      'work for any employer'
+    ])
+  ) {
+    return canWork === false ? 'No' : 'Yes';
+  }
+
+  return null;
+}
+
 function binaryFallbackValue(field: ScrapedApplicationField): string | null {
   const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
   const looksBinary =
@@ -1687,7 +1859,13 @@ function binaryFallbackValue(field: ScrapedApplicationField): string | null {
 function canUseStructuredSensitiveFallback(field: ScrapedApplicationField): boolean {
   const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
 
-  return includesAny(fingerprint, ['hispanic']);
+  return includesAny(fingerprint, [
+    'pronouns',
+    'gender',
+    'race',
+    'ethnicity',
+    'hispanic'
+  ]);
 }
 
 function tryStructuredSensitiveFallbackResult(input: {
@@ -1716,6 +1894,33 @@ function tryStructuredSensitiveFallbackResult(input: {
     rawEntry: input.rawEntry,
     textValue,
     category: 'profile_default_sensitive_response',
+    reason: input.reason,
+    recovered: true
+  });
+}
+
+function tryDirectProfileFallbackResult(input: {
+  field: ScrapedApplicationField;
+  promptField: PromptField;
+  serializedProfile: SerializedApplicantProfile;
+  rawEntry?: ApplicationFillPlanEntry | undefined;
+  reason: string;
+}): { entry: ApplicationFillPlanEntry; diagnostic: ApplicationFillPlanFieldDiagnostic } | null {
+  if (input.promptField.answerability !== 'direct_profile') {
+    return null;
+  }
+
+  const textValue = identityFallbackValue(input.field, input.serializedProfile);
+  if (!textValue || textValue.trim().length === 0) {
+    return null;
+  }
+
+  return createDeterministicFieldResult({
+    field: input.field,
+    answerability: input.promptField.answerability,
+    rawEntry: input.rawEntry,
+    textValue,
+    category: 'accepted',
     reason: input.reason,
     recovered: true
   });
@@ -1856,7 +2061,36 @@ function normalizeEntryForField(
     });
   }
 
+  const structuredLegalValue = resolveStructuredLegalTextValue(
+    field,
+    promptField,
+    serializedProfile,
+    job
+  );
+  if (structuredLegalValue) {
+    return createDeterministicFieldResult({
+      field,
+      answerability,
+      rawEntry: entry,
+      textValue: structuredLegalValue,
+      category: 'accepted',
+      reason:
+        'accepted: legal work authorization resolved from structured country, citizenship, and sponsorship facts',
+      recovered: Boolean(entry)
+    });
+  }
+
   if (!entry) {
+    const directProfileFallback = tryDirectProfileFallbackResult({
+      field,
+      promptField,
+      serializedProfile,
+      reason: 'accepted: direct profile field defaulted from applicant profile facts'
+    });
+    if (directProfileFallback) {
+      return directProfileFallback;
+    }
+
     const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
       field,
       promptField,
@@ -1908,6 +2142,17 @@ function normalizeEntryForField(
   }
 
   if (entry.action === 'skip') {
+    const directProfileFallback = tryDirectProfileFallbackResult({
+      field,
+      promptField,
+      serializedProfile,
+      rawEntry: entry,
+      reason: 'accepted: provider skip recovered from applicant profile facts'
+    });
+    if (directProfileFallback) {
+      return directProfileFallback;
+    }
+
     const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
       field,
       promptField,
@@ -1981,6 +2226,17 @@ function normalizeEntryForField(
     }
 
     if (entry.action === 'fill' && typeof entry.value !== 'string') {
+      const directProfileFallback = tryDirectProfileFallbackResult({
+        field,
+        promptField,
+        serializedProfile,
+        rawEntry: entry,
+        reason: 'accepted: non-text model value recovered from applicant profile facts'
+      });
+      if (directProfileFallback) {
+        return directProfileFallback;
+      }
+
       if (isRequiredNonFileField(field)) {
         return createRequiredBestEffortResult({
           field,
@@ -2210,6 +2466,17 @@ function normalizeEntryForField(
   }
 
   if (entry.action !== 'fill' || typeof entry.value !== 'string') {
+    const directProfileFallback = tryDirectProfileFallbackResult({
+      field,
+      promptField,
+      serializedProfile,
+      rawEntry: entry,
+      reason: 'accepted: invalid model payload recovered from applicant profile facts'
+    });
+    if (directProfileFallback) {
+      return directProfileFallback;
+    }
+
     if (isRequiredNonFileField(field)) {
       return createRequiredBestEffortResult({
         field,

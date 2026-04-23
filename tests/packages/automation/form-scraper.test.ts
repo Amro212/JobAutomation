@@ -431,6 +431,51 @@ describe('application field scraper', () => {
     );
   });
 
+  test('treats autocomplete location inputs as comboboxes', async () => {
+    await startServer({
+      '/autocomplete-location': `
+        <html>
+          <body>
+            <section id="application">
+              <label for="location">Location</label>
+              <input
+                id="location"
+                name="location"
+                type="text"
+                autocomplete="off"
+                aria-autocomplete="list"
+                aria-controls="location-options"
+              />
+              <div id="location-options" role="listbox" hidden>
+                <div role="option">Toronto, Ontario, Canada</div>
+                <div role="option">Toronto, ON, Canada</div>
+              </div>
+            </section>
+          </body>
+        </html>
+      `
+    });
+
+    const fields = await withPage(async (page) => {
+      await page.goto(`${baseUrl}/autocomplete-location`, {
+        waitUntil: 'domcontentloaded'
+      });
+      const boardEntry = await reachApplicationForm({ page, board: 'lever' });
+      return scrapeApplicationFields({ page, boardEntry });
+    });
+
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'location',
+          label: 'Location',
+          type: 'combobox',
+          selectorCandidates: expect.arrayContaining(['#location', '[name="location"]'])
+        })
+      ])
+    );
+  });
+
   test('prefers ancestor upload prompt labels over generic attach controls', async () => {
     await startServer({
       '/greenhouse-upload-ancestor': `
