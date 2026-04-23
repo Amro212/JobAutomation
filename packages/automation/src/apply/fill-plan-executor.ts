@@ -4,7 +4,10 @@ import type {
   ApplicationArtifacts,
   InteractionPacingProfile,
 } from './contracts';
-import type { ApplicationBoardEntryResult } from './board-entry';
+import type {
+  ApplicationBoardEntryResult,
+  SupportedApplicationBoard,
+} from './board-entry';
 import type { ScrapedApplicationField } from './form-scraper';
 import type { ApplicationFillPlanEntry } from './openrouter-answer-module';
 import { uploadArtifactFile } from './file-upload';
@@ -13,7 +16,14 @@ export type ApplicationFillExecutionStatus = 'success' | 'skipped' | 'failed';
 
 export type HumanActionEngine = {
   click: (locator: Locator) => Promise<void>;
-  typeText: (locator: Locator, value: string) => Promise<void>;
+  typeText: (
+    locator: Locator,
+    value: string,
+    options?: {
+      ensureClear?: boolean;
+      skipScroll?: boolean;
+    }
+  ) => Promise<void>;
   press: (key: string) => Promise<void>;
   waitForPreFill: () => Promise<void>;
   metrics: {
@@ -131,8 +141,14 @@ function createHumanActionEngine(input: {
       metrics.pointerActions += 1;
       await waitWithRange(input.page, pacing.postFieldDelayMs);
     },
-    async typeText(locator: Locator, value: string) {
-      await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+    async typeText(
+      locator: Locator,
+      value: string,
+      options?: { ensureClear?: boolean; skipScroll?: boolean }
+    ) {
+      if (!options?.skipScroll) {
+        await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+      }
       await waitWithRange(input.page, pacing.preFieldDelayMs);
       await locator.click();
       metrics.pointerActions += 1;
@@ -147,6 +163,27 @@ function createHumanActionEngine(input: {
       if (existingValue.length > 0) {
         await input.page.keyboard.press('Control+A').catch(() => undefined);
         await input.page.keyboard.press('Backspace').catch(() => undefined);
+      }
+      if (options?.ensureClear) {
+        let cleared = false;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const currentInputValue = await locator.inputValue().catch(() => null);
+          const currentTextContent = await locator.textContent().catch(() => null);
+          const currentValue = (
+            currentInputValue ??
+            currentTextContent ??
+            ''
+          ).trim();
+          if (currentValue.length === 0) {
+            cleared = true;
+            break;
+          }
+          await input.page.keyboard.press('Control+A').catch(() => undefined);
+          await input.page.keyboard.press('Backspace').catch(() => undefined);
+        }
+        if (!cleared) {
+          throw new Error('Field did not clear before typing.');
+        }
       }
 
       for (const [index, character] of Array.from(value).entries()) {
@@ -250,6 +287,91 @@ function comboboxCandidateLabels(input: {
   );
 }
 
+function isBoardLocationAutocompleteField(input: {
+  board: SupportedApplicationBoard;
+  field: ScrapedApplicationField;
+}): boolean {
+  const fingerprint = [
+    input.field.id,
+    input.field.label,
+    ...input.field.selectorCandidates,
+  ].join(' ');
+
+  return (
+    (input.board === 'lever' || input.board === 'ashby') &&
+    (input.field.type === 'text' || input.field.type === 'combobox') &&
+    (/\blocation\b/i.test(fingerprint) ||
+      (/\bcity\b/i.test(fingerprint) && /\bcountry\b/i.test(fingerprint)) ||
+      /\bwork\s+from\b/i.test(fingerprint))
+  );
+}
+
+async function visibleText(locator: Locator): Promise<string> {
+  const inputValue = await locator.inputValue().catch(() => null);
+  const textContent = await locator.textContent().catch(() => null);
+
+  return (inputValue ?? textContent ?? '').trim();
+}
+
+async function waitForLeverResumeParsingToSettle(input: {
+  page: Page;
+  root: Locator;
+  minWaitMs?: number;
+  timeoutMs?: number;
+  quietMs?: number;
+  pollMs?: number;
+}): Promise<void> {
+  await input.page.waitForTimeout(input.minWaitMs ?? 5_500);
+
+  const timeoutMs = input.timeoutMs ?? 8_000;
+  const quietMs = input.quietMs ?? 750;
+  const pollMs = input.pollMs ?? 100;
+  const deadline = Date.now() + timeoutMs;
+  let lastSnapshot = '';
+  let stableSince = Date.now();
+
+  while (Date.now() <= deadline) {
+    const snapshot = await input.root
+      .locator('input:not([type="file"]), textarea, [contenteditable="true"]')
+      .evaluateAll((elements) =>
+        elements
+          .map((element) => {
+            if (
+              element instanceof HTMLInputElement ||
+              element instanceof HTMLTextAreaElement
+            ) {
+              return `${element.id}:${element.name}:${element.value}`;
+            }
+
+            return `${element.id}:${element.textContent ?? ''}`;
+          })
+          .join('\n')
+      )
+      .catch(() => '');
+
+    if (snapshot !== lastSnapshot) {
+      lastSnapshot = snapshot;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= quietMs) {
+      return;
+    }
+
+    await input.page.waitForTimeout(pollMs);
+  }
+}
+
+async function clickLocatorCenterWithoutScroll(input: {
+  page: Page;
+  locator: Locator;
+}): Promise<void> {
+  const box = await input.locator.boundingBox();
+  if (!box) {
+    throw new Error('Location suggestion was not visible for center click.');
+  }
+
+  await input.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
 async function visibleOptionByText(input: {
   page: Page;
   root: Locator;
@@ -326,7 +448,124 @@ async function waitForComboboxOption(input: {
   return null;
 }
 
+async function waitForLeverLocationOption(input: {
+  page: Page;
+  timeoutMs?: number;
+  pollMs?: number;
+}): Promise<Locator | null> {
+  const timeoutMs = input.timeoutMs ?? 2_500;
+  const pollMs = input.pollMs ?? 100;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const option = input.page
+      .locator('.dropdown-results .dropdown-location, .dropdown-results [id^="location-"]')
+      .first();
+    if (await option.isVisible().catch(() => false)) {
+      return option;
+    }
+
+    await input.page.waitForTimeout(pollMs);
+  }
+
+  return null;
+}
+
+async function hasLeverSelectedLocation(page: Page): Promise<boolean> {
+  const selectedLocation = page
+    .locator('#selected-location, [name="selectedLocation"]')
+    .first();
+  if ((await selectedLocation.count().catch(() => 0)) === 0) {
+    return true;
+  }
+
+  return (await selectedLocation.inputValue().catch(() => '')).trim().length > 0;
+}
+
+async function ashbyLocationCommitted(input: {
+  page: Page;
+  locator: Locator;
+}): Promise<boolean> {
+  const currentValue = await visibleText(input.locator);
+  if (currentValue.length === 0) {
+    return false;
+  }
+
+  const visibleOption = await firstVisibleOption({
+    page: input.page,
+    root: input.page.locator('body'),
+  });
+
+  return !visibleOption;
+}
+
+async function executeLocationAutocomplete(input: {
+  board: SupportedApplicationBoard;
+  page: Page;
+  root: Locator;
+  field: ScrapedApplicationField;
+  entry: ApplicationFillPlanEntry;
+  locator: Locator;
+  actionEngine: HumanActionEngine;
+}): Promise<void> {
+  if (input.entry.action !== 'fill' || typeof input.entry.value !== 'string') {
+    throw new Error('Location autocomplete action requires a text fill value.');
+  }
+
+  const value = input.entry.value.trim();
+  if (!value) {
+    throw new Error('Location autocomplete action requires a non-empty value.');
+  }
+
+  await input.actionEngine.typeText(input.locator, value, {
+    ensureClear: true,
+    skipScroll: true,
+  });
+  await waitWithRange(input.page, [1000, 2000]);
+
+  if (input.board === 'lever') {
+    const option = await waitForLeverLocationOption({ page: input.page });
+    if (!option) {
+      throw new Error(`No visible location suggestion appeared for "${value}".`);
+    }
+
+    await clickLocatorCenterWithoutScroll({ page: input.page, locator: option });
+    await input.page.waitForTimeout(300);
+    if (!(await hasLeverSelectedLocation(input.page))) {
+      throw new Error(`Location suggestion did not commit for "${value}".`);
+    }
+    return;
+  }
+
+  const option = await waitForComboboxOption({
+    page: input.page,
+    root: input.root,
+    labels: comboboxCandidateLabels({
+      field: input.field,
+      value,
+    }),
+    timeoutMs: 2_500,
+  });
+
+  if (!option) {
+    throw new Error(`No visible location suggestion appeared for "${value}".`);
+  }
+
+  await input.actionEngine.press('Enter');
+  await input.page.waitForTimeout(300);
+  if (await ashbyLocationCommitted({ page: input.page, locator: input.locator })) {
+    return;
+  }
+
+  await clickLocatorCenterWithoutScroll({ page: input.page, locator: option });
+  await input.page.waitForTimeout(300);
+  if (!(await ashbyLocationCommitted({ page: input.page, locator: input.locator }))) {
+    throw new Error(`Location suggestion did not commit for "${value}".`);
+  }
+}
+
 async function executeCombobox(input: {
+  board: SupportedApplicationBoard;
   page: Page;
   root: Locator;
   field: ScrapedApplicationField;
@@ -341,6 +580,15 @@ async function executeCombobox(input: {
   const value = input.entry.value.trim();
   if (!value) {
     throw new Error('Combobox action requires a non-empty text value.');
+  }
+
+  const isLocationAutocomplete = isBoardLocationAutocompleteField({
+    board: input.board,
+    field: input.field,
+  });
+  if (isLocationAutocomplete) {
+    await executeLocationAutocomplete(input);
+    return;
   }
 
   await input.actionEngine.typeText(input.locator, value);
@@ -432,6 +680,9 @@ async function executeChoiceGroup(input: {
 }
 
 async function executeTextFill(input: {
+  board: SupportedApplicationBoard;
+  page: Page;
+  root: Locator;
   field: ScrapedApplicationField;
   entry: ApplicationFillPlanEntry;
   locator: Locator;
@@ -439,6 +690,15 @@ async function executeTextFill(input: {
 }): Promise<void> {
   if (input.entry.action !== 'fill' || typeof input.entry.value !== 'string') {
     throw new Error('Text field action requires a text fill value.');
+  }
+
+  const isLocationAutocomplete = isBoardLocationAutocompleteField({
+    board: input.board,
+    field: input.field,
+  });
+  if (isLocationAutocomplete) {
+    await executeLocationAutocomplete(input);
+    return;
   }
 
   await input.actionEngine.typeText(input.locator, input.entry.value);
@@ -457,14 +717,13 @@ async function executeSelect(input: {
     throw new Error('Select action requires an option value.');
   }
 
+  const value = input.entry.value;
   const targetIndex = input.field.options.findIndex(
     (option) =>
-      option.value === input.entry.value ||
-      normalizeOptionText(option.label) ===
-        normalizeOptionText(input.entry.value)
+      option.value === value || normalizeOptionText(option.label) === normalizeOptionText(value)
   );
   if (targetIndex < 0) {
-    throw new Error(`No known select option matched "${input.entry.value}".`);
+    throw new Error(`No known select option matched "${value}".`);
   }
 
   await input.actionEngine.click(input.locator);
@@ -524,6 +783,7 @@ function uploadArtifactForField(input: {
 }
 
 async function executeFileUploadWithSelectorFallback(input: {
+  board: SupportedApplicationBoard;
   page: Page;
   root: Locator;
   field: ScrapedApplicationField;
@@ -600,6 +860,12 @@ async function executeFileUploadWithSelectorFallback(input: {
         required: input.field.required,
       });
       await waitWithRange(input.page, pacing.postFieldDelayMs);
+      if (input.board === 'lever' && upload.kind === 'resume') {
+        await waitForLeverResumeParsingToSettle({
+          page: input.page,
+          root: input.root,
+        });
+      }
 
       return {
         fieldId: input.field.id,
@@ -629,6 +895,7 @@ async function executeFileUploadWithSelectorFallback(input: {
 }
 
 async function executeWithSelectorFallback(input: {
+  board: SupportedApplicationBoard;
   page: Page;
   root: Locator;
   field: ScrapedApplicationField;
@@ -659,6 +926,7 @@ async function executeWithSelectorFallback(input: {
     try {
       if (input.field.type === 'combobox') {
         await executeCombobox({
+          board: input.board,
           page: input.page,
           root: input.root,
           field: input.field,
@@ -684,6 +952,9 @@ async function executeWithSelectorFallback(input: {
         input.field.type === 'rich_text'
       ) {
         await executeTextFill({
+          board: input.board,
+          page: input.page,
+          root: input.root,
           field: input.field,
           entry: input.entry,
           locator,
@@ -839,6 +1110,7 @@ export async function executeApplicationFillPlan(input: {
 
     if (field.type === 'file' || field.specialHandling === 'file_upload') {
       const result = await executeFileUploadWithSelectorFallback({
+        board: input.boardEntry.board,
         page: input.page,
         root,
         field,
@@ -872,6 +1144,7 @@ export async function executeApplicationFillPlan(input: {
     }
 
     const result = await executeWithSelectorFallback({
+      board: input.boardEntry.board,
       page: input.page,
       root,
       field,

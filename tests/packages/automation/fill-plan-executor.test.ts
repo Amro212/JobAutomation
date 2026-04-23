@@ -84,9 +84,11 @@ describe('application fill plan executor', () => {
     }
   }
 
-  function boardEntry(): ApplicationBoardEntryResult {
+  function boardEntry(
+    board: ApplicationBoardEntryResult['board'] = 'greenhouse'
+  ): ApplicationBoardEntryResult {
     return {
-      board: 'greenhouse',
+      board,
       entryAction: 'direct_form',
       startUrl: `${baseUrl}/`,
       finalUrl: `${baseUrl}/`,
@@ -409,6 +411,196 @@ describe('application fill plan executor', () => {
     );
   });
 
+  test('commits Ashby location combobox with Enter after suggestions load', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <label for="work_location">Which city and country do you intend to work from?</label>
+            <input
+              id="work_location"
+              role="combobox"
+              aria-controls="location-options"
+              aria-expanded="false"
+              autocomplete="off"
+            />
+            <div id="location-options" role="listbox" hidden>
+              <div role="option" id="toronto">Toronto, Ontario, Canada</div>
+            </div>
+            <script>
+              document.body.dataset.locationOptionPointerClicks = '0';
+              const input = document.querySelector('#work_location');
+              const options = document.querySelector('#location-options');
+              function showOptions() {
+                options.hidden = false;
+                input.setAttribute('aria-expanded', 'true');
+              }
+              function selectFirst() {
+                input.value = 'Toronto, Ontario, Canada';
+                input.dataset.selected = 'Toronto, Ontario, Canada';
+                options.hidden = true;
+                input.setAttribute('aria-expanded', 'false');
+              }
+              input.addEventListener('input', () => setTimeout(showOptions, 100));
+              input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' && !options.hidden) {
+                  event.preventDefault();
+                  selectFirst();
+                }
+              });
+              document.querySelector('#toronto').addEventListener('click', () => {
+                const current = Number(document.body.dataset.locationOptionPointerClicks ?? '0');
+                document.body.dataset.locationOptionPointerClicks = String(current + 1);
+                selectFirst();
+              });
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const fields: ScrapedApplicationField[] = [
+        {
+          id: 'which_city_and_country_do_you_intend_to_work_from_',
+          label: 'Which city and country do you intend to work from?',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#work_location'],
+          options: [],
+        },
+      ];
+      const fillPlan: ApplicationFillPlanEntry[] = [
+        {
+          fieldId: 'which_city_and_country_do_you_intend_to_work_from_',
+          action: 'fill',
+          value: 'Toronto, Ontario',
+          confidence: 1,
+          skipReason: '',
+        },
+      ];
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry('ashby'),
+        fields,
+        fillPlan,
+      });
+
+      return {
+        executionResult,
+        pointerClicks: await page.evaluate(
+          () => document.body.dataset.locationOptionPointerClicks
+        ),
+        selected: await page.locator('#work_location').getAttribute('data-selected'),
+        value: await page.locator('#work_location').inputValue(),
+      };
+    });
+
+    expect(result.pointerClicks).toBe('0');
+    expect(result.selected).toBe('Toronto, Ontario, Canada');
+    expect(result.value).toBe('Toronto, Ontario, Canada');
+    expect(result.executionResult.summary).toEqual({
+      total: 1,
+      success: 1,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
+  test('selects Lever location autocomplete row and updates hidden selection', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <label for="location-input">Current location</label>
+            <input id="location-input" name="location" data-qa="location-input" />
+            <input id="selected-location" name="selectedLocation" type="hidden" />
+            <div class="dropdown-results width-full cursor-pointer" hidden>
+              <div id="location-0" class="break-word dropdown-location width-full py1 px2">
+                Toronto, ON, CAN
+              </div>
+            </div>
+            <script>
+              const input = document.querySelector('#location-input');
+              const selectedLocation = document.querySelector('#selected-location');
+              const results = document.querySelector('.dropdown-results');
+              const row = document.querySelector('#location-0');
+              input.addEventListener('input', () => {
+                selectedLocation.value = '';
+                setTimeout(() => {
+                  results.hidden = false;
+                }, 100);
+              });
+              row.addEventListener('click', () => {
+                const name = row.textContent.trim();
+                input.value = name;
+                selectedLocation.value = JSON.stringify({ name, id: 'toronto' });
+                results.hidden = true;
+              });
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const fields: ScrapedApplicationField[] = [
+        {
+          id: 'location',
+          label: 'Current location',
+          type: 'text',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: [
+            '#location-input',
+            '[name="location"]',
+            '[data-qa="location-input"]',
+          ],
+          options: [],
+        },
+      ];
+      const fillPlan: ApplicationFillPlanEntry[] = [
+        {
+          fieldId: 'location',
+          action: 'fill',
+          value: 'Toronto, ON',
+          confidence: 1,
+          skipReason: '',
+        },
+      ];
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry('lever'),
+        fields,
+        fillPlan,
+      });
+
+      return {
+        executionResult,
+        selectedLocation: await page.locator('#selected-location').inputValue(),
+        value: await page.locator('#location-input').inputValue(),
+      };
+    });
+
+    expect(result.selectedLocation).toContain('"name":"Toronto, ON, CAN"');
+    expect(result.value).toBe('Toronto, ON, CAN');
+    expect(result.executionResult.summary).toEqual({
+      total: 1,
+      success: 1,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
   test('fails custom combobox fills when no option matches the fill plan value', async () => {
     await startServer(`
       <html>
@@ -501,7 +693,7 @@ describe('application fill plan executor', () => {
         fieldId: 'office',
         action: 'fill',
         status: 'failed',
-        message: expect.stringContaining('No visible combobox option matched'),
+        message: expect.stringContaining('No visible combobox option appeared'),
       })
     );
   });
@@ -958,6 +1150,126 @@ describe('application fill plan executor', () => {
         message: 'Uploaded cover letter artifact.',
       }),
     ]);
+  });
+
+  test('waits for Lever resume parsing before filling fields', async () => {
+    const artifactsDir = mkdtempSync(join(tmpdir(), 'jobautomation-uploads-'));
+    tempDirs.push(artifactsDir);
+    const resumePath = join(artifactsDir, 'tailored-resume.pdf');
+    writeFileSync(resumePath, '%PDF-1.4 resume');
+
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <label for="resume">Resume/CV</label>
+            <input id="resume" name="resume" type="file" />
+            <label for="full_name">Full name</label>
+            <input id="full_name" name="name" />
+            <script>
+              const resume = document.querySelector('#resume');
+              const fullName = document.querySelector('#full_name');
+              resume.addEventListener('change', () => {
+                document.body.dataset.parserStatus = 'parsing';
+                setTimeout(() => {
+                  fullName.value = 'Resume Parsed Name';
+                  fullName.dispatchEvent(new Event('input', { bubbles: true }));
+                  document.body.dataset.parserStatus = 'complete';
+                }, 5_000);
+              });
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry('lever'),
+        artifacts: {
+          resume: {
+            id: 'resume-artifact',
+            jobId: 'job-1',
+            discoveryRunId: null,
+            applicationRunId: null,
+            applicantProfileId: null,
+            applicantProfileUpdatedAt: null,
+            version: 2,
+            kind: 'resume-variant',
+            format: 'pdf',
+            fileName: 'tailored-resume.pdf',
+            storagePath: resumePath,
+            createdAt: new Date('2026-04-21T10:00:00.000Z'),
+          },
+        },
+        fields: [
+          {
+            id: 'resume',
+            label: 'Resume/CV',
+            type: 'file',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#resume'],
+            options: [],
+            specialHandling: 'file_upload',
+          },
+          {
+            id: 'full_name',
+            label: 'Full name',
+            type: 'text',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#full_name'],
+            options: [],
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: 'resume',
+            action: 'skip',
+            value: null,
+            confidence: 0,
+            skipReason: 'file_upload_handled_later',
+          },
+          {
+            fieldId: 'full_name',
+            action: 'fill',
+            value: 'Amro Abedmoosa',
+            confidence: 1,
+            skipReason: '',
+          },
+        ],
+        pacing: {
+          preFieldDelayMs: [1, 1],
+          postFieldDelayMs: [1, 1],
+          typingDelayMs: [1, 1],
+          preApplyReadDelayMs: [1, 1],
+          sectionReadDelayMs: [1, 1],
+        },
+      });
+
+      await page.waitForTimeout(5_200);
+
+      return {
+        executionResult,
+        parserStatus: await page.evaluate(() => document.body.dataset.parserStatus),
+        fullName: await page.locator('#full_name').inputValue(),
+      };
+    });
+
+    expect(result.parserStatus).toBe('complete');
+    expect(result.fullName).toBe('Amro Abedmoosa');
+    expect(result.executionResult.summary).toEqual({
+      total: 2,
+      success: 2,
+      skipped: 0,
+      failed: 0,
+    });
   });
 
   test('uploads resume artifact for combined resume and cover letter file fields', async () => {

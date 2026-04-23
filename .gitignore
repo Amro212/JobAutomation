@@ -12,6 +12,7 @@ docs/
 .codex/
 stage-testing.txt
 research.txt
+.playwright-mcp/
 
 ## Generated Files
 
