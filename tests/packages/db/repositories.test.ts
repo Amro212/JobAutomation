@@ -553,6 +553,50 @@ describe('repositories', () => {
     expect(stored?.preferredCountries).toEqual(['US', 'CA']);
   });
 
+  test('stores and retrieves applicant profile email verification settings', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repository = new ApplicantProfileRepository(db);
+
+    await repository.save({
+      id: 'default',
+      fullName: 'Amro Mousa',
+      email: 'amromousa8@gmail.com',
+      phone: '',
+      location: 'Toronto, ON',
+      summary: '',
+      reusableContext: '',
+      linkedinUrl: '',
+      websiteUrl: '',
+      baseResumeFileName: '',
+      baseResumeTex: '',
+      preferredCountries: ['CA'],
+      emailVerification: {
+        enabled: true,
+        provider: 'gmail_oauth',
+        gmailUserEmail: 'amromousa8@gmail.com',
+        gmailClientId:
+          '465613848408-big0oa8sg0a77q3rclb65nudnquht2g3.apps.googleusercontent.com',
+        gmailClientSecret: 'secret',
+        gmailRefreshToken: 'refresh-token',
+      }
+    });
+
+    const stored = await repository.get();
+    expect(stored?.emailVerification).toMatchObject({
+      enabled: true,
+      provider: 'gmail_oauth',
+      gmailUserEmail: 'amromousa8@gmail.com',
+      gmailClientId:
+        '465613848408-big0oa8sg0a77q3rclb65nudnquht2g3.apps.googleusercontent.com',
+      gmailClientSecret: 'secret',
+      gmailRefreshToken: 'refresh-token',
+    });
+  });
+
   test('persists the singleton discovery schedule and run log events', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);

@@ -24,6 +24,17 @@ const optionalHttpUrlField = z
   .transform(normalizeOptionalHttpUrl)
   .pipe(z.union([z.string().url(), z.literal('')]));
 
+export const gmailOauthEmailVerificationSchema = z.object({
+  enabled: z.boolean().default(false),
+  provider: z.literal('gmail_oauth').default('gmail_oauth'),
+  gmailUserEmail: z.string().email().or(z.literal('')).default(''),
+  gmailClientId: z.string().default(''),
+  gmailClientSecret: z.string().default(''),
+  gmailRefreshToken: z.string().default('')
+});
+
+export const defaultEmailVerificationConfig = gmailOauthEmailVerificationSchema.parse({});
+
 export const applicantProfileSchema = z.object({
   id: z.string().default('default'),
   fullName: z.string().min(1).default(''),
@@ -40,6 +51,7 @@ export const applicantProfileSchema = z.object({
   jobKeywordProfile: jobKeywordProfileSchema.nullable().default(null),
   jobKeywordProfileGeneratedAt: z.coerce.date().nullable().default(null),
   autofillProfile: minimalAutofillProfileSchema,
+  emailVerification: gmailOauthEmailVerificationSchema.default(defaultEmailVerificationConfig),
   updatedAt: z.date()
 });
 
@@ -50,8 +62,10 @@ export const applicantProfileInputSchema = applicantProfileSchema
   .extend({
     jobKeywordProfile: jobKeywordProfileSchema.nullable().optional(),
     jobKeywordProfileGeneratedAt: z.coerce.date().nullable().optional(),
-    autofillProfile: minimalAutofillProfileSchema.optional()
+    autofillProfile: minimalAutofillProfileSchema.optional(),
+    emailVerification: gmailOauthEmailVerificationSchema.optional()
   });
 
 export type ApplicantProfile = z.infer<typeof applicantProfileSchema>;
 export type ApplicantProfileInput = z.infer<typeof applicantProfileInputSchema>;
+export type ApplicantEmailVerificationConfig = z.infer<typeof gmailOauthEmailVerificationSchema>;

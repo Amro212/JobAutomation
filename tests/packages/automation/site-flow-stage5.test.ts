@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { defaultMinimalAutofillProfile } from '../../../packages/core/src/autofill-profile';
 import type { ApplicationSiteFlowContext } from '../../../packages/automation/src/apply/contracts';
 
 const boardEntryBySite = {
@@ -336,6 +337,170 @@ describe('stage 5 site flow integration', () => {
         preFillWarmup: { totalDwellMs: 900 },
         profileDirectory: 'C:/profiles/apply/board',
         pageHtml: '<html><body>challenge</body></html>',
+      }),
+    });
+  });
+
+  test('submits into Greenhouse verification and pauses after code entry when Gmail verification is configured', async () => {
+    const boardEntry = boardEntryBySite.greenhouse;
+    const scrapedFields = scrapedFieldsBySite.greenhouse;
+    const fillPlan = fillPlanBySite.greenhouse;
+    const fieldDiagnostics = [
+      {
+        fieldId: scrapedFields[0].id,
+        label: scrapedFields[0].label,
+        type: scrapedFields[0].type,
+        required: scrapedFields[0].required,
+        answerability: 'direct_profile',
+        category: 'accepted',
+        rawAction: 'fill',
+        normalizedAction: 'fill',
+        expectedActions: ['fill'],
+        reason: 'accepted',
+        recovered: false,
+      },
+    ];
+    const executionResult = {
+      results: [
+        {
+          fieldId: scrapedFields[0].id,
+          label: scrapedFields[0].label,
+          action: 'fill',
+          status: 'success',
+          selector: scrapedFields[0].selectorCandidates[0],
+          message: 'Filled field.',
+        },
+      ],
+      summary: {
+        total: 1,
+        success: 1,
+        skipped: 0,
+        failed: 0,
+      },
+      telemetry: {
+        totalPreFillDwellMs: 100,
+        totalTypingDurationMs: 80,
+        totalPointerActions: 2,
+        forbiddenDirectApiUsage: [],
+      },
+    };
+
+    const reachApplicationForm = vi.fn().mockResolvedValue(boardEntry);
+    const scrapeApplicationFields = vi.fn().mockResolvedValue(scrapedFields);
+    const generateApplicationFillPlan = vi.fn().mockResolvedValue({
+      promptVersion: 'stage4-fill-plan-v1',
+      rawResponseLength: 100,
+      promptPayload: { fields: [] },
+      responseJson: { items: fillPlan },
+      fieldDiagnostics,
+      fillPlan,
+    });
+    const executeApplicationFillPlan = vi.fn().mockResolvedValue(executionResult);
+    const warmApplicationPageBeforeEntry = vi.fn().mockResolvedValue({
+      totalDwellMs: 1200,
+    });
+    const warmApplicationFormBeforeFill = vi.fn().mockResolvedValue({
+      totalDwellMs: 900,
+    });
+    const detectApplicationChallenge = vi.fn().mockResolvedValue(null);
+    const createGmailApiClient = vi.fn().mockReturnValue({
+      users: { messages: { list: vi.fn(), get: vi.fn() } },
+    });
+    const pollGmailForGreenhouseVerificationCode = vi.fn().mockResolvedValue({
+      status: 'matched',
+      code: 'KDpjDhqX',
+      messageId: 'message-1',
+      threadId: 'thread-1',
+      subject: 'Security code for your application to Capco',
+      receivedAt: '2026-04-22T01:40:25.000Z',
+    });
+    const submitGreenhouseApplicationAndEnterVerificationCode = vi
+      .fn()
+      .mockResolvedValue({
+        status: 'code_entered',
+        messageId: 'message-1',
+        subject: 'Security code for your application to Capco',
+        codeLength: 8,
+      });
+
+    vi.doMock('../../../packages/automation/src/apply/board-entry', () => ({
+      reachApplicationForm,
+    }));
+    vi.doMock('../../../packages/automation/src/apply/form-scraper', () => ({
+      scrapeApplicationFields,
+    }));
+    vi.doMock(
+      '../../../packages/automation/src/apply/openrouter-answer-module',
+      () => ({
+        generateApplicationFillPlan,
+      })
+    );
+    vi.doMock(
+      '../../../packages/automation/src/apply/fill-plan-executor',
+      () => ({
+        executeApplicationFillPlan,
+      })
+    );
+    vi.doMock('../../../packages/automation/src/apply/trust-runtime', () => ({
+      warmApplicationPageBeforeEntry,
+      warmApplicationFormBeforeFill,
+      detectApplicationChallenge,
+    }));
+    vi.doMock('../../../packages/automation/src/apply/email-verification', () => ({
+      isConfiguredForGmailVerification: vi.fn().mockReturnValue(true),
+      createGmailApiClient,
+      pollGmailForGreenhouseVerificationCode,
+      submitGreenhouseApplicationAndEnterVerificationCode,
+    }));
+
+    const { greenhouseApplicationSite } =
+      await import('../../../packages/automation/src/apply/sites/greenhouse-apply');
+    const context = createContext({
+      siteKey: 'greenhouse',
+      finalUrl: boardEntry.finalUrl,
+    });
+    context.applicantProfile = {
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'amromousa8@gmail.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: '',
+      reusableContext: '',
+      linkedinUrl: '',
+      websiteUrl: '',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}',
+      preferredCountries: ['CA'],
+      jobKeywordProfile: null,
+      jobKeywordProfileGeneratedAt: null,
+      autofillProfile: { ...defaultMinimalAutofillProfile },
+      emailVerification: {
+        enabled: true,
+        provider: 'gmail_oauth',
+        gmailUserEmail: 'amromousa8@gmail.com',
+        gmailClientId: 'client-id',
+        gmailClientSecret: 'client-secret',
+        gmailRefreshToken: 'refresh-token',
+      },
+      updatedAt: new Date('2026-04-23T00:00:00.000Z'),
+    };
+
+    await greenhouseApplicationSite.run(context);
+
+    expect(submitGreenhouseApplicationAndEnterVerificationCode).toHaveBeenCalledTimes(1);
+    expect(context.pauseForManualReview).toHaveBeenCalledWith({
+      step: 'email_verification_code_entered',
+      message: 'Entered the Greenhouse security code and paused before final resubmit.',
+      details: expect.objectContaining({
+        boardEntry,
+        scrapedFields,
+        fillPlan,
+        executionResult,
+        verificationStatus: 'code_entered',
+        verificationMessageId: 'message-1',
+        verificationSubject: 'Security code for your application to Capco',
+        verificationCodeLength: 8,
       }),
     });
   });

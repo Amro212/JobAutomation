@@ -4,6 +4,12 @@ import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
 import {
+  createGmailApiClient,
+  isConfiguredForGmailVerification,
+  pollGmailForGreenhouseVerificationCode,
+  submitGreenhouseApplicationAndEnterVerificationCode
+} from '../email-verification';
+import {
   detectApplicationChallenge,
   warmApplicationFormBeforeFill,
   warmApplicationPageBeforeEntry,
@@ -121,9 +127,83 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       });
     }
 
+    const emailVerificationConfig = context.applicantProfile?.emailVerification ?? null;
+    if (!isConfiguredForGmailVerification(emailVerificationConfig)) {
+      await context.logStep(
+        'fill_plan_executed',
+        'Executed the Greenhouse fill plan against the current visible application form and stopped for Stage 5 review.',
+        {
+          boardEntry,
+          scrapedFields,
+          promptVersion: fillPlanResult.promptVersion,
+          rawResponseLength: fillPlanResult.rawResponseLength,
+          promptPayload: fillPlanResult.promptPayload,
+          responseJson: fillPlanResult.responseJson,
+          fieldDiagnostics: fillPlanResult.fieldDiagnostics,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        }
+      );
+
+      return context.pauseForManualReview({
+        step: 'fill_plan_executed',
+        message:
+          'Paused after executing the Greenhouse fill plan for Stage 5 review.',
+        details: {
+          boardEntry,
+          scrapedFields,
+          promptVersion: fillPlanResult.promptVersion,
+          rawResponseLength: fillPlanResult.rawResponseLength,
+          promptPayload: fillPlanResult.promptPayload,
+          responseJson: fillPlanResult.responseJson,
+          fieldDiagnostics: fillPlanResult.fieldDiagnostics,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        },
+      });
+    }
+
+    const verificationStartedAt = new Date();
+    const verificationResult = await submitGreenhouseApplicationAndEnterVerificationCode({
+      page: context.session.page,
+      retrieveCode: async () =>
+        pollGmailForGreenhouseVerificationCode({
+          gmail: createGmailApiClient(emailVerificationConfig),
+          userEmail: emailVerificationConfig.gmailUserEmail || 'me',
+          submittedAt: verificationStartedAt
+        })
+    });
+
+    if (verificationResult.status !== 'code_entered') {
+      return context.pauseForManualReview({
+        step: 'email_verification_required',
+        message:
+          verificationResult.message,
+        stopReason: verificationResult.status,
+        details: {
+          boardEntry,
+          scrapedFields,
+          promptVersion: fillPlanResult.promptVersion,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          verificationStatus: verificationResult.status,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content(),
+        },
+      });
+    }
+
     await context.logStep(
-      'fill_plan_executed',
-      'Executed the Greenhouse fill plan against the current visible application form and stopped for Stage 5 review.',
+      'email_verification_code_entered',
+      'Submitted Greenhouse application into verification, entered the email security code, and stopped before final resubmit.',
       {
         boardEntry,
         scrapedFields,
@@ -134,6 +214,10 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
         executionResult,
+        verificationStatus: verificationResult.status,
+        verificationMessageId: verificationResult.messageId,
+        verificationSubject: verificationResult.subject,
+        verificationCodeLength: verificationResult.codeLength,
         preEntryWarmup,
         preFillWarmup,
         profileDirectory: context.session.identity.userDataDir ?? null,
@@ -141,9 +225,9 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
     );
 
     return context.pauseForManualReview({
-      step: 'fill_plan_executed',
+      step: 'email_verification_code_entered',
       message:
-        'Paused after executing the Greenhouse fill plan for Stage 5 review.',
+        'Entered the Greenhouse security code and paused before final resubmit.',
       details: {
         boardEntry,
         scrapedFields,
@@ -154,6 +238,10 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
         executionResult,
+        verificationStatus: verificationResult.status,
+        verificationMessageId: verificationResult.messageId,
+        verificationSubject: verificationResult.subject,
+        verificationCodeLength: verificationResult.codeLength,
         preEntryWarmup,
         preFillWarmup,
         profileDirectory: context.session.identity.userDataDir ?? null,

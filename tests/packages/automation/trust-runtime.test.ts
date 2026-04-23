@@ -37,6 +37,26 @@ describe('application trust runtime challenge detection', () => {
       })
     );
   });
+
+  test('treats Greenhouse security code wording as email verification challenge', async () => {
+    const page = createProbePage({
+      visibleSelectors: new Set(),
+      visibleText: ['security code', 'check your email']
+    });
+
+    await expect(
+      detectApplicationChallenge({
+        page,
+        board: 'greenhouse',
+        phase: 'after_submit'
+      })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        kind: 'email_verification_required',
+        phase: 'after_submit'
+      })
+    );
+  });
 });
 
 function createProbePage(input: {

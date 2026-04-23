@@ -14,6 +14,7 @@
     "@jobautomation/discovery": "workspace:*",
     "@jobautomation/llm": "workspace:*",
     "camoufox-js": "^0.10.2",
+    "googleapis": "^171.4.0",
     "node-html-parser": "^7.1.0",
     "playwright": "^1.52.0",
     "zod": "^4.1.5"
