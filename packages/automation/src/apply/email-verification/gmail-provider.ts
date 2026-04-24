@@ -14,6 +14,8 @@ const GREENHOUSE_MESSAGE_QUERY =
   'from:no-reply@us.greenhouse-mail.io subject:"Security code for your application"';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
+const UNAUTHORIZED_CLIENT_MESSAGE =
+  'Gmail OAuth rejected this client. The refresh token does not belong to the configured OAuth client ID/secret. Re-generate the refresh token using this exact Google OAuth client.';
 
 function maskCode(value: string | null | undefined): string | null {
   if (!value) {
@@ -41,6 +43,69 @@ async function emitDebugLog(
   details?: Record<string, unknown>
 ): Promise<void> {
   await logger?.(event, details);
+}
+
+function parseGoogleApiError(error: unknown): {
+  message: string;
+  errorCode: string | null;
+  errorDescription: string | null;
+  status: number | null;
+} {
+  const fallbackMessage =
+    error instanceof Error ? error.message : 'Gmail API request failed.';
+  if (!error || typeof error !== 'object') {
+    return {
+      message: fallbackMessage,
+      errorCode: null,
+      errorDescription: null,
+      status: null
+    };
+  }
+
+  const response = 'response' in error ? error.response : null;
+  const responseObject =
+    response && typeof response === 'object'
+      ? (response as {
+          status?: unknown;
+          data?: {
+            error?: unknown;
+            error_description?: unknown;
+          } | null;
+        })
+      : null;
+
+  const errorCode =
+    typeof responseObject?.data?.error === 'string' ? responseObject.data.error : null;
+  const errorDescription =
+    typeof responseObject?.data?.error_description === 'string'
+      ? responseObject.data.error_description
+      : null;
+  const status =
+    typeof responseObject?.status === 'number' ? responseObject.status : null;
+
+  return {
+    message: fallbackMessage,
+    errorCode,
+    errorDescription,
+    status
+  };
+}
+
+function classifyGoogleApiError(error: unknown): {
+  message: string;
+  errorCode: string | null;
+  errorDescription: string | null;
+  status: number | null;
+} {
+  const parsed = parseGoogleApiError(error);
+  if (parsed.errorCode === 'unauthorized_client') {
+    return {
+      ...parsed,
+      message: UNAUTHORIZED_CLIENT_MESSAGE
+    };
+  }
+
+  return parsed;
 }
 
 function decodeBase64Url(value: string): string {
@@ -350,13 +415,17 @@ export async function pollGmailForGreenhouseVerificationCode(input: {
         }
       }
     } catch (error) {
+      const classifiedError = classifyGoogleApiError(error);
       await emitDebugLog(input.debugLog, 'gmail_poll_auth_failed', {
         attempt,
-        errorMessage: error instanceof Error ? error.message : 'Gmail API request failed.'
+        errorMessage: classifiedError.message,
+        errorCode: classifiedError.errorCode,
+        errorDescription: classifiedError.errorDescription,
+        status: classifiedError.status
       });
       return {
         status: 'auth_failed',
-        message: error instanceof Error ? error.message : 'Gmail API request failed.'
+        message: classifiedError.message
       };
     }
 

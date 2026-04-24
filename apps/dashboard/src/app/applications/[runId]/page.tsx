@@ -17,6 +17,7 @@ type ParsedLogDetails = Record<string, unknown> & {
   questionLabel?: string;
   blockedRequiredFields?: Array<{ label?: string }>;
   errorMessage?: string;
+  event?: string;
 };
 
 function statusVariant(status: string) {
@@ -35,7 +36,31 @@ function statusVariant(status: string) {
   }
 }
 
-function statusSummary(status: string, stopReason: string | null): string {
+function authFailureSummary(detail: Awaited<ReturnType<typeof getApplicationRun>>): string | null {
+  if (!detail || detail.run.stopReason !== 'auth_failed') {
+    return null;
+  }
+
+  for (let index = detail.logs.length - 1; index >= 0; index -= 1) {
+    const log = detail.logs[index];
+    const details = parseLogDetails(log.detailsJson);
+    if (details?.event !== 'gmail_poll_auth_failed') {
+      continue;
+    }
+
+    if (typeof details.errorMessage === 'string' && details.errorMessage.trim().length > 0) {
+      return details.errorMessage;
+    }
+  }
+
+  return null;
+}
+
+function statusSummary(
+  status: string,
+  stopReason: string | null,
+  detail?: Awaited<ReturnType<typeof getApplicationRun>> | null
+): string {
   if (status === 'paused' && stopReason === 'manual_review_required') {
     return 'Paused at final review and waiting for a human to submit.';
   }
@@ -55,7 +80,10 @@ function statusSummary(status: string, stopReason: string | null): string {
     return 'Greenhouse verification email was not found before timeout.';
   }
   if (status === 'paused' && stopReason === 'auth_failed') {
-    return 'Greenhouse verification email retrieval failed due to Gmail auth error.';
+    return (
+      authFailureSummary(detail) ??
+      'Greenhouse verification email retrieval failed during Gmail OAuth token exchange.'
+    );
   }
   if (status === 'paused' && stopReason === 'email_verification_code_entered') {
     return 'Greenhouse verification code was entered and run paused before final resubmit.';
@@ -217,7 +245,7 @@ export default async function ApplicationRunDetailPage({
           Run State
         </p>
         <h3 className="mt-2 text-xl font-semibold text-foreground">
-          {statusSummary(detail.run.status, detail.run.stopReason)}
+          {statusSummary(detail.run.status, detail.run.stopReason, detail)}
         </h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           This read model stays explicit about skipped and manual review required outcomes so the

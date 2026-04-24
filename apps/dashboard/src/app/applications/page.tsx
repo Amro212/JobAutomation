@@ -48,7 +48,7 @@ function statusSummary(status: string, stopReason: string | null): string {
     return 'Greenhouse verification email was not found before timeout.';
   }
   if (status === 'paused' && stopReason === 'auth_failed') {
-    return 'Greenhouse verification email retrieval failed due to Gmail auth.';
+    return 'Greenhouse verification email retrieval failed during Gmail OAuth token exchange.';
   }
   if (status === 'paused' && stopReason === 'email_verification_code_entered') {
     return 'Greenhouse verification code was entered and paused before final resubmit.';

@@ -68,6 +68,41 @@ describe('greenhouse email verification', () => {
     });
   });
 
+  test('classifies unauthorized_client as OAuth client and refresh token mismatch', async () => {
+    const gmail = {
+      users: {
+        messages: {
+          list: vi.fn().mockRejectedValue(
+            Object.assign(new Error('unauthorized_client'), {
+              response: {
+                status: 401,
+                data: {
+                  error: 'unauthorized_client',
+                  error_description: 'Unauthorized'
+                }
+              }
+            })
+          ),
+          get: vi.fn()
+        }
+      }
+    };
+
+    await expect(
+      pollGmailForGreenhouseVerificationCode({
+        gmail,
+        userEmail: 'amromousa8@gmail.com',
+        submittedAt: new Date('2026-04-22T01:40:00.000Z'),
+        timeoutMs: 5,
+        pollIntervalMs: 1
+      })
+    ).resolves.toEqual({
+      status: 'auth_failed',
+      message:
+        'Gmail OAuth rejected this client. The refresh token does not belong to the configured OAuth client ID/secret. Re-generate the refresh token using this exact Google OAuth client.'
+    });
+  });
+
   test('clicks Greenhouse submit, enters retrieved code, then stops before final resubmit', async () => {
     const submitButton = {
       isVisible: vi.fn().mockResolvedValue(true),
