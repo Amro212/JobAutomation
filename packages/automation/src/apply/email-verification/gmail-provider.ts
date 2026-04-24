@@ -14,6 +14,8 @@ const GREENHOUSE_MESSAGE_QUERY =
   'from:no-reply@us.greenhouse-mail.io subject:"Security code for your application"';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
+/** Greenhouse / Gmail: message internalDate can be slightly before the submit click (send path, Date header). */
+const GMAIL_INTERNAL_DATE_SLACK_MS = 120_000;
 const UNAUTHORIZED_CLIENT_MESSAGE =
   'Gmail OAuth rejected this client. The refresh token does not belong to the configured OAuth client ID/secret. Re-generate the refresh token using this exact Google OAuth client.';
 
@@ -277,6 +279,7 @@ export async function pollGmailForGreenhouseVerificationCode(input: {
         const internalDateMs = Number(message?.internalDate ?? 0);
         const subject = headerValue(message?.payload?.headers, 'subject');
         const from = headerValue(message?.payload?.headers, 'from');
+        const minAcceptableInternalMs = input.submittedAt.getTime() - GMAIL_INTERNAL_DATE_SLACK_MS;
         await emitDebugLog(input.debugLog, 'gmail_message_loaded', {
           attempt,
           messageId,
@@ -288,12 +291,13 @@ export async function pollGmailForGreenhouseVerificationCode(input: {
               ? new Date(internalDateMs).toISOString()
               : null,
           submittedAt: input.submittedAt.toISOString(),
-          isOlderThanSubmit:
-            Number.isFinite(internalDateMs) && internalDateMs < input.submittedAt.getTime(),
+          minAcceptableInternalMs: new Date(minAcceptableInternalMs).toISOString(),
+          isOlderThanAcceptanceWindow:
+            Number.isFinite(internalDateMs) && internalDateMs < minAcceptableInternalMs,
           payloadMimeType: message?.payload?.mimeType ?? null,
           partMimeTypes: (message?.payload?.parts ?? []).map((part) => part.mimeType ?? null)
         });
-        if (Number.isFinite(internalDateMs) && internalDateMs < input.submittedAt.getTime()) {
+        if (Number.isFinite(internalDateMs) && internalDateMs < minAcceptableInternalMs) {
           await emitDebugLog(input.debugLog, 'gmail_message_skipped_old', {
             attempt,
             messageId,

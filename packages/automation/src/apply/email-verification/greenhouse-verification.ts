@@ -2,19 +2,9 @@ import type { Page, Locator } from 'playwright';
 
 import type { EmailVerificationDebugLog, GreenhouseVerificationCodeResult } from './contracts';
 
-type CodeRetriever = () => Promise<GreenhouseVerificationCodeResult>;
+type CodeRetriever = (submittedAt: Date) => Promise<GreenhouseVerificationCodeResult>;
 
 const VERIFICATION_PROMPT_PATTERN = /security code|verification code|check your email/i;
-
-async function firstVisibleLocator(candidates: Locator[]): Promise<Locator | null> {
-  for (const locator of candidates) {
-    if (await locator.isVisible().catch(() => false)) {
-      return locator;
-    }
-  }
-
-  return null;
-}
 
 async function emitDebugLog(
   logger: EmailVerificationDebugLog | undefined,
@@ -96,6 +86,7 @@ export async function submitGreenhouseApplicationAndEnterVerificationCode(input:
   }
 
   await submitButton.locator.click();
+  const submittedAt = new Date();
   await emitDebugLog(input.debugLog, 'greenhouse_submit_clicked', {
     source: submitButton.source
   });
@@ -124,8 +115,10 @@ export async function submitGreenhouseApplicationAndEnterVerificationCode(input:
     };
   }
 
-  await emitDebugLog(input.debugLog, 'greenhouse_retrieve_code_started');
-  const codeResult = await input.retrieveCode();
+  await emitDebugLog(input.debugLog, 'greenhouse_retrieve_code_started', {
+    submittedAt: submittedAt.toISOString()
+  });
+  const codeResult = await input.retrieveCode(submittedAt);
   await emitDebugLog(input.debugLog, 'greenhouse_retrieve_code_completed', {
     status: codeResult.status,
     ...(codeResult.status === 'matched'

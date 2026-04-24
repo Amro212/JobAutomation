@@ -417,7 +417,7 @@ describe('stage 5 site flow integration', () => {
     const submitGreenhouseApplicationAndEnterVerificationCode = vi
       .fn()
       .mockImplementation(async ({ retrieveCode }) => {
-        const codeResult = await retrieveCode();
+        const codeResult = await retrieveCode(new Date('2026-04-24T00:00:00.000Z'));
         if (codeResult.status !== 'matched') {
           return codeResult;
         }
@@ -581,7 +581,9 @@ describe('stage 5 site flow integration', () => {
     }));
     const submitGreenhouseApplicationAndEnterVerificationCode = vi
       .fn()
-      .mockImplementation(async ({ retrieveCode }) => retrieveCode());
+      .mockImplementation(async ({ retrieveCode }) =>
+        retrieveCode(new Date('2026-04-24T00:00:00.000Z'))
+      );
     vi.doMock('../../../packages/automation/src/apply/email-verification', async (importOriginal) => {
       const actual = await importOriginal<
         typeof import('../../../packages/automation/src/apply/email-verification')

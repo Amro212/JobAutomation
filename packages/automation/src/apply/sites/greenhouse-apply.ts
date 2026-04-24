@@ -197,11 +197,10 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       });
     }
 
-    const verificationStartedAt = new Date();
     const verificationResult = await submitGreenhouseApplicationAndEnterVerificationCode({
       page: context.session.page,
       debugLog: logVerificationDebug,
-      retrieveCode: async () => {
+      retrieveCode: async (submittedAt) => {
         if (!isConfiguredForGmailVerification(emailVerificationConfig)) {
           await logVerificationDebug('gmail_oauth_not_configured', {
             gmailUserEmail: emailVerificationConfig.gmailUserEmail || null,
@@ -219,7 +218,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         return pollGmailForGreenhouseVerificationCode({
           gmail: createGmailApiClient(emailVerificationConfig),
           userEmail: emailVerificationConfig.gmailUserEmail || 'me',
-          submittedAt: verificationStartedAt,
+          submittedAt,
           timeoutMs: GREENHOUSE_VERIFICATION_TIMEOUT_MS,
           debugLog: logVerificationDebug
         });

@@ -19,6 +19,56 @@ describe('greenhouse email verification', () => {
     expect(extractGreenhouseVerificationCode(sampleHtml)).toBe('KDpjDhqX');
   });
 
+  test('accepts verification email when internalDate is slightly before submittedAt (Gmail vs click skew)', async () => {
+    const submittedAt = new Date('2026-04-22T01:40:25.000Z');
+    const gmail = {
+      users: {
+        messages: {
+          list: vi.fn().mockResolvedValue({
+            data: {
+              messages: [{ id: 'message-skew', threadId: 'thread-1' }]
+            }
+          }),
+          get: vi.fn().mockResolvedValue({
+            data: {
+              id: 'message-skew',
+              threadId: 'thread-1',
+              internalDate: String(submittedAt.getTime() - 4_000),
+              payload: {
+                mimeType: 'text/html',
+                body: {
+                  data: Buffer.from(sampleHtml, 'utf8')
+                    .toString('base64')
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/g, '')
+                },
+                headers: [
+                  { name: 'From', value: 'Greenhouse <no-reply@us.greenhouse-mail.io>' },
+                  { name: 'Subject', value: 'Security code for your application to Capco' }
+                ]
+              }
+            }
+          })
+        }
+      }
+    };
+
+    await expect(
+      pollGmailForGreenhouseVerificationCode({
+        gmail,
+        userEmail: 'amromousa8@gmail.com',
+        submittedAt,
+        timeoutMs: 5,
+        pollIntervalMs: 1
+      })
+    ).resolves.toMatchObject({
+      status: 'matched',
+      code: 'KDpjDhqX',
+      messageId: 'message-skew'
+    });
+  });
+
   test('polls Gmail messages and returns first matching Greenhouse security code', async () => {
     const gmail = {
       users: {
