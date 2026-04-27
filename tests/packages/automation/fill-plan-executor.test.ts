@@ -1557,9 +1557,75 @@ describe('application fill plan executor', () => {
         ],
       });
 
-      return page.locator('#first_name').getAttribute('data-keys');
+      return {
+        keys: await page.locator('#first_name').getAttribute('data-keys'),
+        value: await page.locator('#first_name').inputValue(),
+      };
     });
 
-    expect(JSON.parse(result ?? '[]')).toEqual(['T', 'a', 'y', 'l', 'o', 'r']);
+    const printableKeys = JSON.parse(result.keys ?? '[]').filter(
+      (key: string) => /^[A-Za-z]$/.test(key)
+    );
+    expect(printableKeys.slice(-6)).toEqual(['T', 'a', 'y', 'l', 'o', 'r']);
+    expect(result.value).toBe('Taylor');
+  });
+
+  test('selects all and backspaces before typing into prefilled text fields', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <input id="full_name" name="full_name" value="Existing Name" />
+            <script>
+              const events = [];
+              const input = document.getElementById('full_name');
+              input.addEventListener('keydown', (event) => {
+                events.push(event.key);
+                input.dataset.keys = JSON.stringify(events);
+              });
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        fields: [
+          {
+            id: 'full_name',
+            label: 'Full Name',
+            type: 'text',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#full_name'],
+            options: [],
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: 'full_name',
+            action: 'fill',
+            value: 'Taylor Morgan',
+            confidence: 1,
+            skipReason: '',
+          },
+        ],
+      });
+
+      return {
+        keys: await page.locator('#full_name').getAttribute('data-keys'),
+        value: await page.locator('#full_name').inputValue(),
+      };
+    });
+
+    const keys = JSON.parse(result.keys ?? '[]');
+    expect(keys).toContain('Backspace');
+    expect(result.value).toBe('Taylor Morgan');
   });
 });

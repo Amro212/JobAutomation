@@ -153,17 +153,8 @@ function createHumanActionEngine(input: {
       await locator.click();
       metrics.pointerActions += 1;
 
-      const existingInputValue = await locator.inputValue().catch(() => null);
-      const existingTextContent = await locator.textContent().catch(() => null);
-      const existingValue = (
-        existingInputValue ??
-        existingTextContent ??
-        ''
-      ).trim();
-      if (existingValue.length > 0) {
-        await input.page.keyboard.press('Control+A').catch(() => undefined);
-        await input.page.keyboard.press('Backspace').catch(() => undefined);
-      }
+      await input.page.keyboard.press('ControlOrMeta+A').catch(() => undefined);
+      await input.page.keyboard.press('Backspace').catch(() => undefined);
       if (options?.ensureClear) {
         let cleared = false;
         for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -178,7 +169,7 @@ function createHumanActionEngine(input: {
             cleared = true;
             break;
           }
-          await input.page.keyboard.press('Control+A').catch(() => undefined);
+          await input.page.keyboard.press('ControlOrMeta+A').catch(() => undefined);
           await input.page.keyboard.press('Backspace').catch(() => undefined);
         }
         if (!cleared) {

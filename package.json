@@ -5,6 +5,7 @@
   "packageManager": "pnpm@10.6.2",
   "scripts": {
     "browser:install": "corepack pnpm --filter @jobautomation/automation exec camoufox-js fetch",
+    "playwright:install": "playwright install chromium",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts",
     "test:e2e": "playwright test",

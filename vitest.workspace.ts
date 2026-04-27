@@ -40,6 +40,13 @@ export const workspaceProjects = [
   },
   {
     test: {
+      name: 'llm',
+      environment: 'node',
+      include: ['tests/packages/llm/**/*.test.ts']
+    }
+  },
+  {
+    test: {
       name: 'documents',
       environment: 'node',
       include: ['tests/packages/documents/**/*.test.ts']
