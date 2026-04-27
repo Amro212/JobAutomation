@@ -44,7 +44,7 @@ const CHALLENGE_PROBES: Record<SupportedApplicationBoard, ChallengeProbe[]> = {
     {
       kind: 'email_verification_required',
       message: 'Greenhouse requested email verification before form completion.',
-      textPattern: /verification code|check your email|6-digit code|enter the code/i
+      textPattern: /verification code|security code|check your email|6-digit code|enter the code/i
     }
   ],
   ashby: [

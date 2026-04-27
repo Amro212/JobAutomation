@@ -26,6 +26,14 @@ export default [
       }
     }
   },
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node
+      }
+    }
+  },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],

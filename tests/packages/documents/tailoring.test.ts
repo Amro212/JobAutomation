@@ -147,8 +147,18 @@ describe('tailoring', () => {
       expect(persistedArtifacts[0]?.applicantProfileId).toBe('default');
       expect(readFileSync(resumeTexPath, 'utf8')).toContain('Built TypeScript automation systems');
       expect(readFileSync(resumeTexPath, 'utf8')).toContain('\\documentclass{article}');
-      expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('Dear Hiring Manager,');
-      expect(readFileSync(coverLetterTexPath, 'utf8')).toContain('Example Corp');
+      const coverLetterTex = readFileSync(coverLetterTexPath, 'utf8');
+      expect(coverLetterTex).toContain('Dear Hiring Manager,');
+      expect(coverLetterTex).toContain('Example Corp');
+      expect(coverLetterTex).toContain('\\usepackage{fontawesome}');
+      expect(coverLetterTex).toContain('\\faEnvelope');
+      expect(coverLetterTex).toContain('\\faLinkedin');
+      expect(coverLetterTex).toContain('\\faPhone');
+      expect(coverLetterTex).toContain('\\faMapMarker');
+      expect(coverLetterTex).toContain('\\scshape Taylor');
+      expect(coverLetterTex).not.toContain('\\scshape Taylor Example');
+      expect(coverLetterTex).not.toContain('Portfolio');
+      expect(coverLetterTex).not.toContain('fontawesome5');
 
       const resumePdfPath = join(outputRoot, 'artifacts', job.id, 'resume-variant', 'v1', 'resume.pdf');
       const coverLetterPdfPath = join(

@@ -106,7 +106,7 @@ describe('discovery run routes', () => {
     });
 
     expect(jobsResponse.json().jobs).toHaveLength(1);
-    expect(jobsResponse.json().jobs[0].companyName).toBe('Acme Corp');
+    expect(jobsResponse.json().jobs[0].companyName).toBe('Acme');
     expect(jobsResponse.json().jobs[0].title).toBe('Senior Platform Engineer');
     expect(runDetailResponse.statusCode).toBe(200);
     expect(runDetailResponse.json().run.status).toBe('completed');
@@ -254,7 +254,7 @@ describe('discovery run routes', () => {
         status: 'completed',
         jobCount: 1,
         newJobCount: 0,
-        updatedJobCount: 1
+        updatedJobCount: 0
       }),
       expect.objectContaining({
         sourceKind: 'lever',

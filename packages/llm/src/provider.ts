@@ -36,6 +36,19 @@ type OpenRouterErrorResponse = {
   };
 };
 
+type OpenRouterResponseFormat =
+  | {
+      type: 'json_object';
+    }
+  | {
+      type: 'json_schema';
+      json_schema: {
+        name: string;
+        strict: true;
+        schema: Record<string, unknown>;
+      };
+    };
+
 const OPENROUTER_MAX_FETCH_ATTEMPTS = 3;
 const OPENROUTER_RETRY_DELAY_MS = 2000;
 const OPENROUTER_REQUEST_TIMEOUT_MS = 300_000;
@@ -59,6 +72,92 @@ function readMessageContent(response: OpenRouterResponse): string {
   }
 
   throw new Error('OpenRouter returned an empty response.');
+}
+
+function stripMarkdownJsonFence(text: string): string {
+  const trimmed = text.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenceMatch?.[1]?.trim() ?? trimmed;
+}
+
+function extractJsonCandidate(text: string): string | null {
+  const stripped = stripMarkdownJsonFence(text);
+
+  let start = -1;
+  let stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < stripped.length; i += 1) {
+    const char = stripped[i]!;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      if (stack.length === 0) {
+        start = i;
+      }
+      stack.push(char);
+      continue;
+    }
+
+    if (char !== '}' && char !== ']') {
+      continue;
+    }
+
+    const opener = stack.at(-1);
+    if ((char === '}' && opener !== '{') || (char === ']' && opener !== '[')) {
+      start = -1;
+      stack = [];
+      continue;
+    }
+
+    stack.pop();
+    if (stack.length === 0 && start >= 0) {
+      return stripped.slice(start, i + 1).trim();
+    }
+  }
+
+  return null;
+}
+
+function parseStructuredJson(content: string): unknown {
+  const stripped = stripMarkdownJsonFence(content);
+
+  try {
+    return JSON.parse(stripped) as unknown;
+  } catch {
+    // Some models ignore JSON-only instructions and wrap the object in prose.
+  }
+
+  const candidate = extractJsonCandidate(content);
+
+  if (!candidate) {
+    throw new Error('OpenRouter returned invalid JSON.');
+  }
+
+  try {
+    return JSON.parse(candidate) as unknown;
+  } catch {
+    throw new Error('OpenRouter returned invalid JSON.');
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -120,13 +219,39 @@ function isRetryableFetchError(error: unknown): boolean {
   );
 }
 
+function buildResponseFormat(input: GenerateStructuredObjectInput): OpenRouterResponseFormat {
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: input.schemaName,
+      strict: true,
+      schema: input.schema
+    }
+  };
+}
+
+function shouldRetryWithJsonObject(status: number, details: string): boolean {
+  const normalized = details.toLowerCase();
+
+  return (
+    status === 400 &&
+    (normalized.includes('response_format') ||
+      normalized.includes('json_schema') ||
+      normalized.includes('structured output') ||
+      normalized.includes('structured outputs') ||
+      normalized.includes('not support') ||
+      normalized.includes('unsupported'))
+  );
+}
+
 export function createOpenRouterProvider(config: OpenRouterConfig) {
   const fetchImpl = config.fetchImpl ?? fetch;
   const endpoint = `${trimTrailingSlash(config.baseUrl)}/chat/completions`;
 
-  async function generateStructuredObjectWithMetadata(
-    input: GenerateStructuredObjectInput
-  ): Promise<GenerateStructuredObjectResult> {
+  async function requestStructuredObject(
+    input: GenerateStructuredObjectInput,
+    responseFormat: OpenRouterResponseFormat
+  ): Promise<Response> {
     let response: Response | null = null;
     let lastError: unknown;
 
@@ -141,9 +266,7 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
           signal: AbortSignal.timeout(OPENROUTER_REQUEST_TIMEOUT_MS),
           body: JSON.stringify({
             model: config.model,
-            response_format: {
-              type: 'json_object'
-            },
+            response_format: responseFormat,
             messages: [
               {
                 role: 'system',
@@ -178,33 +301,48 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
       throw new Error(`OpenRouter transport error: ${message}${details}`);
     }
 
-    if (!response.ok) {
-      let details = '';
+    return response;
+  }
 
-      try {
-        const errorPayload = (await response.json()) as OpenRouterErrorResponse;
-        const message = errorPayload.error?.message?.trim();
-        if (message) {
-          details = `: ${message}`;
-        }
-      } catch {
-        details = '';
+  async function readErrorDetails(response: Response): Promise<string> {
+    try {
+      const errorPayload = (await response.json()) as OpenRouterErrorResponse;
+      const message = errorPayload.error?.message?.trim();
+      if (message) {
+        return `: ${message}`;
+      }
+    } catch {
+      return '';
+    }
+
+    return '';
+  }
+
+  async function generateStructuredObjectWithMetadata(
+    input: GenerateStructuredObjectInput
+  ): Promise<GenerateStructuredObjectResult> {
+    let response = await requestStructuredObject(input, buildResponseFormat(input));
+
+    if (!response.ok) {
+      const details = await readErrorDetails(response);
+
+      if (shouldRetryWithJsonObject(response.status, details)) {
+        response = await requestStructuredObject(input, { type: 'json_object' });
       }
 
-      throw new Error(`OpenRouter request failed with status ${response.status}${details}.`);
+      if (!response.ok) {
+        const fallbackDetails = response.bodyUsed ? details : await readErrorDetails(response);
+        throw new Error(`OpenRouter request failed with status ${response.status}${fallbackDetails}.`);
+      }
     }
 
     const payload = (await response.json()) as OpenRouterResponse;
     const content = readMessageContent(payload);
 
-    try {
-      return {
-        object: JSON.parse(content) as unknown,
-        rawText: content
-      };
-    } catch {
-      throw new Error('OpenRouter returned invalid JSON.');
-    }
+    return {
+      object: parseStructuredJson(content),
+      rawText: content
+    };
   }
 
   return {

@@ -36,6 +36,14 @@ async function saveSetup(formData: FormData): Promise<void> {
     baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? ''),
     preferredCountries,
     autofillProfile: parseMinimalAutofillFormData(formData),
+    emailVerification: {
+      enabled: String(formData.get('emailVerificationEnabled') ?? '') === 'yes',
+      provider: 'gmail_oauth',
+      gmailUserEmail: String(formData.get('gmailUserEmail') ?? '').trim(),
+      gmailClientId: String(formData.get('gmailClientId') ?? '').trim(),
+      gmailClientSecret: String(formData.get('gmailClientSecret') ?? '').trim(),
+      gmailRefreshToken: String(formData.get('gmailRefreshToken') ?? '').trim()
+    },
     jobKeywordProfile: existing?.jobKeywordProfile ?? null,
     jobKeywordProfileGeneratedAt: existing?.jobKeywordProfileGeneratedAt ?? null
   });

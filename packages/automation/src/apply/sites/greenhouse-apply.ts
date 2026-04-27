@@ -4,10 +4,20 @@ import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
 import {
+  createGmailApiClient,
+  isEnabledForGmailVerification,
+  isConfiguredForGmailVerification,
+  pollGmailForGreenhouseVerificationCode,
+  resolveEmailVerificationConfig,
+  submitGreenhouseApplicationAndEnterVerificationCode
+} from '../email-verification';
+import {
   detectApplicationChallenge,
   warmApplicationFormBeforeFill,
   warmApplicationPageBeforeEntry,
 } from '../trust-runtime';
+
+const GREENHOUSE_VERIFICATION_TIMEOUT_MS = 3 * 60_000;
 
 export const greenhouseApplicationSite: SupportedApplicationSite = {
   siteKey: 'greenhouse',
@@ -121,9 +131,136 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       });
     }
 
+    const emailVerificationConfig = resolveEmailVerificationConfig(
+      context.applicantProfile?.emailVerification ?? null
+    );
+    const logVerificationDebug = async (
+      event: string,
+      details?: Record<string, unknown>
+    ): Promise<void> => {
+      await context.logStep(
+        'email_verification_debug',
+        `Greenhouse email verification debug: ${event}.`,
+        {
+          event,
+          ...(details ?? {})
+        }
+      );
+    };
+    await logVerificationDebug('resolved_email_verification_config', {
+      enabled: isEnabledForGmailVerification(emailVerificationConfig),
+      configured: isConfiguredForGmailVerification(emailVerificationConfig),
+      provider: emailVerificationConfig?.provider ?? null,
+      gmailUserEmail: emailVerificationConfig?.gmailUserEmail ?? null,
+      hasClientId: Boolean(emailVerificationConfig?.gmailClientId.trim()),
+      hasClientSecret: Boolean(emailVerificationConfig?.gmailClientSecret.trim()),
+      hasRefreshToken: Boolean(emailVerificationConfig?.gmailRefreshToken.trim())
+    });
+    if (!isEnabledForGmailVerification(emailVerificationConfig)) {
+      await context.logStep(
+        'fill_plan_executed',
+        'Executed the Greenhouse fill plan against the current visible application form and stopped for Stage 5 review.',
+        {
+          boardEntry,
+          scrapedFields,
+          promptVersion: fillPlanResult.promptVersion,
+          rawResponseLength: fillPlanResult.rawResponseLength,
+          promptPayload: fillPlanResult.promptPayload,
+          responseJson: fillPlanResult.responseJson,
+          fieldDiagnostics: fillPlanResult.fieldDiagnostics,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        }
+      );
+
+      return context.pauseForManualReview({
+        step: 'fill_plan_executed',
+        message:
+          'Paused after executing the Greenhouse fill plan for Stage 5 review.',
+        details: {
+          boardEntry,
+          scrapedFields,
+          promptVersion: fillPlanResult.promptVersion,
+          rawResponseLength: fillPlanResult.rawResponseLength,
+          promptPayload: fillPlanResult.promptPayload,
+          responseJson: fillPlanResult.responseJson,
+          fieldDiagnostics: fillPlanResult.fieldDiagnostics,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        },
+      });
+    }
+
+    const verificationResult = await submitGreenhouseApplicationAndEnterVerificationCode({
+      page: context.session.page,
+      debugLog: logVerificationDebug,
+      retrieveCode: async (submittedAt) => {
+        if (!isConfiguredForGmailVerification(emailVerificationConfig)) {
+          await logVerificationDebug('gmail_oauth_not_configured', {
+            gmailUserEmail: emailVerificationConfig.gmailUserEmail || null,
+            hasClientId: Boolean(emailVerificationConfig.gmailClientId.trim()),
+            hasClientSecret: Boolean(emailVerificationConfig.gmailClientSecret.trim()),
+            hasRefreshToken: Boolean(emailVerificationConfig.gmailRefreshToken.trim())
+          });
+          return {
+            status: 'not_configured' as const,
+            message:
+              'Greenhouse verification challenge triggered, but Gmail OAuth is incomplete. Add Gmail address, client ID, client secret, and refresh token in setup.'
+          };
+        }
+
+        return pollGmailForGreenhouseVerificationCode({
+          gmail: createGmailApiClient(emailVerificationConfig),
+          userEmail: emailVerificationConfig.gmailUserEmail || 'me',
+          submittedAt,
+          timeoutMs: GREENHOUSE_VERIFICATION_TIMEOUT_MS,
+          debugLog: logVerificationDebug
+        });
+      }
+    });
+    await logVerificationDebug('greenhouse_verification_result', {
+      status: verificationResult.status,
+      ...(verificationResult.status === 'code_entered'
+        ? {
+            messageId: verificationResult.messageId,
+            subject: verificationResult.subject,
+            codeLength: verificationResult.codeLength
+          }
+        : {
+            message: verificationResult.message
+          })
+    });
+
+    if (verificationResult.status !== 'code_entered') {
+      return context.pauseForManualReview({
+        step: 'email_verification_required',
+        message:
+          verificationResult.message,
+        stopReason: verificationResult.status,
+        details: {
+          boardEntry,
+          scrapedFields,
+          promptVersion: fillPlanResult.promptVersion,
+          fillPlan: fillPlanResult.fillPlan,
+          executionResult,
+          verificationStatus: verificationResult.status,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content(),
+        },
+      });
+    }
+
     await context.logStep(
-      'fill_plan_executed',
-      'Executed the Greenhouse fill plan against the current visible application form and stopped for Stage 5 review.',
+      'email_verification_code_entered',
+      'Submitted Greenhouse application into verification, entered the email security code, and stopped before final resubmit.',
       {
         boardEntry,
         scrapedFields,
@@ -134,6 +271,10 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
         executionResult,
+        verificationStatus: verificationResult.status,
+        verificationMessageId: verificationResult.messageId,
+        verificationSubject: verificationResult.subject,
+        verificationCodeLength: verificationResult.codeLength,
         preEntryWarmup,
         preFillWarmup,
         profileDirectory: context.session.identity.userDataDir ?? null,
@@ -141,9 +282,10 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
     );
 
     return context.pauseForManualReview({
-      step: 'fill_plan_executed',
+      step: 'email_verification_code_entered',
       message:
-        'Paused after executing the Greenhouse fill plan for Stage 5 review.',
+        'Entered the Greenhouse security code and paused before final resubmit.',
+      stopReason: 'email_verification_code_entered',
       details: {
         boardEntry,
         scrapedFields,
@@ -154,6 +296,10 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         fieldDiagnostics: fillPlanResult.fieldDiagnostics,
         fillPlan: fillPlanResult.fillPlan,
         executionResult,
+        verificationStatus: verificationResult.status,
+        verificationMessageId: verificationResult.messageId,
+        verificationSubject: verificationResult.subject,
+        verificationCodeLength: verificationResult.codeLength,
         preEntryWarmup,
         preFillWarmup,
         profileDirectory: context.session.identity.userDataDir ?? null,

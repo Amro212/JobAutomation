@@ -102,7 +102,7 @@ describe('Lever discovery', () => {
     expect(normalized.sourceUrl).toBe(
       'https://jobs.lever.co/dnb/6590549e-d893-4e0e-8934-dda77ef05223'
     );
-    expect(normalized.companyName).toBe('Dun & Bradstreet');
+    expect(normalized.companyName).toBe('DNB');
     expect(normalized.title).toBe('Account Executive II, SLED (R-18831)');
     expect(normalized.location).toBe('Remote - United States');
     expect(normalized.remoteType).toBe('remote');

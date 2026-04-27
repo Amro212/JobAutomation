@@ -1,6 +1,7 @@
 import type { DiscoverySourceRecord } from '@jobautomation/core';
 
 import type { SourceAdapter, SourceAdapterContext } from '../../contracts/source-adapter';
+import { deriveCompanyName } from '../../normalization/derive-company-name';
 import { normalizeJob } from '../../normalization/normalize-job';
 import type { AshbyJob } from './ashby-types';
 
@@ -55,7 +56,11 @@ export function createAshbyAdapter(source: DiscoverySourceRecord): SourceAdapter
           sourceKind: 'ashby',
           sourceId: sourceJob.id,
           sourceUrl: sourceJob.jobUrl,
-          companyName: source.label,
+          companyName: deriveCompanyName({
+            sourceUrl: sourceJob.jobUrl,
+            sourceKey: source.sourceKey,
+            fallbackLabel: source.label
+          }),
           title: sourceJob.title,
           location: sourceJob.location,
           remoteType: deriveRemoteType(sourceJob),

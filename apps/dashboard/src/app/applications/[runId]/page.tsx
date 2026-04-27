@@ -17,6 +17,7 @@ type ParsedLogDetails = Record<string, unknown> & {
   questionLabel?: string;
   blockedRequiredFields?: Array<{ label?: string }>;
   errorMessage?: string;
+  event?: string;
 };
 
 function statusVariant(status: string) {
@@ -35,9 +36,57 @@ function statusVariant(status: string) {
   }
 }
 
-function statusSummary(status: string, stopReason: string | null): string {
+function authFailureSummary(detail: Awaited<ReturnType<typeof getApplicationRun>>): string | null {
+  if (!detail || detail.run.stopReason !== 'auth_failed') {
+    return null;
+  }
+
+  for (let index = detail.logs.length - 1; index >= 0; index -= 1) {
+    const log = detail.logs[index];
+    const details = parseLogDetails(log.detailsJson);
+    if (details?.event !== 'gmail_poll_auth_failed') {
+      continue;
+    }
+
+    if (typeof details.errorMessage === 'string' && details.errorMessage.trim().length > 0) {
+      return details.errorMessage;
+    }
+  }
+
+  return null;
+}
+
+function statusSummary(
+  status: string,
+  stopReason: string | null,
+  detail?: Awaited<ReturnType<typeof getApplicationRun>> | null
+): string {
   if (status === 'paused' && stopReason === 'manual_review_required') {
     return 'Paused at final review and waiting for a human to submit.';
+  }
+  if (status === 'paused' && stopReason === 'not_configured') {
+    return 'Greenhouse reached email verification, but Gmail OAuth is incomplete.';
+  }
+  if (status === 'paused' && stopReason === 'submit_button_not_found') {
+    return 'Greenhouse submit button was not found, so verification flow never started.';
+  }
+  if (status === 'paused' && stopReason === 'challenge_not_visible') {
+    return 'Greenhouse submit was attempted, but verification challenge did not appear.';
+  }
+  if (status === 'paused' && stopReason === 'code_input_not_found') {
+    return 'Greenhouse verification challenge appeared, but code input was not found.';
+  }
+  if (status === 'paused' && stopReason === 'timeout') {
+    return 'Greenhouse verification email was not found before timeout.';
+  }
+  if (status === 'paused' && stopReason === 'auth_failed') {
+    return (
+      authFailureSummary(detail) ??
+      'Greenhouse verification email retrieval failed during Gmail OAuth token exchange.'
+    );
+  }
+  if (status === 'paused' && stopReason === 'email_verification_code_entered') {
+    return 'Greenhouse verification code was entered and run paused before final resubmit.';
   }
 
   switch (status) {
@@ -196,7 +245,7 @@ export default async function ApplicationRunDetailPage({
           Run State
         </p>
         <h3 className="mt-2 text-xl font-semibold text-foreground">
-          {statusSummary(detail.run.status, detail.run.stopReason)}
+          {statusSummary(detail.run.status, detail.run.stopReason, detail)}
         </h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           This read model stays explicit about skipped and manual review required outcomes so the

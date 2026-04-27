@@ -37,39 +37,46 @@ function webHrefTarget(url: string): string {
   return urlForDetokenize(`https://${t.replace(/^\/+/, '')}`);
 }
 
-/**
- * Header row: email, LinkedIn, phone, portfolio (replaces map-marker / city in the reference design).
- */
+function linkedIconText(args: { href: string; icon: string; text: string }): string {
+  return String.raw`\href{\detokenize{${args.href}}}{${args.icon}\enspace ${escapeLatex(args.text)}}`;
+}
+
+/** Header row matching the reference: email, LinkedIn, phone, location. */
 export function buildCoverLetterContactRow(profile: ApplicantProfile): string {
   const parts: string[] = [];
 
   const email = profile.email.trim();
   if (email) {
-    const mailto = `mailto:${email}`;
-    parts.push(
-      String.raw`\href{\detokenize{${urlForDetokenize(mailto)}}}{\faEnvelope\enspace ${escapeLatex(email)}}`
-    );
+    parts.push(linkedIconText({
+      href: urlForDetokenize(`mailto:${email}`),
+      icon: String.raw`\faEnvelope`,
+      text: email
+    }));
   }
 
   const linkedin = profile.linkedinUrl.trim();
   if (linkedin) {
-    parts.push(
-      String.raw`\href{\detokenize{${webHrefTarget(linkedin)}}}{\faLinkedinIn\enspace ${escapeLatex('LinkedIn')}}`
-    );
+    parts.push(linkedIconText({
+      href: webHrefTarget(linkedin),
+      icon: String.raw`\faLinkedin`,
+      text: linkedin.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '')
+    }));
   }
 
   const phone = profile.phone.trim();
   const tel = telHref(phone);
   if (tel) {
     const phoneDisplay = formatPhoneDisplay(phone);
-    parts.push(String.raw`\href{\detokenize{${tel}}}{\faPhone\enspace ${escapeLatex(phoneDisplay)}}`);
+    parts.push(linkedIconText({
+      href: tel,
+      icon: String.raw`\faPhone`,
+      text: phoneDisplay
+    }));
   }
 
-  const website = profile.websiteUrl.trim();
-  if (website) {
-    parts.push(
-      String.raw`\href{\detokenize{${webHrefTarget(website)}}}{\faGlobe\enspace ${escapeLatex('Portfolio')}}`
-    );
+  const location = profile.location.trim();
+  if (location) {
+    parts.push(String.raw`\faMapMarker\enspace ${escapeLatex(location)}`);
   }
 
   return parts.join(String.raw`\hfill`);

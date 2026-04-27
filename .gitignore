@@ -3,6 +3,8 @@
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
+Desktop.ini
 .cursorignore
 
 ## Project Files
@@ -38,3 +40,6 @@ pnpm-debug.log*
 *.log
 data/
 .env
+.env.local
+.env.*.local
+!.env.example

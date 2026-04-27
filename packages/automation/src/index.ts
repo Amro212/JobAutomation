@@ -6,6 +6,7 @@ export * from './apply/file-upload';
 export * from './apply/form-scraper';
 export * from './apply/openrouter-answer-module';
 export * from './apply/pause-application-run';
+export * from './apply/email-verification';
 export * from './apply/session-manager';
 export * from './apply/stop-before-submit';
 export * from './apply/sites/ashby-apply';

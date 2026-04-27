@@ -35,9 +35,33 @@ JobAutomation is designed to streamline the entire job search process, from disc
 Install dependencies, then fetch the Camoufox browser binary before running browser-backed discovery or application automation:
 
 ```bash
+corepack enable
 corepack pnpm install
 corepack pnpm browser:install
+corepack pnpm playwright:install
 ```
+
+Copy `.env.example` to `.env` on each machine and keep `.env` local. Relative paths in environment variables resolve from the repository root, so prefer `./data/...` over machine-specific absolute paths unless a local override is required.
+
+## Cross-Platform Development
+
+This repository is configured for development on both Windows and macOS:
+
+- Git normalizes text files to LF through `.gitattributes`; Windows-only scripts remain CRLF.
+- Editor defaults live in `.editorconfig`.
+- Generated output, browser profiles, local databases, logs, and local `.env` files are ignored.
+- Playwright dashboard E2E servers use Node wrapper scripts instead of PowerShell or hardcoded machine paths.
+
+Recommended workflow when switching machines:
+
+```bash
+git pull --rebase
+corepack enable
+corepack pnpm install
+corepack pnpm test
+```
+
+On Windows, WSL2 is the closest match to macOS/Linux tooling. Native Windows also works, but keep all project paths relative in code, config, and tests.
 
 ### Authorized Browser Automation Scope
 
