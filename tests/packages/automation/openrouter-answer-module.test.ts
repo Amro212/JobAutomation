@@ -78,7 +78,9 @@ const baseJob = (overrides: Partial<JobRecord> = {}): JobRecord => ({
   reviewUpdatedAt: null,
   reviewScoreUpdatedAt: null,
   prefilterPass: null,
+  prefilterScore: null,
   prefilterReasonsJson: null,
+  prefilterSignalsJson: null,
   discoveredAt: new Date('2026-04-09T09:00:00.000Z'),
   updatedAt: new Date('2026-04-09T09:00:00.000Z'),
   ...overrides

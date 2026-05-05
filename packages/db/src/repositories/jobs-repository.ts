@@ -22,7 +22,9 @@ export type UpsertJobInput = Omit<
   JobRecord,
   | 'id'
   | 'prefilterPass'
+  | 'prefilterScore'
   | 'prefilterReasonsJson'
+  | 'prefilterSignalsJson'
   | 'reviewNotes'
   | 'reviewSummary'
   | 'reviewScore'
@@ -104,7 +106,12 @@ export class JobsRepository {
   async clearAllPrefilterResults(): Promise<void> {
     await this.db
       .update(jobsTable)
-      .set({ prefilterPass: null, prefilterReasonsJson: null });
+      .set({
+        prefilterPass: null,
+        prefilterScore: null,
+        prefilterReasonsJson: null,
+        prefilterSignalsJson: null
+      });
   }
 
   /** Jobs with no cached pre-filter result yet (e.g. new row or invalidated). */
@@ -148,7 +155,9 @@ export class JobsRepository {
             .update(jobsTable)
             .set({
               prefilterPass: result.pass ? 1 : 0,
-              prefilterReasonsJson: JSON.stringify(result.reasons)
+              prefilterScore: result.score,
+              prefilterReasonsJson: JSON.stringify(result.reasons),
+              prefilterSignalsJson: JSON.stringify(result.signals)
             })
             .where(eq(jobsTable.id, row.id));
           evaluated += 1;
@@ -174,7 +183,10 @@ export class JobsRepository {
 
     const baseSelect = this.db.select().from(jobsTable);
     const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
-    const ordered = filtered.orderBy(desc(jobsTable.updatedAt));
+    const ordered =
+      filters.matchProfile === 'me'
+        ? filtered.orderBy(desc(jobsTable.prefilterScore), desc(jobsTable.updatedAt))
+        : filtered.orderBy(desc(jobsTable.updatedAt));
 
     const records = pagination
       ? await ordered
@@ -217,12 +229,16 @@ export class JobsRepository {
       sourceKind: jobsTable.sourceKind,
       location: jobsTable.location,
       remoteType: jobsTable.remoteType,
-      status: jobsTable.status
+      status: jobsTable.status,
+      prefilterScore: jobsTable.prefilterScore
     };
 
     const baseSelect = this.db.select(summaryColumns).from(jobsTable);
     const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
-    const ordered = filtered.orderBy(desc(jobsTable.updatedAt));
+    const ordered =
+      filters.matchProfile === 'me'
+        ? filtered.orderBy(desc(jobsTable.prefilterScore), desc(jobsTable.updatedAt))
+        : filtered.orderBy(desc(jobsTable.updatedAt));
 
     const records = pagination
       ? await ordered
@@ -294,7 +310,9 @@ export class JobsRepository {
 
     if (prefilterFieldsChanged) {
       updateSet.prefilterPass = null;
+      updateSet.prefilterScore = null;
       updateSet.prefilterReasonsJson = null;
+      updateSet.prefilterSignalsJson = null;
     }
 
     if ('reviewNotes' in input) {

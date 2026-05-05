@@ -31,7 +31,9 @@ describe('database schema', () => {
     expect(jobColumns.sourceId).toBeDefined();
     expect(jobColumns.discoveryRunId).toBeDefined();
     expect(jobColumns.prefilterPass).toBeDefined();
+    expect(jobColumns.prefilterScore).toBeDefined();
     expect(jobColumns.prefilterReasonsJson).toBeDefined();
+    expect(jobColumns.prefilterSignalsJson).toBeDefined();
     expect(runColumns.scheduleId).toBeDefined();
     expect(applicantColumns.baseResumeFileName).toBeDefined();
     expect(applicantColumns.baseResumeTex).toBeDefined();

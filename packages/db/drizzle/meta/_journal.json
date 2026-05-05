@@ -78,6 +78,13 @@
       "when": 1776980000000,
       "tag": "0010_email_verification_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1778000000000,
+      "tag": "0011_job_prefilter_score",
+      "breakpoints": true
     }
   ]
 }

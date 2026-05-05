@@ -45,7 +45,7 @@ describe('prefilterJob', () => {
     expect(r.reasons).toContain('title_negative');
   });
 
-  test('rejects title when profile requires a match but title has none', () => {
+  test('rejects low-evidence jobs when profile title has no supporting match', () => {
     const r = prefilterJob(
       { ...baseJob, title: 'Product Designer' },
       {
@@ -58,7 +58,52 @@ describe('prefilterJob', () => {
       }
     );
     expect(r.pass).toBe(false);
-    expect(r.reasons).toContain('title_no_match');
+    expect(r.reasons).toEqual(['low_match_score']);
+  });
+
+  test('keeps strong description matches even when the title is not an exact target title', () => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Developer Tooling Specialist',
+        descriptionText:
+          'Build TypeScript, Node.js, and Playwright automation for a job application platform.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'mid',
+          target_titles: ['software engineer'],
+          positive_keywords: ['typescript', 'node.js', 'playwright', 'automation']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(true);
+    expect(r.score).toBeGreaterThanOrEqual(45);
+    expect(r.reasons).not.toContain('title_no_match');
+  });
+
+  test('rejects unrelated jobs with a low deterministic match score instead of title mismatch alone', () => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Line Cook',
+        descriptionText: 'Prepare ingredients and support dinner service.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'mid',
+          target_titles: ['software engineer'],
+          positive_keywords: ['typescript', 'node.js', 'playwright', 'automation']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(false);
+    expect(r.reasons).toEqual(['low_match_score']);
+    expect(r.score).toBeLessThan(45);
   });
 
   test('passes title when a positive keyword matches', () => {
@@ -87,10 +132,10 @@ describe('prefilterJob', () => {
     };
     expect(
       prefilterJob({ ...baseJob, title: 'Workplace Manager' }, ctx).reasons
-    ).toContain('title_no_match');
+    ).toEqual(['low_match_score']);
     expect(
       prefilterJob({ ...baseJob, title: 'Social Marketing Manager' }, ctx).reasons
-    ).toContain('title_no_match');
+    ).toEqual(['low_match_score']);
     expect(prefilterJob({ ...baseJob, title: 'C Developer' }, ctx).pass).toBe(true);
   });
 
@@ -143,30 +188,48 @@ describe('prefilterJob', () => {
     expect(r.pass).toBe(true);
   });
 
-  test('rejects junior applicant when description implies minimum years at or above cap', () => {
+  test('rejects when job minimum years clearly exceeds profile experience evidence', () => {
     const r = prefilterJob(
       {
         ...baseJob,
         descriptionText: 'We need someone with 5+ years of experience in backend systems.'
       },
       {
-        jobKeywordProfile: profile({ seniority: 'junior', target_titles: ['engineer'] }),
-        preferredCountries: []
+        jobKeywordProfile: null,
+        preferredCountries: [],
+        matchProfile: {
+          targetTitles: ['engineer'],
+          positiveKeywords: ['backend systems'],
+          negativeKeywords: [],
+          seniority: null,
+          experienceYears: 2,
+          skills: ['engineer', 'backend', 'systems', 'backend systems'],
+          titleTerms: ['engineer']
+        }
       }
     );
     expect(r.pass).toBe(false);
     expect(r.reasons).toContain('experience_min_years');
   });
 
-  test('does not reject senior applicant on years alone', () => {
+  test('does not reject when profile experience evidence satisfies the job minimum', () => {
     const r = prefilterJob(
       {
         ...baseJob,
         descriptionText: 'Minimum 8+ years required.'
       },
       {
-        jobKeywordProfile: profile({ seniority: 'senior', target_titles: ['engineer'] }),
-        preferredCountries: []
+        jobKeywordProfile: null,
+        preferredCountries: [],
+        matchProfile: {
+          targetTitles: ['engineer'],
+          positiveKeywords: ['platform systems'],
+          negativeKeywords: [],
+          seniority: null,
+          experienceYears: 10,
+          skills: ['engineer', 'platform', 'systems', 'platform systems'],
+          titleTerms: ['engineer']
+        }
       }
     );
     expect(r.reasons).not.toContain('experience_min_years');
@@ -214,6 +277,35 @@ describe('prefilterContextFromApplicant', () => {
     const ctx = prefilterContextFromApplicant(applicant);
     expect(ctx.preferredCountries).toEqual(['CA']);
     expect(ctx.jobKeywordProfile?.positive_keywords).toContain('rust');
+  });
+
+  test('builds a deterministic match profile from resume and context without generated keywords', () => {
+    const applicant = {
+      id: 'default',
+      fullName: 'A',
+      email: '',
+      phone: '',
+      location: '',
+      summary: 'Full-stack software engineer focused on TypeScript and React.',
+      reusableContext: 'Built Playwright automation and Node.js services.',
+      linkedinUrl: '',
+      websiteUrl: '',
+      baseResumeFileName: '',
+      baseResumeTex: '\\section{Skills} TypeScript, React, Node.js, Playwright',
+      preferredCountries: [],
+      jobKeywordProfile: null,
+      jobKeywordProfileGeneratedAt: null,
+      autofillProfile: minimalAutofillProfileSchema.parse({}),
+      updatedAt: new Date()
+    } satisfies ApplicantProfile;
+
+    const ctx = prefilterContextFromApplicant(applicant);
+
+    expect(prefilterMatchesMeaningful(ctx)).toBe(true);
+    expect(ctx.matchProfile.skills).toEqual(
+      expect.arrayContaining(['typescript', 'react', 'node.js', 'playwright'])
+    );
+    expect(ctx.matchProfile.skills).toEqual(expect.arrayContaining(['software engineer']));
   });
 });
 

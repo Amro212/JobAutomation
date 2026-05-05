@@ -9,40 +9,66 @@ export const prefilterReasonSchema = z.enum([
   'title_negative',
   'title_no_match',
   'location',
-  'experience_min_years'
+  'experience_min_years',
+  'low_match_score'
 ]);
 
 export type PrefilterReason = z.infer<typeof prefilterReasonSchema>;
 
+export type MatchSignal =
+  | 'target_title'
+  | 'profile_title_overlap'
+  | 'profile_term_overlap'
+  | 'experience_fit'
+  | 'location_fit'
+  | 'description_evidence'
+  | 'low_match_score';
+
+export type DeterministicMatchProfile = {
+  targetTitles: string[];
+  positiveKeywords: string[];
+  negativeKeywords: string[];
+  seniority: JobKeywordSeniority | null;
+  experienceYears: number | null;
+  skills: string[];
+  titleTerms: string[];
+};
+
 export type PrefilterContext = {
   jobKeywordProfile: JobKeywordProfile | null;
   preferredCountries: string[];
+  matchProfile?: DeterministicMatchProfile;
 };
 
 export function prefilterContextFromApplicant(profile: ApplicantProfile | null): PrefilterContext {
+  const text = profile
+    ? [profile.summary, profile.reusableContext, profile.baseResumeTex].join('\n')
+    : '';
+
   return {
     jobKeywordProfile: profile?.jobKeywordProfile ?? null,
-    preferredCountries: profile?.preferredCountries ?? []
+    preferredCountries: profile?.preferredCountries ?? [],
+    matchProfile: buildDeterministicMatchProfile(profile?.jobKeywordProfile ?? null, text)
   };
 }
 
 /** True when the applicant has any saved keyword profile or preferred countries (pre-filter is meaningful). */
 export function prefilterMatchesMeaningful(ctx: PrefilterContext): boolean {
-  return ctx.jobKeywordProfile != null || ctx.preferredCountries.length > 0;
+  const profile = normalizeMatchProfile(ctx);
+  return (
+    ctx.jobKeywordProfile != null ||
+    ctx.preferredCountries.length > 0 ||
+    profile.skills.length > 0 ||
+    profile.titleTerms.length > 0 ||
+    profile.targetTitles.length > 0
+  );
 }
 
 export type PrefilterResult = {
   pass: boolean;
   reasons: PrefilterReason[];
-};
-
-/** Max "minimum years" implied in posting text before we reject, by applicant seniority. null = do not reject on years. */
-const SENIORITY_MAX_MIN_YEARS: Record<JobKeywordSeniority, number | null> = {
-  new_grad: 2,
-  junior: 5,
-  mid: 8,
-  senior: null,
-  lead: null
+  score: number;
+  signals: MatchSignal[];
 };
 
 /**
@@ -55,8 +81,60 @@ const EXPERIENCE_REGEXES: RegExp[] = [
   /\b(\d+)\s*\+\s*years?\b/gi
 ];
 
+const MATCH_PASS_THRESHOLD = 45;
+const EXPERIENCE_TOLERANCE_YEARS = 1;
+const MAX_PROFILE_TERMS = 80;
+
+const STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'by',
+  'for',
+  'from',
+  'has',
+  'have',
+  'in',
+  'into',
+  'is',
+  'it',
+  'of',
+  'on',
+  'or',
+  'our',
+  'the',
+  'their',
+  'this',
+  'to',
+  'with',
+  'within',
+  'work',
+  'working',
+  'build',
+  'built',
+  'using',
+  'used',
+  'role',
+  'team',
+  'teams'
+]);
+
 function normalizeComparable(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSearchText(text: string): string {
+  return ` ${text
+    .toLowerCase()
+    .replace(/\\[a-z]+/g, ' ')
+    .replace(/[{}_[\]()*`~"']/g, ' ')
+    .replace(/[^a-z0-9+.#/-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()} `;
 }
 
 function escapeRegExp(s: string): string {
@@ -84,6 +162,86 @@ function titleContainsPhrase(titleNorm: string, phrase: string): boolean {
   return titleNorm.includes(p);
 }
 
+function uniqueSorted(values: Iterable<string>): string[] {
+  return [...new Set([...values].map((value) => normalizeComparable(value)).filter(Boolean))].sort();
+}
+
+function tokenizeTerms(text: string): string[] {
+  const matches = normalizeSearchText(text).match(/[a-z0-9]+(?:[+.#/-][a-z0-9]+)*/g) ?? [];
+  return matches
+    .map((token) => token.replace(/^[./-]+|[./-]+$/g, ''))
+    .filter((token) => token.length > 0 && !STOP_WORDS.has(token) && !/^\d+$/.test(token));
+}
+
+function extractProfileTerms(text: string): string[] {
+  const tokens = tokenizeTerms(text);
+  const terms = new Map<string, number>();
+
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let size = 1; size <= 3 && start + size <= tokens.length; size += 1) {
+      const parts = tokens.slice(start, start + size);
+      if (parts.some((part) => STOP_WORDS.has(part))) {
+        continue;
+      }
+      const term = parts.join(' ');
+      const specificity = size * 2 + Math.min(term.length, 24) / 12;
+      terms.set(term, (terms.get(term) ?? 0) + specificity);
+    }
+  }
+
+  return [...terms.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, MAX_PROFILE_TERMS)
+    .map(([term]) => term);
+}
+
+function extractTitleTerms(titles: string[]): string[] {
+  return uniqueSorted(titles.flatMap((title) => extractProfileTerms(title)));
+}
+
+function buildDeterministicMatchProfile(
+  keywordProfile: JobKeywordProfile | null,
+  applicantText: string
+): DeterministicMatchProfile {
+  const profileText = [
+    applicantText,
+    ...(keywordProfile?.target_titles ?? []),
+    ...(keywordProfile?.positive_keywords ?? [])
+  ].join('\n');
+  const positiveKeywords = uniqueSorted(keywordProfile?.positive_keywords ?? []);
+  const targetTitles = uniqueSorted(keywordProfile?.target_titles ?? []);
+  const profileTerms = uniqueSorted([...extractProfileTerms(profileText), ...positiveKeywords]);
+
+  return {
+    targetTitles,
+    positiveKeywords,
+    negativeKeywords: uniqueSorted(keywordProfile?.negative_keywords ?? []),
+    seniority: keywordProfile?.seniority ?? null,
+    experienceYears: maxImpliedMinYears(profileText) || null,
+    skills: profileTerms,
+    titleTerms: extractTitleTerms(targetTitles)
+  };
+}
+
+function normalizeMatchProfile(ctx: PrefilterContext): DeterministicMatchProfile {
+  return (
+    ctx.matchProfile ??
+    buildDeterministicMatchProfile(ctx.jobKeywordProfile, [
+      ...(ctx.jobKeywordProfile?.target_titles ?? []),
+      ...(ctx.jobKeywordProfile?.positive_keywords ?? [])
+    ].join('\n'))
+  );
+}
+
+function hasPositiveMatchCriteria(profile: DeterministicMatchProfile): boolean {
+  return (
+    profile.targetTitles.length > 0 ||
+    profile.positiveKeywords.length > 0 ||
+    profile.skills.length > 0 ||
+    profile.titleTerms.length > 0
+  );
+}
+
 function maxImpliedMinYears(description: string): number {
   let max = 0;
   const text = description.toLowerCase();
@@ -102,33 +260,39 @@ function maxImpliedMinYears(description: string): number {
   return max;
 }
 
-function passesTitleFilter(title: string, profile: JobKeywordProfile | null): PrefilterReason | null {
+function containsProfileTerm(searchText: string, term: string): boolean {
+  const normalized = normalizeSearchText(term).trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const esc = escapeRegExp(normalized).replace(/\\ /g, '\\s+');
+  return new RegExp(`(^|[^a-z0-9+#])${esc}([^a-z0-9+#]|$)`, 'i').test(searchText);
+}
+
+function passesTitleFilter(
+  title: string,
+  profile: Pick<DeterministicMatchProfile, 'targetTitles' | 'positiveKeywords' | 'negativeKeywords'>
+): PrefilterReason | null {
   const titleNorm = normalizeComparable(title);
 
-  const negatives = profile?.negative_keywords ?? [];
-  for (const neg of negatives) {
+  for (const neg of profile.negativeKeywords) {
     if (titleContainsPhrase(titleNorm, neg)) {
       return 'title_negative';
     }
   }
 
-  if (!profile) {
+  if (profile.targetTitles.length === 0 && profile.positiveKeywords.length === 0) {
     return null;
   }
 
-  const titles = profile.target_titles ?? [];
-  const positives = profile.positive_keywords ?? [];
-  if (titles.length === 0 && positives.length === 0) {
-    return null;
-  }
-
-  for (const t of titles) {
+  for (const t of profile.targetTitles) {
     if (titleContainsPhrase(titleNorm, t)) {
       return null;
     }
   }
 
-  for (const k of positives) {
+  for (const k of profile.positiveKeywords) {
     if (titleContainsPhrase(titleNorm, k)) {
       return null;
     }
@@ -163,21 +327,13 @@ function passesLocationFilter(
   return false;
 }
 
-function passesExperienceFilter(
-  descriptionText: string,
-  profile: JobKeywordProfile | null
-): PrefilterReason | null {
-  if (!profile) {
-    return null;
-  }
-
-  const cap = SENIORITY_MAX_MIN_YEARS[profile.seniority];
-  if (cap == null) {
+function passesExperienceFilter(descriptionText: string, profile: DeterministicMatchProfile): PrefilterReason | null {
+  if (profile.experienceYears == null) {
     return null;
   }
 
   const implied = maxImpliedMinYears(descriptionText);
-  if (implied >= cap) {
+  if (implied > profile.experienceYears + EXPERIENCE_TOLERANCE_YEARS) {
     return 'experience_min_years';
   }
 
@@ -186,26 +342,106 @@ function passesExperienceFilter(
 
 export type PrefilterJobInput = Pick<JobRecord, 'title' | 'location' | 'remoteType' | 'descriptionText'>;
 
+function scoreJobMatch(
+  job: PrefilterJobInput,
+  ctx: PrefilterContext,
+  locationPass: boolean,
+  experiencePass: boolean
+): { score: number; signals: MatchSignal[] } {
+  if (!prefilterMatchesMeaningful(ctx)) {
+    return { score: 0, signals: [] };
+  }
+
+  const profile = normalizeMatchProfile(ctx);
+  const titleNorm = normalizeComparable(job.title);
+  const titleText = normalizeSearchText(job.title);
+  const fullText = `${job.title}\n${job.descriptionText}`;
+  const fullSearchText = normalizeSearchText(fullText);
+  const titleOverlap = profile.skills.filter((term) => containsProfileTerm(titleText, term));
+  const profileTermOverlap = profile.skills.filter((term) => containsProfileTerm(fullSearchText, term));
+  const targetTitleMatch = profile.targetTitles.some((title) => titleContainsPhrase(titleNorm, title));
+  const keywordTitleMatch = profile.positiveKeywords.some((keyword) =>
+    titleContainsPhrase(titleNorm, keyword)
+  );
+
+  let score = 0;
+  const signals: MatchSignal[] = [];
+
+  if (targetTitleMatch) {
+    score += 30;
+    signals.push('target_title');
+  } else if (titleOverlap.length > 0) {
+    score += Math.min(30, titleOverlap.length * 10);
+    signals.push('profile_title_overlap');
+  } else if (keywordTitleMatch) {
+    score += 20;
+    signals.push('target_title');
+  }
+
+  if (profileTermOverlap.length > 0) {
+    score += Math.min(
+      40,
+      profileTermOverlap.reduce((total, term) => total + (term.includes(' ') ? 8 : 5), 0)
+    );
+    signals.push('profile_term_overlap');
+  }
+
+  if (experiencePass) {
+    score += 15;
+    signals.push('experience_fit');
+  }
+
+  if (locationPass) {
+    score += 10;
+    signals.push('location_fit');
+  }
+
+  if (profileTermOverlap.length >= 2 || titleOverlap.length > 0) {
+    score += 10;
+    signals.push('description_evidence');
+  }
+
+  return {
+    score: Math.max(0, Math.min(100, score)),
+    signals: uniqueSorted(signals) as MatchSignal[]
+  };
+}
+
 export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): PrefilterResult {
   const reasons: PrefilterReason[] = [];
 
-  const titleReason = passesTitleFilter(job.title, ctx.jobKeywordProfile);
-  if (titleReason) {
+  const profile = normalizeMatchProfile(ctx);
+  const titleReason = passesTitleFilter(job.title, profile);
+  if (titleReason === 'title_negative') {
     reasons.push(titleReason);
   }
 
-  if (!passesLocationFilter(job.location, job.remoteType, ctx.preferredCountries)) {
+  const locationPass = passesLocationFilter(job.location, job.remoteType, ctx.preferredCountries);
+  if (!locationPass) {
     reasons.push('location');
   }
 
-  const expReason = passesExperienceFilter(job.descriptionText, ctx.jobKeywordProfile);
+  const expReason = passesExperienceFilter(job.descriptionText, profile);
+  const experiencePass = expReason == null;
   if (expReason) {
     reasons.push(expReason);
   }
 
+  const scored = scoreJobMatch(job, ctx, locationPass, experiencePass);
+  if (
+    reasons.length === 0 &&
+    hasPositiveMatchCriteria(profile) &&
+    scored.score < MATCH_PASS_THRESHOLD
+  ) {
+    reasons.push('low_match_score');
+    scored.signals.push('low_match_score');
+  }
+
   return {
     pass: reasons.length === 0,
-    reasons
+    reasons,
+    score: scored.score,
+    signals: uniqueSorted(scored.signals) as MatchSignal[]
   };
 }
 

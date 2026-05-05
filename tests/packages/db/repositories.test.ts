@@ -154,7 +154,7 @@ describe('repositories', () => {
     expect(distinctWithCompanyFilter).toEqual(['Alpha Inc', 'Beta LLC']);
   });
 
-  test('listSummary matchProfile=me uses cached prefilter_pass', async () => {
+  test('listSummary matchProfile=me uses cached prefilter_pass ordered by deterministic score', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);
     trackedClients.push(db.$client);
@@ -184,19 +184,28 @@ describe('repositories', () => {
     await repository.upsert({
       ...base,
       sourceId: 'job-a',
-      title: 'Software Engineer'
+      title: 'Software Engineer',
+      descriptionText: 'Build TypeScript and React workflows with Node.js services.'
     });
     await repository.upsert({
       ...base,
       sourceId: 'job-b',
-      title: 'Line Cook'
+      title: 'Line Cook',
+      descriptionText: 'Prepare ingredients and support dinner service.'
+    });
+    await repository.upsert({
+      ...base,
+      sourceId: 'job-c',
+      title: 'Developer Tooling Specialist',
+      descriptionText:
+        'Build TypeScript, Node.js, and Playwright automation for developer workflows.'
     });
 
     const ctx: PrefilterContext = {
       jobKeywordProfile: {
         seniority: 'mid',
-        target_titles: [],
-        positive_keywords: ['software'],
+        target_titles: ['software engineer'],
+        positive_keywords: ['typescript', 'react', 'node.js', 'playwright', 'automation'],
         negative_keywords: []
       },
       preferredCountries: []
@@ -207,9 +216,13 @@ describe('repositories', () => {
     const all = await repository.listSummary({ matchProfile: 'all' });
     const me = await repository.listSummary({ matchProfile: 'me' });
 
-    expect(all.total).toBe(2);
-    expect(me.total).toBe(1);
-    expect(me.jobs[0]?.title).toBe('Software Engineer');
+    expect(all.total).toBe(3);
+    expect(me.total).toBe(2);
+    expect(me.jobs.map((job) => job.title)).toEqual([
+      'Software Engineer',
+      'Developer Tooling Specialist'
+    ]);
+    expect(me.jobs[0]?.prefilterScore).toBeGreaterThan(me.jobs[1]?.prefilterScore ?? 0);
   });
 
   test('upsert clears prefilter cache when title or location changes', async () => {

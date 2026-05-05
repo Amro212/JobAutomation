@@ -116,6 +116,77 @@ describe('scoreJob', () => {
     expect(stored?.reviewScore).toBe(86);
   });
 
+  test('accepts summary and score when reasoning is omitted by the model', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const jobsRepository = new JobsRepository(db);
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-no-reasoning',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/no-reasoning',
+      companyName: 'Example Corp',
+      title: 'Platform Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: '$170k-$190k CAD',
+      descriptionText: 'Build reliable platform systems.',
+      rawPayload: '{"id":"job-no-reasoning"}',
+      discoveryRunId: null,
+      status: 'reviewing',
+      reviewNotes: 'Existing notes.',
+      reviewSummary: 'Old summary',
+      reviewScore: 12,
+      reviewScoreReasoning: 'Old reasoning that should be cleared.',
+      reviewUpdatedAt: new Date('2026-03-15T10:00:00.000Z'),
+      reviewScoreUpdatedAt: new Date('2026-03-15T10:00:00.000Z'),
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    const scored = await scoreJob({
+      jobId: job.id,
+      jobsRepository,
+      openRouter: {
+        apiKey: 'test-key',
+        baseUrl: 'https://openrouter.example/api/v1',
+        model: 'openrouter/test-model',
+        fetchImpl: async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      summary: 'Strong platform fit with clear systems ownership scope.',
+                      score: '84'
+                    })
+                  }
+                }
+              ]
+            }),
+            {
+              status: 200,
+              headers: {
+                'content-type': 'application/json'
+              }
+            }
+          )
+      }
+    });
+
+    const stored = await jobsRepository.findById(job.id);
+
+    expect(scored.reviewSummary).toContain('platform fit');
+    expect(scored.reviewScore).toBe(84);
+    expect(scored.reviewScoreReasoning).toBeNull();
+    expect(stored?.reviewScore).toBe(84);
+    expect(stored?.reviewScoreReasoning).toBeNull();
+  });
+
   test('rejects invalid model output without corrupting persisted review state', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);

@@ -1,5 +1,5 @@
 import type { ApplicantProfile, JobRecord } from '@jobautomation/core';
-import { prefilterJob } from '@jobautomation/core';
+import { prefilterContextFromApplicant, prefilterJob } from '@jobautomation/core';
 import type { JobsRepository } from '@jobautomation/db';
 import {
   createOpenRouterProvider,
@@ -134,10 +134,7 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
   }
 
   const profile = input.applicantProfile ?? null;
-  const prefilter = prefilterJob(job, {
-    jobKeywordProfile: profile?.jobKeywordProfile ?? null,
-    preferredCountries: profile?.preferredCountries ?? []
-  });
+  const prefilter = prefilterJob(job, prefilterContextFromApplicant(profile));
 
   if (!prefilter.pass) {
     throw new JobScoreError(
@@ -178,7 +175,7 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
     const updated = await input.jobsRepository.updateReview(job.id, {
       reviewSummary: parsed.data.summary,
       reviewScore: parsed.data.score,
-      reviewScoreReasoning: parsed.data.reasoning,
+      reviewScoreReasoning: parsed.data.reasoning ?? null,
       reviewScoreUpdatedAt: new Date()
     });
 

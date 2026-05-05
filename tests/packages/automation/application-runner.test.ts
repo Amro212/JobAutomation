@@ -27,6 +27,10 @@ const baseJob = (overrides: Partial<JobRecord> = {}): JobRecord => ({
   reviewScoreReasoning: null,
   reviewUpdatedAt: null,
   reviewScoreUpdatedAt: null,
+  prefilterPass: null,
+  prefilterScore: null,
+  prefilterReasonsJson: null,
+  prefilterSignalsJson: null,
   discoveredAt: new Date('2026-03-13T10:00:00.000Z'),
   updatedAt: new Date('2026-03-13T10:00:00.000Z'),
   ...overrides
@@ -85,6 +89,9 @@ describe('application runner', () => {
       sourceUrl: 'https://job-boards.greenhouse.io/example/jobs/1'
     });
     const applicantProfile = baseApplicant({
+      summary: '',
+      reusableContext: '',
+      baseResumeTex: '',
       jobKeywordProfile: null,
       jobKeywordProfileGeneratedAt: null
     });
@@ -227,7 +234,7 @@ describe('application runner', () => {
     });
 
     expect(result.status).toBe('skipped');
-    expect(result.prefilterReasons).toEqual(['title_negative', 'experience_min_years']);
+    expect(result.prefilterReasons).toEqual(['title_negative']);
     expect(browserFactory).not.toHaveBeenCalled();
     expect(siteFlowRun).not.toHaveBeenCalled();
   });

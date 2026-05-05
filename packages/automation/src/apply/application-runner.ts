@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-import { prefilterJob } from '@jobautomation/core';
+import { prefilterContextFromApplicant, prefilterJob } from '@jobautomation/core';
 import type {
   ApplicantProfile,
   ApplicationRunRecord,
@@ -206,10 +206,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
       prefilterReasons: []
     }));
 
-  const prefilter = prefilterJob(job, {
-    jobKeywordProfile: applicantProfile?.jobKeywordProfile ?? null,
-    preferredCountries: applicantProfile?.preferredCountries ?? []
-  });
+  const prefilter = prefilterJob(job, prefilterContextFromApplicant(applicantProfile));
 
   if (!prefilter.pass) {
     await logRunEvent(input.logEventsRepository, {

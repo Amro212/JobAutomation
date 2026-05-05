@@ -31,7 +31,9 @@ export const jobsTable = sqliteTable(
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
     /** 1 = passes applicant pre-filter, 0 = rejected, null = not evaluated or invalidated */
     prefilterPass: integer('prefilter_pass'),
-    prefilterReasonsJson: text('prefilter_reasons_json')
+    prefilterScore: integer('prefilter_score'),
+    prefilterReasonsJson: text('prefilter_reasons_json'),
+    prefilterSignalsJson: text('prefilter_signals_json')
   },
   (table) => ({
     jobsSourceIdentityIdx: uniqueIndex('jobs_source_identity_idx').on(
@@ -40,6 +42,7 @@ export const jobsTable = sqliteTable(
     ),
     jobsStatusIdx: index('jobs_status_idx').on(table.status),
     jobsUpdatedAtIdx: index('jobs_updated_at_idx').on(table.updatedAt),
-    jobsPrefilterPassIdx: index('jobs_prefilter_pass_idx').on(table.prefilterPass)
+    jobsPrefilterPassIdx: index('jobs_prefilter_pass_idx').on(table.prefilterPass),
+    jobsPrefilterScoreIdx: index('jobs_prefilter_score_idx').on(table.prefilterScore)
   })
 );
