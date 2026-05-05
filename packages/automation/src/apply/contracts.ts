@@ -1,12 +1,13 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
 
 import type { ApplicantProfile } from '@jobautomation/core';
-import type { ApplicationRunRecord, ApplicationRunType } from '@jobautomation/core';
+import type { ApplicationRunRecord } from '@jobautomation/core';
 import type { ArtifactRecord } from '@jobautomation/core';
 import type { JobRecord } from '@jobautomation/core';
 import type { OpenRouterConfig } from '@jobautomation/llm';
 
 import type { ApplicationBrowserRuntime, BrowserIdentityConfig } from '../playwright/browser';
+import type { SupportedApplicationBoard } from './board-entry';
 
 export type ApplicationRunRecordLike = ApplicationRunRecord;
 
@@ -83,7 +84,7 @@ export type ApplicationSiteFlowContext = {
 };
 
 export type SupportedApplicationSite = {
-  siteKey: ApplicationRunType;
+  siteKey: SupportedApplicationBoard;
   supports: (job: JobRecord) => boolean;
   run: (context: ApplicationSiteFlowContext) => Promise<ApplicationRunRecordLike>;
 };

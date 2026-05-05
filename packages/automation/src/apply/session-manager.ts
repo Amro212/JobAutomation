@@ -13,12 +13,7 @@ export async function createApplicationSession(input: {
 } & ApplicationSessionOptions): Promise<ApplicationSession> {
   const context =
     input.runtime.context ??
-    (await input.runtime.browser?.newContext({
-      locale: Array.isArray(input.identity.locale)
-        ? (input.identity.locale[0] ?? 'en-US')
-        : input.identity.locale,
-      timezoneId: resolveRuntimeTimezone()
-    }));
+    (await input.runtime.browser?.newContext());
 
   if (!context) {
     throw new Error('Application session runtime did not provide a browser context.');

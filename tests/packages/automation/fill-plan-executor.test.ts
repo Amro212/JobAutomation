@@ -411,6 +411,139 @@ describe('application fill plan executor', () => {
     );
   });
 
+  test('closes Greenhouse phone country combobox before filling phone number', async () => {
+    await startServer(`
+      <html>
+        <head>
+          <style>
+            #application { position: relative; }
+            #phone-options {
+              position: absolute;
+              top: 48px;
+              left: 0;
+              width: 300px;
+              height: 120px;
+              background: white;
+              z-index: 10;
+            }
+          </style>
+        </head>
+        <body>
+          <section id="application">
+            <input
+              id="phone_country"
+              name="phone_country"
+              role="combobox"
+              aria-controls="phone-options"
+              aria-expanded="false"
+              autocomplete="off"
+            />
+            <input id="phone" name="phone" type="tel" style="display:block; margin-top: 16px;" />
+            <div id="phone-options" role="listbox" hidden>
+              <button type="button" role="option">United States +1</button>
+              <button type="button" role="option">Canada +1</button>
+            </div>
+            <script>
+              const country = document.querySelector('#phone_country');
+              const options = document.querySelector('#phone-options');
+              function showOptions() {
+                options.hidden = false;
+                country.setAttribute('aria-expanded', 'true');
+              }
+              function hideOptions() {
+                options.hidden = true;
+                country.setAttribute('aria-expanded', 'false');
+              }
+              country.addEventListener('focus', showOptions);
+              country.addEventListener('input', showOptions);
+              country.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') hideOptions();
+              });
+              country.addEventListener('blur', hideOptions);
+              for (const option of options.querySelectorAll('[role="option"]')) {
+                option.addEventListener('mousedown', () => {
+                  country.value = option.textContent.trim();
+                  country.dataset.selected = option.textContent.trim();
+                  country.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+              }
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const fields: ScrapedApplicationField[] = [
+        {
+          id: 'phone_country',
+          label: 'Country',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#phone_country'],
+          options: [
+            { value: 'United States +1', label: 'United States +1' },
+            { value: 'Canada +1', label: 'Canada +1' },
+          ],
+        },
+        {
+          id: 'phone',
+          label: 'Phone',
+          type: 'tel',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#phone'],
+          options: [],
+        },
+      ];
+      const fillPlan: ApplicationFillPlanEntry[] = [
+        {
+          fieldId: 'phone_country',
+          action: 'fill',
+          value: 'United States +1',
+          confidence: 1,
+          skipReason: '',
+        },
+        {
+          fieldId: 'phone',
+          action: 'fill',
+          value: '9054621004',
+          confidence: 1,
+          skipReason: '',
+        },
+      ];
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        fields,
+        fillPlan,
+      });
+
+      return {
+        executionResult,
+        selectedCountry: await page.locator('#phone_country').getAttribute('data-selected'),
+        phone: await page.locator('#phone').inputValue(),
+        optionsVisible: await page.locator('#phone-options').isVisible(),
+      };
+    });
+
+    expect(result.selectedCountry).toBe('United States +1');
+    expect(result.phone).toBe('9054621004');
+    expect(result.optionsVisible).toBe(false);
+    expect(result.executionResult.summary).toEqual({
+      total: 2,
+      success: 2,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
   test('commits Ashby location combobox with Enter after suggestions load', async () => {
     await startServer(`
       <html>

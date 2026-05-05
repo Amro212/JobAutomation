@@ -19,6 +19,17 @@ import type {
   ScrapedApplicationFieldOption,
   ScrapedApplicationFieldType
 } from './form-scraper';
+import type { ApplicationArtifacts } from './contracts';
+import {
+  isFieldRequired,
+  type FieldOptionMode,
+  type FieldRequiredSource
+} from './field-contract';
+import {
+  validateRequiredFillPlan,
+  type ApplicationFillPlanMissingRequiredField,
+  type ApplicationFillPlanValidationResult
+} from './fill-plan-validator';
 
 const STAGE_4_LOG_PREFIX = '[Stage 4][openrouter-answer-module]';
 const STAGE_4_PROMPT_VERSION = 'stage4-fill-plan-v1';
@@ -52,6 +63,13 @@ const applicationFillPlanEntrySchema = z.object({
   fieldId: z.string().trim().min(1),
   action: applicationFillPlanActionSchema,
   value: z.union([z.string(), z.boolean(), z.array(z.string()), z.null()]).default(null),
+  selectedOptionValue: z.string().trim().nullable().optional(),
+  selectedOptionLabel: z.string().trim().nullable().optional(),
+  searchText: z.string().trim().nullable().optional(),
+  evidenceMode: z
+    .enum(['direct_profile', 'inferred_required', 'policy_default', 'unsupported_optional'])
+    .optional(),
+  evidenceRefs: z.array(z.string().trim()).optional(),
   confidence: z.number().min(0).max(1),
   skipReason: z.string().trim().max(400).default('')
 });
@@ -70,7 +88,18 @@ const applicationFillPlanJsonSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['fieldId', 'action', 'value', 'confidence', 'skipReason'],
+        required: [
+          'fieldId',
+          'action',
+          'value',
+          'selectedOptionValue',
+          'selectedOptionLabel',
+          'searchText',
+          'evidenceMode',
+          'evidenceRefs',
+          'confidence',
+          'skipReason'
+        ],
         properties: {
           fieldId: {
             type: 'string',
@@ -90,6 +119,23 @@ const applicationFillPlanJsonSchema = {
               },
               { type: 'null' }
             ]
+          },
+          selectedOptionValue: {
+            anyOf: [{ type: 'string' }, { type: 'null' }]
+          },
+          selectedOptionLabel: {
+            anyOf: [{ type: 'string' }, { type: 'null' }]
+          },
+          searchText: {
+            anyOf: [{ type: 'string' }, { type: 'null' }]
+          },
+          evidenceMode: {
+            type: 'string',
+            enum: ['direct_profile', 'inferred_required', 'policy_default', 'unsupported_optional']
+          },
+          evidenceRefs: {
+            type: 'array',
+            items: { type: 'string' }
           },
           confidence: {
             type: 'number',
@@ -121,6 +167,7 @@ export type GenerateApplicationFillPlanInput = {
   applicantProfile: ApplicantProfile | null;
   job: Pick<JobRecord, 'title' | 'companyName' | 'location' | 'sourceUrl'>;
   fields: ScrapedApplicationField[];
+  artifacts?: ApplicationArtifacts;
   openRouter?: OpenRouterConfig | null;
   provider?: ApplicationAnswerProvider;
 };
@@ -130,8 +177,12 @@ export type GenerateApplicationFillPlanResult = {
   rawResponseLength: number;
   serializedProfileShape: Record<string, unknown>;
   promptPayload: ApplicationFillPlanPromptPayload;
+  repairPromptPayload: ApplicationFillPlanRepairPromptPayload | null;
   responseJson: z.infer<typeof applicationFillPlanResponseSchema>;
+  repairResponseJson: z.infer<typeof applicationFillPlanResponseSchema> | null;
   fieldDiagnostics: ApplicationFillPlanFieldDiagnostic[];
+  fillPlanValidation: ApplicationFillPlanValidationResult;
+  repairRawResponseLength: number;
   fillPlan: ApplicationFillPlanEntry[];
 };
 
@@ -235,8 +286,10 @@ type PromptField = {
   label: string;
   type: ScrapedApplicationFieldType;
   required: boolean;
+  requiredSources: FieldRequiredSource[];
   enabled: boolean;
   options: ScrapedApplicationFieldOption[];
+  optionMode: FieldOptionMode;
   answerability: PromptFieldAnswerability;
   guidance: string;
   intent?: PromptFieldIntent;
@@ -298,6 +351,14 @@ export type ApplicationFillPlanPromptPayload = {
   };
   applicantProfile: SerializedApplicantProfile;
   fields: PromptField[];
+};
+
+export type ApplicationFillPlanRepairPromptPayload = ApplicationFillPlanPromptPayload & {
+  repair: {
+    reason: 'missing_required_fields_after_initial_plan';
+    invalidItems: ApplicationFillPlanMissingRequiredField[];
+    originalItems: ApplicationFillPlanEntry[];
+  };
 };
 
 function logStage4(action: string, details: Record<string, unknown>): void {
@@ -617,8 +678,15 @@ function includesAny(value: string, candidates: string[]): boolean {
   return candidates.some((candidate) => normalizedValue.includes(candidate));
 }
 
-function isEffectivelyRequired(field: Pick<ScrapedApplicationField, 'required' | 'label'>): boolean {
-  return field.required || field.label.includes('*');
+function isEffectivelyRequired(
+  field: Pick<ScrapedApplicationField, 'id' | 'required' | 'label' | 'requiredSources'>
+): boolean {
+  return isFieldRequired({
+    id: field.id,
+    label: field.label,
+    required: field.required,
+    ...(field.requiredSources !== undefined ? { requiredSources: field.requiredSources } : {})
+  });
 }
 
 function isRequiredNonFileField(field: ScrapedApplicationField): boolean {
@@ -644,6 +712,23 @@ function countryLabelForCode(countryCode: string | null): string | null {
   }
 
   return FILTER_COUNTRIES.find((country) => country.code === countryCode)?.label ?? countryCode;
+}
+
+function isPhoneCountryCodeField(fingerprint: string): boolean {
+  return includesAny(fingerprint, ['phone']) && includesAny(fingerprint, ['country', 'code', 'prefix']);
+}
+
+function phoneCountryFallbackValue(
+  field: ScrapedApplicationField,
+  serializedProfile: SerializedApplicantProfile
+): string | null {
+  const candidates = [
+    countryLabelForCode(serializedProfile.workAuthorization.currentCountryCode),
+    countryLabelForCode(serializedProfile.workAuthorization.primaryCitizenshipCountryCode),
+    countryLabelForCode(inferCountryCodeFromText(serializedProfile.identity.location))
+  ].filter((value): value is string => Boolean(value));
+
+  return selectorAlignedLabel(field, candidates) ?? candidates[0] ?? null;
 }
 
 function isWorkAuthorizationPrompt(fingerprint: string): boolean {
@@ -965,8 +1050,10 @@ function toPromptField(field: ScrapedApplicationField): PromptField {
     label: field.label,
     type: field.type,
     required,
+    requiredSources: field.requiredSources ?? [],
     enabled: field.enabled,
     options: field.options,
+    optionMode: field.optionMode ?? (field.options.length > 0 ? 'static' : 'none'),
     answerability,
     guidance: guidanceForAnswerability(answerability, intent, targetCountryCode),
     ...(intent ? { intent } : {}),
@@ -982,11 +1069,13 @@ function buildSystemPrompt(): string {
     'Use only the applicant profile facts and the scraped field definitions provided by the user.',
     'Use best-effort grounded synthesis for open-ended motivation and narrative questions when the applicant profile, resumeLatex, and resumeContext give enough context to answer plausibly.',
     'Never invent employers, projects, years, achievements, technologies, legal status, security clearance, export-control eligibility, or demographic facts.',
-    'Required non-file fields must receive the best grounded answer available; use structured facts first, then resume/profile evidence, then a conservative best-effort default.',
+    'Required non-file fields are mandatory. Never skip them. Never return null, empty string, or unsupported for them.',
+    'For each required field, use direct applicant profile evidence first. If no direct evidence exists, infer the best possible answer from profile, resume, job, and available options, and set evidenceMode to "inferred_required".',
     'Optional fields that are uncertain or unsupported may remain unsupported with a short reason.',
     'Action rules:',
-    '- text, email, tel, textarea, rich_text, combobox => action "fill" with a string value.',
-    '- combobox is a typed searchable widget. Do not return action "select" for combobox.',
+    '- text, email, tel, textarea, rich_text => action "fill" with a string value.',
+    '- combobox with optionMode "static" and options => action "fill"; selectedOptionValue must exactly equal one provided option.value, selectedOptionLabel should be that option.label, and value should be the option label.',
+    '- combobox with optionMode "dynamic_search" => action "fill"; searchText must contain the exact text to type, selectedOptionLabel should be the intended visible option when known, and value should equal searchText.',
     '- select => action "select" with an exact option value when possible.',
     '- checkbox => action "check" with a boolean value.',
     '- checkbox_group => action "check" with an array of exact option values.',
@@ -1012,9 +1101,18 @@ function buildSystemPrompt(): string {
     '- If authorizedWithoutSponsorshipCountryCodes contains the target country, that supports a "yes" answer to work authorization without sponsorship.',
     '- If requiresSponsorshipCountryCodes contains the target country, or needsSponsorshipInCurrentCountry is yes for the current country, that supports a "yes" answer to sponsorship-needed questions.',
     '- If the field asks about a country not covered by structured facts and the field is required and non-file, provide the conservative best-effort answer available.',
+    'Exact option rules:',
+    '- For select, radio_group, checkbox_group, and static combobox fields, choose only from the provided options array.',
+    '- Treat applicantProfile as reference context for selector fields, not as selectable text. Never copy a profile value into select, radio_group, checkbox_group, or static combobox unless it exactly matches a provided option value or label.',
+    '- Selector fields are strict: if profile says "Computer Engineering" but options are degree levels, use that profile fact only to choose the closest provided option such as "Bachelor\'s Degree"; do not return "Computer Engineering".',
+    '- If no available option is supported by profile/context, choose the safest provided option for required selectors; optional selectors may be skipped.',
+    '- Prefer option.value for value on select/radio/checkbox_group. For static combobox, selectedOptionValue must be exact option.value and value/search text should use the chosen option label.',
+    '- If a required selector field has no direct profile evidence, choose the safest available option, usually a truthful No, Prefer not to say, Choose not to disclose, LinkedIn, or closest profile-backed option.',
+    '- "When are you available to join/start?" asks for a date or availability window. Use applicantProfile.workAuthorization.startDate or noticePeriod. Never answer yes/no.',
     'Return JSON only with shape { "items": [...] }.',
-    'Every item must include fieldId, action, value, confidence, and skipReason.',
+    'Every item must include fieldId, action, value, selectedOptionValue, selectedOptionLabel, searchText, evidenceMode, evidenceRefs, confidence, and skipReason.',
     'When action is not "skip", keep skipReason as an empty string.',
+    'Use evidenceMode "direct_profile" for direct profile facts, "policy_default" for configured/default consent or demographic policy, "inferred_required" for required best-effort inference, and "unsupported_optional" only for optional skips.',
     'Confidence must be between 0 and 1.'
   ].join('\n');
 }
@@ -1044,6 +1142,52 @@ function buildPrompt(promptPayload: ApplicationFillPlanPromptPayload): string {
   return JSON.stringify(promptPayload, null, 2);
 }
 
+function buildRepairSystemPrompt(): string {
+  return [
+    buildSystemPrompt(),
+    '',
+    'Repair mode:',
+    '- You are receiving only required fields that failed validation after the first answer.',
+    '- Return answers only for those repair.fields.',
+    '- Do not skip any repair field unless it is a file upload and cannot be supplied by text.',
+    '- For each failed static selector field, select one exact option.value from its options.',
+    '- For each failed dynamic combobox, provide non-empty searchText and value.',
+    '- Use the validator reason to correct the specific failure.'
+  ].join('\n');
+}
+
+function buildRepairPromptPayload(input: {
+  promptPayload: ApplicationFillPlanPromptPayload;
+  missingRequiredFields: ApplicationFillPlanMissingRequiredField[];
+  originalItems: ApplicationFillPlanEntry[];
+}): ApplicationFillPlanRepairPromptPayload {
+  const missingIds = new Set(input.missingRequiredFields.map((field) => field.fieldId));
+  return {
+    ...input.promptPayload,
+    fields: input.promptPayload.fields.filter((field) => missingIds.has(field.id)),
+    repair: {
+      reason: 'missing_required_fields_after_initial_plan',
+      invalidItems: input.missingRequiredFields,
+      originalItems: input.originalItems.filter((item) => missingIds.has(item.fieldId))
+    }
+  };
+}
+
+function mergeFillPlanItems(
+  originalItems: ApplicationFillPlanEntry[],
+  repairItems: ApplicationFillPlanEntry[]
+): ApplicationFillPlanEntry[] {
+  const byFieldId = new Map<string, ApplicationFillPlanEntry>();
+  for (const item of originalItems) {
+    byFieldId.set(item.fieldId, item);
+  }
+  for (const item of repairItems) {
+    byFieldId.set(item.fieldId, item);
+  }
+
+  return Array.from(byFieldId.values());
+}
+
 function clampConfidence(value: number): number {
   if (!Number.isFinite(value)) {
     return 0;
@@ -1059,6 +1203,35 @@ function normalizeForComparison(value: string): string {
 function optionAliases(candidate: string): string[] {
   const normalizedCandidate = normalizeForComparison(candidate);
   const aliases = new Set([normalizedCandidate]);
+  const compactCandidate = normalizedCandidate.replace(/[^a-z0-9]+/g, '');
+
+  if (['bachelor', 'bachelors', 'bachelorsdegree', 'bs', 'bsc', 'ba'].includes(compactCandidate)) {
+    aliases.add("bachelor's degree");
+    aliases.add('bachelor degree');
+    aliases.add('bachelors degree');
+  }
+
+  if (['master', 'masters', 'mastersdegree', 'ms', 'msc', 'ma'].includes(compactCandidate)) {
+    aliases.add("master's degree");
+    aliases.add('master degree');
+    aliases.add('masters degree');
+  }
+
+  if (['associate', 'associates', 'associatesdegree'].includes(compactCandidate)) {
+    aliases.add("associate's degree");
+    aliases.add('associate degree');
+    aliases.add('associates degree');
+  }
+
+  if (['phd', 'doctorofphilosophy', 'doctorate'].includes(compactCandidate)) {
+    aliases.add('doctor of philosophy (ph.d.)');
+    aliases.add('doctor of philosophy');
+    aliases.add('ph.d.');
+  }
+
+  if (['highschool', 'secondaryschool'].includes(compactCandidate)) {
+    aliases.add('high school');
+  }
 
   if (
     ['prefer not to say', 'prefer not to disclose', 'choose not to disclose'].includes(
@@ -1095,7 +1268,56 @@ function resolveOptionValue(
     }
   }
 
+  const countryCode = inferCountryCodeFromText(candidate);
+  if (countryCode) {
+    const countryTokens = getCountrySearchTokens(countryCode);
+    for (const option of options) {
+      const normalizedOption = normalizeTextForMatching(`${option.value} ${option.label}`);
+      if (countryTokens.some((token) => normalizedOption.includes(token))) {
+        return option.value;
+      }
+    }
+  }
+
   return null;
+}
+
+function optionForResolvedValue(
+  options: ScrapedApplicationFieldOption[],
+  value: string
+): ScrapedApplicationFieldOption | null {
+  return options.find((option) => option.value === value) ?? null;
+}
+
+function resolveOptionFromCandidates(
+  options: ScrapedApplicationFieldOption[],
+  candidates: Array<string | null | undefined>
+): ScrapedApplicationFieldOption | null {
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    const optionValue = resolveOptionValue(options, candidate);
+    const option = optionValue ? optionForResolvedValue(options, optionValue) : null;
+    if (option) {
+      return option;
+    }
+  }
+
+  return null;
+}
+
+function selectorAlignedLabel(
+  field: ScrapedApplicationField,
+  candidates: Array<string | null | undefined>
+): string | null {
+  if (field.options.length === 0) {
+    return candidates.find((candidate) => (candidate?.trim().length ?? 0) > 0)?.trim() ?? null;
+  }
+
+  const option = resolveOptionFromCandidates(field.options, candidates);
+  return option ? option.label || option.value : null;
 }
 
 function coerceCheckboxValue(value: ApplicationFillPlanEntry['value']): boolean | null {
@@ -1117,6 +1339,26 @@ function coerceCheckboxValue(value: ApplicationFillPlanEntry['value']): boolean 
   }
 
   return null;
+}
+
+function entryStringCandidates(entry: ApplicationFillPlanEntry): string[] {
+  return [
+    entry.selectedOptionValue ?? '',
+    entry.selectedOptionLabel ?? '',
+    entry.searchText ?? '',
+    typeof entry.value === 'string' ? entry.value : ''
+  ].map((value) => value.trim()).filter(Boolean);
+}
+
+function firstEntryString(entry: ApplicationFillPlanEntry): string | null {
+  return entryStringCandidates(entry)[0] ?? null;
+}
+
+function resolveEntryOption(
+  options: ScrapedApplicationFieldOption[],
+  entry: ApplicationFillPlanEntry
+): ScrapedApplicationFieldOption | null {
+  return resolveOptionFromCandidates(options, entryStringCandidates(entry));
 }
 
 function expectedActionsForField(field: ScrapedApplicationField): ApplicationFillPlanAction[] {
@@ -1501,6 +1743,33 @@ function createDeterministicFieldResult(input: {
         });
   }
 
+  if (field.type === 'combobox') {
+    const optionMode = field.optionMode ?? (field.options.length > 0 ? 'static' : 'dynamic_search');
+    if (optionMode === 'static' && field.options.length > 0) {
+      const optionValue = resolveOptionValue(field.options, textValue);
+      const option = optionValue ? optionForResolvedValue(field.options, optionValue) : null;
+      return option
+        ? createAcceptedResult({
+            field,
+            answerability,
+            rawEntry,
+            normalizedAction: 'fill',
+            value: option.label || option.value,
+            confidence,
+            category,
+            reason,
+            recovered
+          })
+        : createSkipResult({
+            field,
+            answerability,
+            rawEntry,
+            skipReason: 'normalization_rejection: deterministic response did not match a combobox option',
+            category: 'normalization_rejection'
+          });
+    }
+  }
+
   return createAcceptedResult({
     field,
     answerability,
@@ -1554,6 +1823,10 @@ function identityFallbackValue(
     return serializedProfile.identity.email || null;
   }
 
+  if (isPhoneCountryCodeField(fingerprint)) {
+    return phoneCountryFallbackValue(field, serializedProfile);
+  }
+
   if (includesAny(fingerprint, ['phone'])) {
     return serializedProfile.identity.phone || null;
   }
@@ -1596,11 +1869,17 @@ function structuredFallbackValue(
   }
 
   if (includesAny(fingerprint, ['degree', 'program'])) {
-    return (
-      serializedProfile.qualifications.highestEducationProgram ??
-      serializedProfile.qualifications.highestEducation ??
-      null
-    );
+    return field.options.length > 0
+      ? selectorAlignedLabel(field, [
+          serializedProfile.qualifications.highestEducation,
+          serializedProfile.qualifications.highestEducationProgram,
+          serializedProfile.qualifications.highestEducationDiscipline
+        ])
+      : selectorAlignedLabel(field, [
+          serializedProfile.qualifications.highestEducationProgram,
+          serializedProfile.qualifications.highestEducation,
+          serializedProfile.qualifications.highestEducationDiscipline
+        ]);
   }
 
   if (includesAny(fingerprint, ['discipline', 'major', 'concentration'])) {
@@ -1647,7 +1926,17 @@ function structuredFallbackValue(
     return serializedProfile.workAuthorization.noticePeriod ?? 'Immediately';
   }
 
-  if (includesAny(fingerprint, ['start date'])) {
+  if (
+    includesAny(fingerprint, [
+      'start date',
+      'available to join',
+      'available to start',
+      'when are you available',
+      'when can you join',
+      'join date',
+      'start work'
+    ])
+  ) {
     return serializedProfile.workAuthorization.startDate ?? 'Immediately';
   }
 
@@ -1817,6 +2106,10 @@ function resolveStructuredLegalTextValue(
 
 function binaryFallbackValue(field: ScrapedApplicationField): string | null {
   const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+  if (isAvailabilityDateField(field)) {
+    return null;
+  }
+
   const looksBinary =
     includesAny(fingerprint, [
       'are you',
@@ -1854,6 +2147,18 @@ function binaryFallbackValue(field: ScrapedApplicationField): string | null {
   }
 
   return 'No';
+}
+
+function isAvailabilityDateField(field: ScrapedApplicationField): boolean {
+  const fingerprint = normalizeTextForMatching(`${field.id} ${field.label}`);
+  return includesAny(fingerprint, [
+    'when are you available',
+    'available to join',
+    'available to start',
+    'when can you join',
+    'start date',
+    'join date'
+  ]);
 }
 
 function canUseStructuredSensitiveFallback(field: ScrapedApplicationField): boolean {
@@ -2186,8 +2491,55 @@ function normalizeEntryForField(
   }
 
   if (field.type === 'combobox') {
-    if (entry.action === 'fill' && typeof entry.value === 'string') {
-      const textValue = entry.value.trim();
+    if (entry.action === 'fill') {
+      const textValue = firstEntryString(entry) ?? '';
+      if (textValue.length === 0) {
+        const directProfileFallback = tryDirectProfileFallbackResult({
+          field,
+          promptField,
+          serializedProfile,
+          rawEntry: entry,
+          reason: 'accepted: empty combobox response recovered from applicant profile facts'
+        });
+        if (directProfileFallback) {
+          return directProfileFallback;
+          }
+      }
+
+      const optionMode = field.optionMode ?? (field.options.length > 0 ? 'static' : 'dynamic_search');
+      if (optionMode === 'static' && field.options.length > 0 && textValue.length > 0) {
+        const option = resolveEntryOption(field.options, entry);
+        if (option) {
+          return createAcceptedResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            normalizedAction: 'fill',
+            value: option.label || option.value,
+            confidence: entry.confidence
+          });
+        }
+
+        if (isRequiredNonFileField(field)) {
+          return createSkipResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            skipReason:
+              'normalization_rejection: required static combobox model option did not exactly match an available option',
+            category: 'normalization_rejection'
+          });
+        }
+
+        return createSkipResult({
+          field,
+          answerability,
+          rawEntry: entry,
+          skipReason: 'normalization_rejection: the model selected a combobox option that does not exist',
+          category: 'normalization_rejection'
+        });
+      }
+
       return textValue.length > 0
         ? createAcceptedResult({
             field,
@@ -2225,53 +2577,44 @@ function normalizeEntryForField(
                 }));
     }
 
-    if (entry.action === 'fill' && typeof entry.value !== 'string') {
-      const directProfileFallback = tryDirectProfileFallbackResult({
-        field,
-        promptField,
-        serializedProfile,
-        rawEntry: entry,
-        reason: 'accepted: non-text model value recovered from applicant profile facts'
-      });
-      if (directProfileFallback) {
-        return directProfileFallback;
-      }
+    if (entry.action === 'select') {
+      const textValue = firstEntryString(entry) ?? '';
+      const optionMode = field.optionMode ?? (field.options.length > 0 ? 'static' : 'dynamic_search');
+      if (optionMode === 'static' && field.options.length > 0 && textValue.length > 0) {
+        const option = resolveEntryOption(field.options, entry);
+        if (option) {
+          return createAcceptedResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            normalizedAction: 'fill',
+            value: option.label || option.value,
+            confidence: entry.confidence,
+            category: 'schema_mismatch',
+            reason: 'schema_mismatch: combobox select action normalized to exact static combobox option'
+          });
+        }
 
-      if (isRequiredNonFileField(field)) {
-        return createRequiredBestEffortResult({
+        if (isRequiredNonFileField(field)) {
+          return createSkipResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            skipReason:
+              'normalization_rejection: required static combobox model option did not exactly match an available option',
+            category: 'normalization_rejection'
+          });
+        }
+
+        return createSkipResult({
           field,
-          promptField,
-          serializedProfile,
-          job,
+          answerability,
           rawEntry: entry,
-          reason:
-            'required_best_effort_default: required non-file field had a non-text fill value and was recovered with the best available default'
+          skipReason: 'normalization_rejection: the model selected a combobox option that does not exist',
+          category: 'normalization_rejection'
         });
       }
 
-      const structuredSensitiveFallback = tryStructuredSensitiveFallbackResult({
-        field,
-        promptField,
-        serializedProfile,
-        rawEntry: entry,
-        reason:
-          'profile_default_sensitive_response: non-text model value recovered with applicant profile demographic defaults'
-      });
-      if (structuredSensitiveFallback) {
-        return structuredSensitiveFallback;
-      }
-
-      return createSkipResult({
-        field,
-        answerability,
-        rawEntry: entry,
-        skipReason: 'normalization_rejection: the model returned a non-text fill value',
-        category: 'normalization_rejection'
-      });
-    }
-
-    if (entry.action === 'select' && typeof entry.value === 'string') {
-      const textValue = entry.value.trim();
       return textValue.length > 0
         ? createAcceptedResult({
             field,
@@ -2321,19 +2664,14 @@ function normalizeEntryForField(
       field,
       answerability,
       rawEntry: entry,
-      skipReason:
-        entry.action === 'select'
-          ? defaultSkipReasonForAnswerability(answerability)
-          : `schema_mismatch: expected ${expectedActionsForField(field).join('/')} for ${field.type}, got ${entry.action}`,
-      category:
-        entry.action === 'select'
-          ? skipCategoryForAnswerability(answerability)
-          : 'schema_mismatch'
+      skipReason: `schema_mismatch: expected ${expectedActionsForField(field).join('/')} for ${field.type}, got ${entry.action}`,
+      category: 'schema_mismatch'
     });
   }
 
   if (field.type === 'select') {
-    if (entry.action !== 'select' || typeof entry.value !== 'string') {
+    const textValue = firstEntryString(entry);
+    if (entry.action !== 'select' || !textValue) {
       return createSkipResult({
         field,
         answerability,
@@ -2343,16 +2681,25 @@ function normalizeEntryForField(
       });
     }
 
-    const optionValue = resolveOptionValue(field.options, entry.value);
-    return optionValue
+    const option = resolveEntryOption(field.options, entry);
+    return option
       ? createAcceptedResult({
           field,
           answerability,
           rawEntry: entry,
           normalizedAction: 'select',
-          value: optionValue,
+          value: option.value,
           confidence: entry.confidence
         })
+      : isRequiredNonFileField(field)
+        ? createSkipResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            skipReason:
+              'normalization_rejection: required select model option did not exactly match an available option',
+            category: 'normalization_rejection'
+          })
       : createSkipResult({
           field,
           answerability,
@@ -2363,7 +2710,8 @@ function normalizeEntryForField(
   }
 
   if (field.type === 'radio_group') {
-    if (entry.action !== 'click' || typeof entry.value !== 'string') {
+    const textValue = firstEntryString(entry);
+    if (entry.action !== 'click' || !textValue) {
       return createSkipResult({
         field,
         answerability,
@@ -2373,14 +2721,14 @@ function normalizeEntryForField(
       });
     }
 
-    const optionValue = resolveOptionValue(field.options, entry.value);
-    return optionValue
+    const option = resolveEntryOption(field.options, entry);
+    return option
       ? createAcceptedResult({
           field,
           answerability,
           rawEntry: entry,
           normalizedAction: 'click',
-          value: optionValue,
+          value: option.value,
           confidence: entry.confidence
         })
       : createSkipResult({
@@ -2511,6 +2859,22 @@ function normalizeEntryForField(
   }
 
   const textValue = entry.value.trim();
+  if (
+    textValue.length > 0 &&
+    ['yes', 'no'].includes(normalizeForComparison(textValue)) &&
+    isAvailabilityDateField(field)
+  ) {
+    return createRequiredBestEffortResult({
+      field,
+      promptField,
+      serializedProfile,
+      job,
+      rawEntry: entry,
+      reason:
+        'required_best_effort_default: date availability field had yes/no answer and was recovered from profile start date'
+    });
+  }
+
   return textValue.length > 0
     ? createAcceptedResult({
         field,
@@ -2661,13 +3025,106 @@ export async function generateApplicationFillPlan(
       );
     }
 
-    const { fillPlan, fieldDiagnostics } = normalizeFillPlan(
+    let responseJson = parsed.data;
+    let normalizedResult = normalizeFillPlan(
       input.fields,
       promptPayload.fields,
       serializedProfile,
       input.job,
-      parsed.data.items
+      responseJson.items
     );
+    let fillPlanValidation = validateRequiredFillPlan({
+      fields: input.fields,
+      fillPlan: normalizedResult.fillPlan,
+      ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {})
+    });
+    let repairPromptPayload: ApplicationFillPlanRepairPromptPayload | null = null;
+    let repairResponseJson: z.infer<typeof applicationFillPlanResponseSchema> | null = null;
+    let repairRawResponseLength = 0;
+
+    const repairItems: ApplicationFillPlanEntry[] = [];
+    for (const invalidField of fillPlanValidation.missingRequiredFields) {
+      const currentRepairPromptPayload = buildRepairPromptPayload({
+        promptPayload,
+        missingRequiredFields: [invalidField],
+        originalItems: normalizedResult.fillPlan
+      });
+      repairPromptPayload ??= currentRepairPromptPayload;
+
+      logStage4('repair_request_prepared', {
+        promptVersion: STAGE_4_PROMPT_VERSION,
+        missingRequiredFieldIds: [invalidField.fieldId],
+        reason: invalidField.reason
+      });
+
+      const repairRequest = {
+        schemaName: 'application_fill_plan_repair',
+        schema: applicationFillPlanJsonSchema as unknown as Record<string, unknown>,
+        systemPrompt: buildRepairSystemPrompt(),
+        prompt: JSON.stringify(currentRepairPromptPayload, null, 2)
+      } satisfies GenerateStructuredObjectInput;
+
+      const repairResponse =
+        provider.generateStructuredObjectWithMetadata !== undefined
+          ? await provider.generateStructuredObjectWithMetadata(repairRequest)
+          : {
+              object: await provider.generateStructuredObject(repairRequest),
+              rawText: ''
+            };
+      repairRawResponseLength += repairResponse.rawText.length;
+      const repairParsed = applicationFillPlanResponseSchema.safeParse(repairResponse.object);
+      if (!repairParsed.success) {
+        logStage4('repair_response_parsed', {
+          promptVersion: STAGE_4_PROMPT_VERSION,
+          rawResponseLength: repairResponse.rawText.length,
+          parseStatus: 'invalid',
+          issues: repairParsed.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+
+        throw new ApplicationAnswerGenerationError(
+          'invalid_output',
+          'OpenRouter returned invalid structured output for the application fill-plan repair.'
+        );
+      }
+
+      repairItems.push(...repairParsed.data.items);
+      responseJson = {
+        items: mergeFillPlanItems(responseJson.items, repairParsed.data.items)
+      };
+      normalizedResult = normalizeFillPlan(
+        input.fields,
+        promptPayload.fields,
+        serializedProfile,
+        input.job,
+        responseJson.items
+      );
+
+      const currentValidation = validateRequiredFillPlan({
+        fields: input.fields.filter((field) => field.id === invalidField.fieldId),
+        fillPlan: normalizedResult.fillPlan,
+        ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {})
+      });
+
+      logStage4('repair_response_parsed', {
+        promptVersion: STAGE_4_PROMPT_VERSION,
+        rawResponseLength: repairResponse.rawText.length,
+        parseStatus: 'parsed',
+        remainingMissingRequiredFieldIds: currentValidation.missingRequiredFields.map(
+          (field) => field.fieldId
+        )
+      });
+    }
+    repairResponseJson = repairItems.length > 0 ? { items: repairItems } : null;
+    fillPlanValidation = validateRequiredFillPlan({
+      fields: input.fields,
+      fillPlan: normalizedResult.fillPlan,
+      ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {})
+    });
+
+    const { fillPlan, fieldDiagnostics } = normalizedResult;
     const skippedFieldIds = fillPlan
       .filter((entry) => entry.action === 'skip')
       .map((entry) => entry.fieldId);
@@ -2688,7 +3145,8 @@ export async function generateApplicationFillPlan(
       parseStatus: 'parsed',
       skippedFieldIds,
       uncertainFieldIds,
-      diagnosticCategoryCounts
+      diagnosticCategoryCounts,
+      missingRequiredFieldIds: fillPlanValidation.missingRequiredFields.map((field) => field.fieldId)
     });
 
     return {
@@ -2696,8 +3154,12 @@ export async function generateApplicationFillPlan(
       rawResponseLength: response.rawText.length,
       serializedProfileShape,
       promptPayload,
-      responseJson: parsed.data,
+      repairPromptPayload,
+      responseJson,
+      repairResponseJson,
       fieldDiagnostics,
+      fillPlanValidation,
+      repairRawResponseLength,
       fillPlan
     };
   } catch (error) {

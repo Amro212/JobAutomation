@@ -18,7 +18,7 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
     const preEntryWarmup = await warmApplicationPageBeforeEntry({
       page: context.session.page,
       board: 'ashby',
-      pacing: context.session.pacing,
+      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
     });
     const boardEntry = await reachApplicationForm({
       page: context.session.page,
@@ -28,7 +28,7 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       board: 'ashby',
       boardEntry,
-      pacing: context.session.pacing,
+      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
     });
     const preFillChallenge = await detectApplicationChallenge({
       page: context.session.page,
@@ -87,15 +87,51 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
       applicantProfile: context.applicantProfile,
       job: context.job,
       fields: scrapedFields,
+      artifacts: context.artifacts,
       openRouter: context.openRouter ?? null,
     });
+    const fillPlanValidation = fillPlanResult.fillPlanValidation ?? {
+      ok: true,
+      missingRequiredFields: [],
+    };
+    const fillPlanDetails = {
+      promptVersion: fillPlanResult.promptVersion,
+      rawResponseLength: fillPlanResult.rawResponseLength,
+      repairRawResponseLength: fillPlanResult.repairRawResponseLength,
+      promptPayload: fillPlanResult.promptPayload,
+      repairPromptPayload: fillPlanResult.repairPromptPayload,
+      responseJson: fillPlanResult.responseJson,
+      repairResponseJson: fillPlanResult.repairResponseJson,
+      fieldDiagnostics: fillPlanResult.fieldDiagnostics,
+      fillPlanValidation,
+      missingRequiredFields: fillPlanValidation.missingRequiredFields,
+      fillPlan: fillPlanResult.fillPlan,
+    };
+
+    if (!fillPlanValidation.ok) {
+      return context.pauseForManualReview({
+        step: 'fill_plan_required_fields_missing',
+        message:
+          'Paused before execution because required application fields were still missing after the repair fill-plan call.',
+        stopReason: 'manual_review_required',
+        details: {
+          boardEntry,
+          scrapedFields,
+          ...fillPlanDetails,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        },
+      });
+    }
+
     const executionResult = await executeApplicationFillPlan({
       page: context.session.page,
       boardEntry,
       artifacts: context.artifacts,
       fields: scrapedFields,
       fillPlan: fillPlanResult.fillPlan,
-      pacing: context.session.pacing,
+      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
     });
     const postFillChallenge = await detectApplicationChallenge({
       page: context.session.page,
@@ -111,7 +147,7 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
           challengeSignal: postFillChallenge,
           boardEntry,
           scrapedFields,
-          fillPlan: fillPlanResult.fillPlan,
+          ...fillPlanDetails,
           executionResult,
           preEntryWarmup,
           preFillWarmup,
@@ -127,12 +163,7 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
       {
         boardEntry,
         scrapedFields,
-        promptVersion: fillPlanResult.promptVersion,
-        rawResponseLength: fillPlanResult.rawResponseLength,
-        promptPayload: fillPlanResult.promptPayload,
-        responseJson: fillPlanResult.responseJson,
-        fieldDiagnostics: fillPlanResult.fieldDiagnostics,
-        fillPlan: fillPlanResult.fillPlan,
+        ...fillPlanDetails,
         executionResult,
         preEntryWarmup,
         preFillWarmup,
@@ -146,12 +177,7 @@ export const ashbyApplicationSite: SupportedApplicationSite = {
       details: {
         boardEntry,
         scrapedFields,
-        promptVersion: fillPlanResult.promptVersion,
-        rawResponseLength: fillPlanResult.rawResponseLength,
-        promptPayload: fillPlanResult.promptPayload,
-        responseJson: fillPlanResult.responseJson,
-        fieldDiagnostics: fillPlanResult.fieldDiagnostics,
-        fillPlan: fillPlanResult.fillPlan,
+        ...fillPlanDetails,
         executionResult,
         preEntryWarmup,
         preFillWarmup,

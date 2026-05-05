@@ -476,6 +476,94 @@ describe('application field scraper', () => {
     );
   });
 
+  test('opens aria-linked comboboxes to scrape visible options without generic role selectors', async () => {
+    await startServer({
+      '/aria-combobox-options': `
+        <html>
+          <body>
+            <section id="application">
+              <label id="country-label" for="country">Country *</label>
+              <input
+                id="country"
+                name="country"
+                role="combobox"
+                aria-labelledby="country-label"
+                aria-autocomplete="list"
+                aria-controls="country-options"
+              />
+              <div id="country-options" role="listbox" hidden>
+                <div role="option" data-value="ca">Canada</div>
+                <div role="option" data-value="us">United States</div>
+              </div>
+
+              <label id="status-label" for="status">Veteran Status</label>
+              <input
+                id="status"
+                role="combobox"
+                aria-labelledby="status-label"
+                aria-autocomplete="list"
+                aria-controls="status-options"
+              />
+              <div id="status-options" role="listbox" hidden>
+                <div role="option" data-value="not_veteran">Not a veteran</div>
+              </div>
+
+              <script>
+                for (const input of document.querySelectorAll('[role="combobox"]')) {
+                  input.addEventListener('focus', () => {
+                    document.getElementById(input.getAttribute('aria-controls')).hidden = false;
+                  });
+                  input.addEventListener('click', () => {
+                    document.getElementById(input.getAttribute('aria-controls')).hidden = false;
+                  });
+                }
+              </script>
+            </section>
+          </body>
+        </html>
+      `
+    });
+
+    const fields = await withPage(async (page) => {
+      await page.goto(`${baseUrl}/aria-combobox-options`, {
+        waitUntil: 'domcontentloaded'
+      });
+      const boardEntry = await reachApplicationForm({ page, board: 'greenhouse' });
+      return scrapeApplicationFields({ page, boardEntry });
+    });
+
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'country',
+          label: 'Country *',
+          type: 'combobox',
+          required: true,
+          requiredSources: ['label_marker'],
+          selectorCandidates: expect.arrayContaining(['#country', '[name="country"]']),
+          optionMode: 'static',
+          options: [
+            {
+              value: 'ca',
+              label: 'Canada',
+              source: 'combobox_option',
+              visible: true
+            },
+            {
+              value: 'us',
+              label: 'United States',
+              source: 'combobox_option',
+              visible: true
+            }
+          ]
+        })
+      ])
+    );
+    expect(fields.find((field) => field.id === 'country')?.selectorCandidates).not.toContain(
+      '[role="combobox"]'
+    );
+  });
+
   test('prefers ancestor upload prompt labels over generic attach controls', async () => {
     await startServer({
       '/greenhouse-upload-ancestor': `

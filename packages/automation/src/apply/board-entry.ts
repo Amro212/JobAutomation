@@ -58,7 +58,7 @@ const INTERACTIVE_FIELD_SELECTOR = [
   '[role="combobox"]'
 ].join(', ');
 
-const MIN_VISIBLE_FIELDS = 2;
+const MIN_VISIBLE_FIELDS = 1;
 const DEFAULT_POLL_MIN_DELAY_MS = 80;
 const DEFAULT_POLL_MAX_DELAY_MS = 180;
 

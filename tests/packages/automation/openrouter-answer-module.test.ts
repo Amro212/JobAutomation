@@ -385,6 +385,367 @@ describe('openrouter answer module', () => {
     });
   });
 
+  test('repairs missing required selector fields before returning the fill plan', async () => {
+    const provider: ApplicationAnswerProvider & {
+      generateStructuredObjectWithMetadata: ReturnType<typeof vi.fn>;
+    } = {
+      generateStructuredObject: vi.fn(),
+      generateStructuredObjectWithMetadata: vi
+        .fn()
+        .mockResolvedValueOnce({
+          object: {
+            items: [
+              {
+                  fieldId: 'shirt_size',
+                  action: 'select',
+                  value: 'Mars',
+                  confidence: 0.8,
+                skipReason: ''
+              }
+            ]
+          },
+          rawText: '{"items":[]}'
+        })
+        .mockResolvedValueOnce({
+          object: {
+            items: [
+              {
+                    fieldId: 'shirt_size',
+                    action: 'select',
+                    value: 'm',
+                    selectedOptionValue: 'm',
+                    selectedOptionLabel: 'Medium',
+                    searchText: null,
+                    evidenceMode: 'inferred_required',
+                    evidenceRefs: [],
+                    confidence: 1,
+                    skipReason: ''
+              }
+            ]
+          },
+          rawText: '{"items":[]}'
+        })
+    };
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'shirt_size',
+          label: 'T-shirt size*',
+          type: 'select',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#shirt_size'],
+          options: [
+            { value: 's', label: 'Small' },
+            { value: 'm', label: 'Medium' }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(provider.generateStructuredObjectWithMetadata).toHaveBeenCalledTimes(2);
+    expect(result.repairPromptPayload?.fields.map((field) => field.id)).toEqual(['shirt_size']);
+    expect(result.fillPlanValidation.ok).toBe(true);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'shirt_size',
+        action: 'select',
+        value: 'm',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+  });
+
+  test('reports required fields that are still missing after one repair call', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'clearance',
+          action: 'skip',
+          value: null,
+          confidence: 0,
+          skipReason: 'missing_profile_fact'
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'clearance',
+          label: 'Security clearance*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#clearance'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(provider.generateStructuredObjectWithMetadata).toHaveBeenCalledTimes(2);
+    expect(result.fillPlanValidation.ok).toBe(false);
+    expect(result.fillPlanValidation.missingRequiredFields).toEqual([
+      expect.objectContaining({
+        fieldId: 'clearance',
+        reason: 'missing_profile_fact: no grounded structured applicant fact is available for this field'
+      })
+    ]);
+  });
+
+  test('repairs required static selectors when profile text is not an exact option', async () => {
+    const provider: ApplicationAnswerProvider & {
+      generateStructuredObjectWithMetadata: ReturnType<typeof vi.fn>;
+    } = {
+      generateStructuredObject: vi.fn(),
+      generateStructuredObjectWithMetadata: vi
+        .fn()
+        .mockResolvedValueOnce({
+          object: {
+            items: [
+              {
+                fieldId: 'degree',
+                action: 'fill',
+                value: 'Computer Engineering',
+                selectedOptionValue: null,
+                selectedOptionLabel: null,
+                searchText: null,
+                evidenceMode: 'direct_profile',
+                evidenceRefs: ['applicantProfile.qualifications.highestEducationProgram'],
+                confidence: 0.8,
+                skipReason: ''
+              }
+            ]
+          },
+          rawText: '{"items":[]}'
+        })
+        .mockResolvedValueOnce({
+          object: {
+            items: [
+              {
+                fieldId: 'degree',
+                action: 'fill',
+                value: "Bachelor's Degree",
+                selectedOptionValue: 'bachelor',
+                selectedOptionLabel: "Bachelor's Degree",
+                searchText: "Bachelor's Degree",
+                evidenceMode: 'inferred_required',
+                evidenceRefs: ['applicantProfile.qualifications.highestEducationProgram'],
+                confidence: 1,
+                skipReason: ''
+              }
+            ]
+          },
+          rawText: '{"items":[]}'
+        })
+    };
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'degree',
+          label: 'Degree*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#degree'],
+          optionMode: 'static',
+          options: [
+            { value: 'associate', label: "Associate's Degree" },
+            { value: 'bachelor', label: "Bachelor's Degree" },
+            { value: 'md', label: 'Doctor of Medicine (M.D.)' },
+            { value: 'phd', label: 'Doctor of Philosophy (Ph.D.)' },
+            { value: 'engineer', label: "Engineer's Degree" },
+            { value: 'high_school', label: 'High School' }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(provider.generateStructuredObjectWithMetadata).toHaveBeenCalledTimes(2);
+    expect(result.repairPromptPayload?.fields).toEqual([
+      expect.objectContaining({
+        id: 'degree',
+        options: expect.arrayContaining([
+          expect.objectContaining({ value: 'bachelor', label: "Bachelor's Degree" })
+        ])
+      })
+    ]);
+    expect(result.fillPlanValidation.ok).toBe(true);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'degree',
+        action: 'fill',
+        value: "Bachelor's Degree",
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+  });
+
+  test('does not copy raw profile text into static selector fields', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'degree_optional',
+          action: 'fill',
+          value: 'Computer Engineering',
+          selectedOptionValue: null,
+          selectedOptionLabel: null,
+          searchText: null,
+          evidenceMode: 'direct_profile',
+          evidenceRefs: ['applicantProfile.qualifications.highestEducationProgram'],
+          confidence: 0.8,
+          skipReason: ''
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'degree_optional',
+          label: 'Degree',
+          type: 'combobox',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#degree_optional'],
+          optionMode: 'static',
+          options: [
+            { value: 'high_school', label: 'High School' },
+            { value: 'associate', label: "Associate's Degree" }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'degree_optional',
+        action: 'skip',
+        value: null,
+        confidence: 0.8,
+        skipReason: 'normalization_rejection: the model selected a combobox option that does not exist'
+      }
+    ]);
+  });
+
+  test('uses any exact returned option candidate for selector fields and canonicalizes output', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'country',
+          action: 'select',
+          value: 'Canada',
+          selectedOptionValue: 'Computer Engineering',
+          selectedOptionLabel: null,
+          searchText: null,
+          evidenceMode: 'direct_profile',
+          evidenceRefs: ['applicantProfile.qualifications.highestEducationProgram'],
+          confidence: 0.8,
+          skipReason: ''
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'country',
+          label: 'Country',
+          type: 'select',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#country'],
+          options: [
+            { value: 'ca', label: 'Canada' },
+            { value: 'us', label: 'United States' }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'country',
+        action: 'select',
+        value: 'ca',
+        confidence: 0.8,
+        skipReason: ''
+      }
+    ]);
+  });
+
+  test('recovers yes-no answers for availability date questions from profile start date', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'availability',
+          action: 'fill',
+          value: 'Yes',
+          selectedOptionValue: null,
+          selectedOptionLabel: null,
+          searchText: null,
+          evidenceMode: 'inferred_required',
+          evidenceRefs: [],
+          confidence: 0.7,
+          skipReason: ''
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'availability',
+          label: 'When are you available to join?*',
+          type: 'text',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#availability'],
+          options: []
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlanValidation.ok).toBe(true);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'availability',
+        action: 'fill',
+        value: '2026-05-01',
+        confidence: 0.7,
+        skipReason: ''
+      }
+    ]);
+  });
+
   test('coerces greenhouse combobox select responses into fill actions with explicit diagnostics', async () => {
     const provider = createProvider({
       items: [
@@ -1228,7 +1589,11 @@ describe('openrouter answer module', () => {
           visible: true,
           enabled: true,
           selectorCandidates: ['#phone_country'],
-          options: []
+          options: [
+            { value: 'United States +1', label: 'United States +1' },
+            { value: 'Canada +1', label: 'Canada +1' }
+          ],
+          optionMode: 'static'
         }
       ],
       provider
@@ -1245,7 +1610,7 @@ describe('openrouter answer module', () => {
       {
         fieldId: 'phone_country',
         action: 'fill',
-        value: '555-0100',
+        value: 'Canada +1',
         confidence: 1,
         skipReason: ''
       }

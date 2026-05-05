@@ -1,11 +1,20 @@
 import { parse, type HTMLElement } from 'node-html-parser';
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 
 import type { ApplicationBoardEntryResult } from './board-entry';
+import {
+  hasRequiredMarker,
+  normalizeFieldText,
+  uniqueRequiredSources,
+  type FieldOptionMode,
+  type FieldRequiredSource
+} from './field-contract';
 
 export type ScrapedApplicationFieldOption = {
   value: string;
   label: string;
+  source?: 'native_option' | 'choice_input' | 'combobox_option';
+  visible?: boolean;
 };
 
 export type ScrapedApplicationFieldType =
@@ -28,10 +37,12 @@ export type ScrapedApplicationField = {
   label: string;
   type: ScrapedApplicationFieldType;
   required: boolean;
+  requiredSources?: FieldRequiredSource[];
   visible: boolean;
   enabled: boolean;
   selectorCandidates: string[];
   options: ScrapedApplicationFieldOption[];
+  optionMode?: FieldOptionMode;
   specialHandling?: ScrapedApplicationFieldSpecialHandling;
 };
 
@@ -60,7 +71,7 @@ function logStage3(action: string, details: Record<string, unknown>): void {
 }
 
 function normalizeText(value: string | null | undefined): string {
-  return (value ?? '').replace(/\s+/g, ' ').trim();
+  return normalizeFieldText(value);
 }
 
 function isGenericLabel(value: string): boolean {
@@ -541,11 +552,6 @@ function selectorCandidatesForElement(element: HTMLElement): string[] {
     candidates.push(`[aria-label="${ariaLabel.replace(/"/g, '\\"')}"]`);
   }
 
-  const role = element.getAttribute('role');
-  if (role) {
-    candidates.push(`[role="${role.replace(/"/g, '\\"')}"]`);
-  }
-
   return uniqueStrings(candidates);
 }
 
@@ -631,12 +637,30 @@ function hasComboboxHints(element: HTMLElement): boolean {
   );
 }
 
-function inferRequired(element: HTMLElement): boolean {
-  return (
-    element.hasAttribute('required') ||
-    element.getAttribute('aria-required') === 'true' ||
-    element.getAttribute('aria-invalid') === 'true'
-  );
+function inferRequiredSources(element: HTMLElement, label: string): FieldRequiredSource[] {
+  const sources: FieldRequiredSource[] = [];
+  if (element.hasAttribute('required')) {
+    sources.push('html_required');
+  }
+
+  if (element.getAttribute('aria-required') === 'true') {
+    sources.push('aria_required');
+  }
+
+  if (element.getAttribute('aria-invalid') === 'true') {
+    sources.push('aria_invalid');
+  }
+
+  if (hasRequiredMarker(label)) {
+    sources.push('label_marker');
+  }
+
+  const legend = findClosestLegend(element);
+  if (hasRequiredMarker(legend)) {
+    sources.push('legend_marker');
+  }
+
+  return uniqueRequiredSources(sources);
 }
 
 function collectSelectOptions(element: HTMLElement): ScrapedApplicationFieldOption[] {
@@ -720,12 +744,16 @@ function scrapeApplicationFieldsFromMarkup(input: {
             readChoiceOptionLabel(input.documentRoot, input.rootElement, option) ||
             normalizeText(option.getAttribute('value'))
         }));
+        const requiredSources = uniqueRequiredSources([
+          ...(hasRequiredMarker(groupLabel) ? (['label_marker'] as FieldRequiredSource[]) : []),
+          ...groupedInputs.flatMap((option) => inferRequiredSources(option, groupLabel))
+        ]);
 
         fields.push({
           id: sameName || normalizeText(groupLabel).toLowerCase().replace(/[^a-z0-9]+/g, '_'),
           label: groupLabel,
           type: groupType,
-          required: groupedInputs.some((option) => inferRequired(option)),
+          required: requiredSources.length > 0,
           visible: true,
           enabled: groupedInputs.some((option) => isEnabled(option)),
           selectorCandidates: uniqueStrings([
@@ -735,7 +763,8 @@ function scrapeApplicationFieldsFromMarkup(input: {
               .map((name) => `[name="${name.replace(/"/g, '\\"')}"]`),
             ...groupedInputs.flatMap((option) => selectorCandidatesForElement(option))
           ]),
-          options
+          options,
+          ...(requiredSources.length > 0 ? { requiredSources } : {})
         });
         groupedFieldCount += 1;
         continue;
@@ -759,16 +788,20 @@ function scrapeApplicationFieldsFromMarkup(input: {
 
     const options = type === 'select' ? collectSelectOptions(element) : [];
     const specialHandling = inferSpecialHandling(type);
+    const requiredSources = inferRequiredSources(element, label);
+    const optionMode: FieldOptionMode = type === 'combobox' ? 'dynamic_search' : 'none';
 
     fields.push({
       id: fieldIdFromElement(element, label),
       label,
       type,
-      required: inferRequired(element),
+      required: requiredSources.length > 0,
       visible: true,
       enabled: isEnabled(element),
       selectorCandidates,
       options,
+      ...(requiredSources.length > 0 ? { requiredSources } : {}),
+      ...(type === 'combobox' ? { optionMode } : {}),
       ...(specialHandling ? { specialHandling } : {})
     });
   }
@@ -783,6 +816,154 @@ function scrapeApplicationFieldsFromMarkup(input: {
     groupedFieldCount,
     specialCases
   };
+}
+
+async function firstAttachedFieldLocator(input: {
+  page: Page;
+  rootSelector: string;
+  rootIndex: number;
+  selectors: string[];
+}) {
+  const root = input.page.locator(input.rootSelector).nth(input.rootIndex);
+  for (const selector of input.selectors) {
+    const scoped = root.locator(selector).first();
+    if ((await scoped.count().catch(() => 0)) > 0) {
+      return scoped;
+    }
+
+    const pageLevel = input.page.locator(selector).first();
+    if ((await pageLevel.count().catch(() => 0)) > 0) {
+      return pageLevel;
+    }
+  }
+
+  return null;
+}
+
+async function visibleRoleOptions(locator: Locator): Promise<ScrapedApplicationFieldOption[]> {
+  const options: ScrapedApplicationFieldOption[] = [];
+  const roleOptions = locator.getByRole('option');
+  const count = Math.min(await roleOptions.count().catch(() => 0), 100);
+
+  for (let index = 0; index < count; index += 1) {
+    const option = roleOptions.nth(index);
+    if (!(await option.isVisible().catch(() => false))) {
+      continue;
+    }
+
+    const label = normalizeText(await option.textContent().catch(() => ''));
+    if (!label) {
+      continue;
+    }
+
+    const value =
+      normalizeText(await option.getAttribute('value').catch(() => null)) ||
+      normalizeText(await option.getAttribute('data-value').catch(() => null)) ||
+      label;
+    options.push({
+      value,
+      label,
+      source: 'combobox_option',
+      visible: true
+    });
+  }
+
+  return options;
+}
+
+function uniqueOptions(options: ScrapedApplicationFieldOption[]): ScrapedApplicationFieldOption[] {
+  const seen = new Set<string>();
+  const unique: ScrapedApplicationFieldOption[] = [];
+  for (const option of options) {
+    const key = `${normalizeText(option.value).toLowerCase()}\u0000${normalizeText(option.label).toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(option);
+  }
+
+  return unique;
+}
+
+async function collectComboboxOptions(input: {
+  page: Page;
+  boardEntry: ApplicationBoardEntryResult;
+  field: ScrapedApplicationField;
+}): Promise<ScrapedApplicationFieldOption[]> {
+  if (input.field.type !== 'combobox' || input.field.selectorCandidates.length === 0) {
+    return [];
+  }
+
+  const locator = await firstAttachedFieldLocator({
+    page: input.page,
+    rootSelector: input.boardEntry.rootSelector,
+    rootIndex: input.boardEntry.rootIndex,
+    selectors: input.field.selectorCandidates
+  });
+  if (!locator) {
+    return [];
+  }
+
+  const linkedIds = new Set<string>();
+  for (const attribute of ['aria-controls', 'aria-owns', 'list']) {
+    const value = normalizeText(await locator.getAttribute(attribute).catch(() => null));
+    for (const id of value.split(/\s+/).map(normalizeText).filter(Boolean)) {
+      linkedIds.add(id);
+    }
+  }
+
+  await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+  await locator.click({ timeout: 750 }).catch(() => undefined);
+  await locator.focus({ timeout: 750 }).catch(() => undefined);
+  await input.page.waitForTimeout(150);
+
+  const options: ScrapedApplicationFieldOption[] = [];
+  for (const id of linkedIds) {
+    options.push(...(await visibleRoleOptions(input.page.locator(`#${cssEscape(id)}`))));
+  }
+
+  if (options.length > 0) {
+    return uniqueOptions(options);
+  }
+
+  options.push(...(await visibleRoleOptions(input.page.locator('body'))));
+  return uniqueOptions(options);
+}
+
+async function enrichComboboxFields(input: {
+  page: Page;
+  boardEntry: ApplicationBoardEntryResult;
+  fields: ScrapedApplicationField[];
+}): Promise<ScrapedApplicationField[]> {
+  const enriched: ScrapedApplicationField[] = [];
+  for (const field of input.fields) {
+    if (field.type !== 'combobox') {
+      enriched.push(field);
+      continue;
+    }
+
+    const options = await collectComboboxOptions({
+      page: input.page,
+      boardEntry: input.boardEntry,
+      field
+    });
+    if (options.length === 0) {
+      enriched.push({
+        ...field,
+        optionMode: field.optionMode ?? 'dynamic_search'
+      });
+      continue;
+    }
+
+    enriched.push({
+      ...field,
+      options,
+      optionMode: 'static'
+    });
+  }
+
+  return enriched;
 }
 
 export async function scrapeApplicationFields(input: {
@@ -817,25 +998,34 @@ export async function scrapeApplicationFields(input: {
     rootElement
   });
 
-  if (result.fields.length === 0) {
+  const fields = await enrichComboboxFields({
+    page: input.page,
+    boardEntry: input.boardEntry,
+    fields: result.fields
+  });
+
+  if (fields.length === 0) {
     throw new Error('Application form scraper did not find any visible fields after readiness check.');
   }
 
-  for (const field of result.fields) {
+  for (const field of fields) {
     logStage3('field_discovered', {
       label: field.label,
       type: field.type,
       required: field.required,
-      selectorCandidates: field.selectorCandidates
+      requiredSources: field.requiredSources ?? [],
+      selectorCandidates: field.selectorCandidates,
+      optionMode: field.optionMode ?? 'none',
+      optionCount: field.options.length
     });
   }
 
   logStage3('scrape_summary', {
-    totalFields: result.fields.length,
+    totalFields: fields.length,
     ignoredFieldCount: result.ignoredFieldCount,
     groupedFieldCount: result.groupedFieldCount,
     specialCases: result.specialCases
   });
 
-  return result.fields;
+  return fields;
 }

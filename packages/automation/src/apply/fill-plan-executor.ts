@@ -11,6 +11,7 @@ import type {
 import type { ScrapedApplicationField } from './form-scraper';
 import type { ApplicationFillPlanEntry } from './openrouter-answer-module';
 import { uploadArtifactFile } from './file-upload';
+import { isFieldRequired, uploadArtifactKindForField } from './field-contract';
 
 export type ApplicationFillExecutionStatus = 'success' | 'skipped' | 'failed';
 
@@ -238,6 +239,10 @@ function escapeAttributeValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+function cssEscape(value: string): string {
+  return value.replace(/([ !"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+}
+
 function choiceValues(value: ApplicationFillPlanEntry['value']): string[] {
   if (typeof value === 'string') {
     return [value];
@@ -367,20 +372,15 @@ async function visibleOptionByText(input: {
   page: Page;
   root: Locator;
   labels: string[];
+  optionRoots?: Locator[];
 }): Promise<Locator | null> {
+  const roots = input.optionRoots ?? [input.root, input.page.locator('body')];
   for (const label of input.labels) {
-    const scopedOption = input.root
-      .getByRole('option', { name: label, exact: true })
-      .first();
-    if (await scopedOption.isVisible().catch(() => false)) {
-      return scopedOption;
-    }
-
-    const pageOption = input.page
-      .getByRole('option', { name: label, exact: true })
-      .first();
-    if (await pageOption.isVisible().catch(() => false)) {
-      return pageOption;
+    for (const root of roots) {
+      const option = root.getByRole('option', { name: label, exact: true }).first();
+      if (await option.isVisible().catch(() => false)) {
+        return option;
+      }
     }
   }
 
@@ -390,24 +390,43 @@ async function visibleOptionByText(input: {
 async function firstVisibleOption(input: {
   page: Page;
   root: Locator;
+  optionRoots?: Locator[];
 }): Promise<Locator | null> {
-  const scopedOption = input.root.getByRole('option').first();
-  if (await scopedOption.isVisible().catch(() => false)) {
-    return scopedOption;
-  }
-
-  const pageOption = input.page.getByRole('option').first();
-  if (await pageOption.isVisible().catch(() => false)) {
-    return pageOption;
+  const roots = input.optionRoots ?? [input.root, input.page.locator('body')];
+  for (const root of roots) {
+    const option = root.getByRole('option').first();
+    if (await option.isVisible().catch(() => false)) {
+      return option;
+    }
   }
 
   return null;
+}
+
+async function comboboxOptionRoots(input: {
+  page: Page;
+  root: Locator;
+  locator: Locator;
+}): Promise<Locator[]> {
+  const roots: Locator[] = [];
+
+  for (const attribute of ['aria-controls', 'aria-owns', 'list']) {
+    const value = await input.locator.getAttribute(attribute).catch(() => null);
+    for (const id of (value ?? '').split(/\s+/).map((item) => item.trim()).filter(Boolean)) {
+      roots.push(input.page.locator(`#${cssEscape(id)}`));
+    }
+  }
+
+  roots.push(input.root, input.page.locator('body'));
+  return roots;
 }
 
 async function waitForComboboxOption(input: {
   page: Page;
   root: Locator;
   labels: string[];
+  optionRoots?: Locator[];
+  allowFirstVisibleFallback?: boolean;
   timeoutMs?: number;
   pollMs?: number;
 }): Promise<Locator | null> {
@@ -420,17 +439,21 @@ async function waitForComboboxOption(input: {
       page: input.page,
       root: input.root,
       labels: input.labels,
+      ...(input.optionRoots ? { optionRoots: input.optionRoots } : {}),
     });
     if (exactMatch) {
       return exactMatch;
     }
 
-    const firstVisible = await firstVisibleOption({
-      page: input.page,
-      root: input.root,
-    });
-    if (firstVisible) {
-      return firstVisible;
+    if (input.allowFirstVisibleFallback ?? true) {
+      const firstVisible = await firstVisibleOption({
+        page: input.page,
+        root: input.root,
+        ...(input.optionRoots ? { optionRoots: input.optionRoots } : {}),
+      });
+      if (firstVisible) {
+        return firstVisible;
+      }
     }
 
     await input.page.waitForTimeout(pollMs);
@@ -582,15 +605,49 @@ async function executeCombobox(input: {
     return;
   }
 
+  const optionRoots = await comboboxOptionRoots({
+    page: input.page,
+    root: input.root,
+    locator: input.locator,
+  });
+  const candidateLabels = comboboxCandidateLabels({
+    field: input.field,
+    value,
+  });
+  const optionMode = input.field.optionMode ?? (input.field.options.length > 0 ? 'static' : 'dynamic_search');
+
+  if (optionMode === 'static' && input.field.options.length > 0) {
+    await input.actionEngine.click(input.locator);
+    const option = await waitForComboboxOption({
+      page: input.page,
+      root: input.root,
+      labels: candidateLabels,
+      optionRoots,
+      allowFirstVisibleFallback: false,
+      timeoutMs: 650,
+      pollMs: 50,
+    });
+
+    if (option) {
+      await input.actionEngine.click(option);
+      await input.page.keyboard.press('Escape').catch(() => undefined);
+      await input.locator.evaluate((element) => {
+        if (element instanceof HTMLElement) {
+          element.blur();
+        }
+      }).catch(() => undefined);
+      return;
+    }
+  }
+
   await input.actionEngine.typeText(input.locator, value);
 
   const option = await waitForComboboxOption({
     page: input.page,
     root: input.root,
-    labels: comboboxCandidateLabels({
-      field: input.field,
-      value,
-    }),
+    labels: candidateLabels,
+    optionRoots,
+    allowFirstVisibleFallback: optionMode !== 'static',
   });
 
   if (!option) {
@@ -598,6 +655,13 @@ async function executeCombobox(input: {
   }
 
   await input.actionEngine.click(option);
+  await input.page.waitForTimeout(150);
+  await input.page.keyboard.press('Escape').catch(() => undefined);
+  await input.locator.evaluate((element) => {
+    if (element instanceof HTMLElement) {
+      element.blur();
+    }
+  }).catch(() => undefined);
 }
 
 async function firstVisibleChoiceLocator(input: {
@@ -718,11 +782,22 @@ async function executeSelect(input: {
   }
 
   await input.actionEngine.click(input.locator);
-  await input.actionEngine.press('Home');
+  await input.locator.focus();
+  await input.locator.press('Home');
   for (let index = 0; index < targetIndex; index += 1) {
-    await input.actionEngine.press('ArrowDown');
+    await input.locator.press('ArrowDown');
   }
-  await input.actionEngine.press('Enter');
+  await input.locator.press('Enter');
+
+  const selectedValue = await input.locator.inputValue().catch(() => '');
+  if (selectedValue !== value) {
+    const targetLabel = input.field.options[targetIndex]?.label.trim() ?? '';
+    await input.locator.focus();
+    if (targetLabel.length > 0) {
+      await input.locator.press(targetLabel[0] ?? '');
+    }
+    await input.locator.press('Enter');
+  }
 }
 
 async function executeCheckbox(input: {
@@ -748,9 +823,8 @@ function uploadArtifactForField(input: {
   label: string;
   artifact: ApplicationArtifacts[keyof ApplicationArtifacts] | null;
 } {
-  const normalized = `${input.field.id} ${input.field.label}`.toLowerCase();
-
-  if (/(resume|cv|curriculum vitae)/i.test(normalized)) {
+  const kind = uploadArtifactKindForField(input.field);
+  if (kind === 'resume') {
     return {
       kind: 'resume',
       label: 'resume',
@@ -758,7 +832,7 @@ function uploadArtifactForField(input: {
     };
   }
 
-  if (/(cover[\s_-]*letter|coverletter)/i.test(normalized)) {
+  if (kind === 'coverLetter') {
     return {
       kind: 'coverLetter',
       label: 'cover letter',
@@ -803,7 +877,7 @@ async function executeFileUploadWithSelectorFallback(input: {
       fieldId: input.field.id,
       label: input.field.label,
       action: input.entry.action,
-      status: input.field.required ? 'failed' : 'skipped',
+      status: isFieldRequired(input.field) ? 'failed' : 'skipped',
       message:
         'No matching upload artifact type could be inferred for this file field.',
     };
@@ -814,8 +888,8 @@ async function executeFileUploadWithSelectorFallback(input: {
       fieldId: input.field.id,
       label: input.field.label,
       action: input.entry.action,
-      status: input.field.required ? 'failed' : 'skipped',
-      message: input.field.required
+      status: isFieldRequired(input.field) ? 'failed' : 'skipped',
+      message: isFieldRequired(input.field)
         ? `Required ${upload.label} artifact is missing.`
         : `Optional ${upload.label} artifact is missing.`,
     };
@@ -848,7 +922,7 @@ async function executeFileUploadWithSelectorFallback(input: {
       await uploadArtifactFile({
         artifact: upload.artifact,
         locator,
-        required: input.field.required,
+        required: isFieldRequired(input.field),
       });
       await waitWithRange(input.page, pacing.postFieldDelayMs);
       if (input.board === 'lever' && upload.kind === 'resume') {
@@ -1073,7 +1147,7 @@ export async function executeApplicationFillPlan(input: {
   const results: ApplicationFillExecutionResult[] = [];
   const actionEngine = createHumanActionEngine({
     page: input.page,
-    pacing: input.pacing,
+    ...(input.pacing !== undefined ? { pacing: input.pacing } : {}),
   });
 
   await actionEngine.waitForPreFill();
@@ -1106,8 +1180,8 @@ export async function executeApplicationFillPlan(input: {
         root,
         field,
         entry,
-        artifacts: input.artifacts,
-        pacing: input.pacing,
+        ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {}),
+        ...(input.pacing !== undefined ? { pacing: input.pacing } : {}),
       });
       logStage5(
         result.status === 'success'

@@ -28,7 +28,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
     const preEntryWarmup = await warmApplicationPageBeforeEntry({
       page: context.session.page,
       board: 'greenhouse',
-      pacing: context.session.pacing,
+      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
     });
     const boardEntry = await reachApplicationForm({
       page: context.session.page,
@@ -38,7 +38,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       board: 'greenhouse',
       boardEntry,
-      pacing: context.session.pacing,
+      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
     });
     const preFillChallenge = await detectApplicationChallenge({
       page: context.session.page,
@@ -97,15 +97,51 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       applicantProfile: context.applicantProfile,
       job: context.job,
       fields: scrapedFields,
+      artifacts: context.artifacts,
       openRouter: context.openRouter ?? null,
     });
+    const fillPlanValidation = fillPlanResult.fillPlanValidation ?? {
+      ok: true,
+      missingRequiredFields: [],
+    };
+    const fillPlanDetails = {
+      promptVersion: fillPlanResult.promptVersion,
+      rawResponseLength: fillPlanResult.rawResponseLength,
+      repairRawResponseLength: fillPlanResult.repairRawResponseLength,
+      promptPayload: fillPlanResult.promptPayload,
+      repairPromptPayload: fillPlanResult.repairPromptPayload,
+      responseJson: fillPlanResult.responseJson,
+      repairResponseJson: fillPlanResult.repairResponseJson,
+      fieldDiagnostics: fillPlanResult.fieldDiagnostics,
+      fillPlanValidation,
+      missingRequiredFields: fillPlanValidation.missingRequiredFields,
+      fillPlan: fillPlanResult.fillPlan,
+    };
+
+    if (!fillPlanValidation.ok) {
+      return context.pauseForManualReview({
+        step: 'fill_plan_required_fields_missing',
+        message:
+          'Paused before execution because required application fields were still missing after the repair fill-plan call.',
+        stopReason: 'manual_review_required',
+        details: {
+          boardEntry,
+          scrapedFields,
+          ...fillPlanDetails,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        },
+      });
+    }
+
     const executionResult = await executeApplicationFillPlan({
       page: context.session.page,
       boardEntry,
       artifacts: context.artifacts,
       fields: scrapedFields,
       fillPlan: fillPlanResult.fillPlan,
-      pacing: context.session.pacing,
+      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
     });
     const postFillChallenge = await detectApplicationChallenge({
       page: context.session.page,
@@ -121,7 +157,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           challengeSignal: postFillChallenge,
           boardEntry,
           scrapedFields,
-          fillPlan: fillPlanResult.fillPlan,
+          ...fillPlanDetails,
           executionResult,
           preEntryWarmup,
           preFillWarmup,
@@ -163,12 +199,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         {
           boardEntry,
           scrapedFields,
-          promptVersion: fillPlanResult.promptVersion,
-          rawResponseLength: fillPlanResult.rawResponseLength,
-          promptPayload: fillPlanResult.promptPayload,
-          responseJson: fillPlanResult.responseJson,
-          fieldDiagnostics: fillPlanResult.fieldDiagnostics,
-          fillPlan: fillPlanResult.fillPlan,
+          ...fillPlanDetails,
           executionResult,
           preEntryWarmup,
           preFillWarmup,
@@ -183,12 +214,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         details: {
           boardEntry,
           scrapedFields,
-          promptVersion: fillPlanResult.promptVersion,
-          rawResponseLength: fillPlanResult.rawResponseLength,
-          promptPayload: fillPlanResult.promptPayload,
-          responseJson: fillPlanResult.responseJson,
-          fieldDiagnostics: fillPlanResult.fieldDiagnostics,
-          fillPlan: fillPlanResult.fillPlan,
+          ...fillPlanDetails,
           executionResult,
           preEntryWarmup,
           preFillWarmup,
@@ -197,16 +223,23 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       });
     }
 
+    const gmailVerificationConfig = emailVerificationConfig;
+    const isGmailConfigComplete = Boolean(
+      gmailVerificationConfig.gmailUserEmail.trim() &&
+        gmailVerificationConfig.gmailClientId.trim() &&
+        gmailVerificationConfig.gmailClientSecret.trim() &&
+        gmailVerificationConfig.gmailRefreshToken.trim()
+    );
     const verificationResult = await submitGreenhouseApplicationAndEnterVerificationCode({
       page: context.session.page,
       debugLog: logVerificationDebug,
       retrieveCode: async (submittedAt) => {
-        if (!isConfiguredForGmailVerification(emailVerificationConfig)) {
+        if (!isGmailConfigComplete) {
           await logVerificationDebug('gmail_oauth_not_configured', {
-            gmailUserEmail: emailVerificationConfig.gmailUserEmail || null,
-            hasClientId: Boolean(emailVerificationConfig.gmailClientId.trim()),
-            hasClientSecret: Boolean(emailVerificationConfig.gmailClientSecret.trim()),
-            hasRefreshToken: Boolean(emailVerificationConfig.gmailRefreshToken.trim())
+            gmailUserEmail: gmailVerificationConfig.gmailUserEmail || null,
+            hasClientId: Boolean(gmailVerificationConfig.gmailClientId.trim()),
+            hasClientSecret: Boolean(gmailVerificationConfig.gmailClientSecret.trim()),
+            hasRefreshToken: Boolean(gmailVerificationConfig.gmailRefreshToken.trim())
           });
           return {
             status: 'not_configured' as const,
@@ -216,14 +249,18 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         }
 
         return pollGmailForGreenhouseVerificationCode({
-          gmail: createGmailApiClient(emailVerificationConfig),
-          userEmail: emailVerificationConfig.gmailUserEmail || 'me',
+          gmail: createGmailApiClient(gmailVerificationConfig),
+          userEmail: gmailVerificationConfig.gmailUserEmail || 'me',
           submittedAt,
           timeoutMs: GREENHOUSE_VERIFICATION_TIMEOUT_MS,
           debugLog: logVerificationDebug
         });
       }
     });
+    const verificationMessage =
+      'message' in verificationResult
+        ? verificationResult.message
+        : 'Greenhouse verification code was retrieved, but the application could not complete verification automatically.';
     await logVerificationDebug('greenhouse_verification_result', {
       status: verificationResult.status,
       ...(verificationResult.status === 'code_entered'
@@ -233,7 +270,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
             codeLength: verificationResult.codeLength
           }
         : {
-            message: verificationResult.message
+            message: verificationMessage
           })
     });
 
@@ -241,13 +278,12 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       return context.pauseForManualReview({
         step: 'email_verification_required',
         message:
-          verificationResult.message,
+          verificationMessage,
         stopReason: verificationResult.status,
         details: {
           boardEntry,
           scrapedFields,
-          promptVersion: fillPlanResult.promptVersion,
-          fillPlan: fillPlanResult.fillPlan,
+          ...fillPlanDetails,
           executionResult,
           verificationStatus: verificationResult.status,
           preEntryWarmup,
@@ -264,12 +300,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       {
         boardEntry,
         scrapedFields,
-        promptVersion: fillPlanResult.promptVersion,
-        rawResponseLength: fillPlanResult.rawResponseLength,
-        promptPayload: fillPlanResult.promptPayload,
-        responseJson: fillPlanResult.responseJson,
-        fieldDiagnostics: fillPlanResult.fieldDiagnostics,
-        fillPlan: fillPlanResult.fillPlan,
+        ...fillPlanDetails,
         executionResult,
         verificationStatus: verificationResult.status,
         verificationMessageId: verificationResult.messageId,
@@ -289,12 +320,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       details: {
         boardEntry,
         scrapedFields,
-        promptVersion: fillPlanResult.promptVersion,
-        rawResponseLength: fillPlanResult.rawResponseLength,
-        promptPayload: fillPlanResult.promptPayload,
-        responseJson: fillPlanResult.responseJson,
-        fieldDiagnostics: fillPlanResult.fieldDiagnostics,
-        fillPlan: fillPlanResult.fillPlan,
+        ...fillPlanDetails,
         executionResult,
         verificationStatus: verificationResult.status,
         verificationMessageId: verificationResult.messageId,
