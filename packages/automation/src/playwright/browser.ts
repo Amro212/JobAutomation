@@ -254,6 +254,29 @@ function resolveScreenConstraint(
   };
 }
 
+function resolveWindowSize(
+  identity: BrowserIdentityConfig,
+  screenConstraint?: CamoufoxLaunchOptions['screen']
+): [number, number] | undefined {
+  if (identity.window || identity.headless || identity.screen) {
+    return undefined;
+  }
+
+  if (screenConstraint?.maxWidth && screenConstraint?.maxHeight) {
+    return [screenConstraint.maxWidth, screenConstraint.maxHeight];
+  }
+
+  const display = detectDisplayBounds();
+  if (!display) {
+    return undefined;
+  }
+
+  return [
+    Math.max(1024, Math.floor(display.width * 0.95)),
+    Math.max(720, Math.floor(display.height * 0.85))
+  ];
+}
+
 function primaryLocale(locale: string | string[]): string {
   return Array.isArray(locale) ? (locale[0] ?? resolveRuntimeLocale()) : locale;
 }
@@ -326,6 +349,7 @@ function createIdentityAwareCamoufoxOptions(
   identity: BrowserIdentityConfig
 ): Omit<CamoufoxLaunchOptions, 'headless'> & { headless?: boolean } {
   const screenConstraint = resolveScreenConstraint(identity);
+  const windowSize = resolveWindowSize(identity, screenConstraint);
 
   return {
     headless: identity.headless,
@@ -333,7 +357,7 @@ function createIdentityAwareCamoufoxOptions(
     locale: identity.locale,
     os: identity.os,
     ...(identity.screen ? { screen: identity.screen } : screenConstraint ? { screen: screenConstraint } : {}),
-    ...(identity.window ? { window: identity.window } : {}),
+    ...(identity.window ? { window: identity.window } : windowSize ? { window: windowSize } : {}),
     ...(identity.fonts ? { fonts: identity.fonts } : {}),
     ...(identity.webglConfig ? { webgl_config: identity.webglConfig } : {}),
     enable_cache: identity.enableCache,

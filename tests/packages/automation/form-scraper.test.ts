@@ -900,6 +900,158 @@ describe('application field scraper', () => {
     ]);
   });
 
+  test('does not merge separate Lever radio questions that share one section list', async () => {
+    await startServer({
+      '/lever-shared-section-radios': `
+        <html>
+          <body>
+            <section id="application">
+              <div class="section page-centered application-form">
+                <h4>Additional Questions</h4>
+                <input type="hidden" name="card" value="f164d557-93a6-4a31-bb8f-3f226956f117" />
+                <ul>
+                  <li class="application-question custom-question">
+                    <div>
+                      <div class="application-label full-width select">
+                        <div class="text">How did you hear about Veeva?<span class="required">✱</span></div>
+                      </div>
+                      <div class="application-field full-width required-field">
+                        <select name="cards[f164d557-93a6-4a31-bb8f-3f226956f117][field0]" required>
+                          <option value="">Select...</option>
+                          <option value="LinkedIn">LinkedIn</option>
+                        </select>
+                      </div>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="section page-centered application-form">
+                <h4>Engineering - Canada</h4>
+                <input type="hidden" name="card" value="bbbb8d3c-6d1f-4862-ae98-089fa90314db" />
+                <ul>
+                  <li class="application-question custom-question">
+                    <div>
+                      <div class="application-label full-width multiple-choice">
+                        <div class="text">Are you legally authorized to work in Canada for any employer (on a full-time basis)?<span class="required">✱</span></div>
+                      </div>
+                      <div class="application-field full-width required-field">
+                        <ul data-qa="multiple-choice">
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field0]" value="Yes" required /><span class="application-answer-alternative">Yes</span></label></li>
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field0]" value="No" required /><span class="application-answer-alternative">No</span></label></li>
+                        </ul>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="application-question custom-question">
+                    <div>
+                      <div class="application-label full-width multiple-choice">
+                        <div class="text">Do you require work permit sponsorship in Canada?<span class="required">✱</span></div>
+                      </div>
+                      <div class="application-field full-width required-field">
+                        <ul data-qa="multiple-choice">
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field1]" value="Yes" required /><span class="application-answer-alternative">Yes</span></label></li>
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field1]" value="No" required /><span class="application-answer-alternative">No</span></label></li>
+                        </ul>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="application-question custom-question">
+                    <div>
+                      <div class="application-label full-width multiple-choice">
+                        <div class="text">Do you have any impediments to travelling internationally?<span class="required">✱</span></div>
+                      </div>
+                      <div class="application-field full-width required-field">
+                        <ul data-qa="multiple-choice">
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field2]" value="Yes" required /><span class="application-answer-alternative">Yes</span></label></li>
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field2]" value="No" required /><span class="application-answer-alternative">No</span></label></li>
+                        </ul>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="application-question custom-question">
+                    <div>
+                      <div class="application-label full-width multiple-choice">
+                        <div class="text">Are you currently living in the US or Canada?<span class="required">✱</span></div>
+                      </div>
+                      <div class="application-field full-width required-field">
+                        <ul data-qa="multiple-choice">
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field3]" value="US" required /><span class="application-answer-alternative">US</span></label></li>
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field3]" value="Canada" required /><span class="application-answer-alternative">Canada</span></label></li>
+                          <li><label><input type="radio" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field3]" value="Other" required /><span class="application-answer-alternative">Other</span></label></li>
+                        </ul>
+                      </div>
+                    </div>
+                  </li>
+                  <li class="application-question custom-question">
+                    <div>
+                      <div class="application-label full-width text">
+                        <div class="text">What are your salary expectations?</div>
+                      </div>
+                      <div class="application-field full-width">
+                        <input class="card-field-input" type="text" name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field4]" />
+                      </div>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </section>
+          </body>
+        </html>
+      `
+    });
+
+    const fields = await withPage(async (page) => {
+      await page.goto(`${baseUrl}/lever-shared-section-radios`, { waitUntil: 'domcontentloaded' });
+      const boardEntry = await reachApplicationForm({ page, board: 'lever' });
+      return scrapeApplicationFields({ page, boardEntry });
+    });
+
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field0]',
+          label: expect.stringContaining(
+            'Are you legally authorized to work in Canada for any employer (on a full-time basis)?'
+          ),
+          type: 'radio_group',
+          selectorCandidates: ['[name="cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field0]"]'],
+          options: [
+            { value: 'Yes', label: 'Yes' },
+            { value: 'No', label: 'No' }
+          ]
+        }),
+        expect.objectContaining({
+          id: 'cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field1]',
+          label: expect.stringContaining('Do you require work permit sponsorship in Canada?'),
+          type: 'radio_group'
+        }),
+        expect.objectContaining({
+          id: 'cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field2]',
+          label: expect.stringContaining(
+            'Do you have any impediments to travelling internationally?'
+          ),
+          type: 'radio_group'
+        }),
+        expect.objectContaining({
+          id: 'cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field3]',
+          label: expect.stringContaining('Are you currently living in the US or Canada?'),
+          type: 'radio_group',
+          options: [
+            { value: 'US', label: 'US' },
+            { value: 'Canada', label: 'Canada' },
+            { value: 'Other', label: 'Other' }
+          ]
+        }),
+        expect.objectContaining({
+          id: 'cards[bbbb8d3c-6d1f-4862-ae98-089fa90314db][field4]',
+          label: 'What are your salary expectations?',
+          type: 'text'
+        })
+      ])
+    );
+  });
+
   test('scrapes apply fields without using page-world evaluate APIs', async () => {
     await startServer({
       '/no-eval': `

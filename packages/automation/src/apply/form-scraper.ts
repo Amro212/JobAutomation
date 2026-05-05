@@ -286,6 +286,26 @@ function hasMultipleDirectChoiceSubgroups(
   return false;
 }
 
+function containsDifferentChoiceNames(
+  container: HTMLElement,
+  inputType: 'radio' | 'checkbox',
+  targetName: string
+): boolean {
+  if (!targetName) {
+    return false;
+  }
+
+  const distinctNames = new Set(
+    container
+      .querySelectorAll(`input[type="${inputType}"]`)
+      .filter((candidate) => isVisible(candidate))
+      .map((candidate) => normalizeText(candidate.getAttribute('name')))
+      .filter(Boolean)
+  );
+
+  return distinctNames.size > 1 || !distinctNames.has(targetName);
+}
+
 function findGroupedFieldLabel(
   documentRoot: HTMLElement,
   rootElement: HTMLElement,
@@ -463,13 +483,17 @@ function readChoiceOptionLabel(
 
 function findChoiceGroupContainer(rootElement: HTMLElement, element: HTMLElement): HTMLElement | null {
   const inputType = element.getAttribute('type') === 'radio' ? 'radio' : 'checkbox';
+  const targetName = normalizeText(element.getAttribute('name'));
   let current: HTMLElement | null = element.parentNode ?? null;
   while (current && current !== rootElement) {
     const sameTypeInputs = current
       .querySelectorAll(`input[type="${inputType}"]`)
       .filter((candidate) => isVisible(candidate));
     if (sameTypeInputs.length > 1) {
-      if (hasMultipleDirectChoiceSubgroups(current, inputType)) {
+      if (
+        containsDifferentChoiceNames(current, inputType, targetName) ||
+        hasMultipleDirectChoiceSubgroups(current, inputType)
+      ) {
         current = current.parentNode ?? null;
         continue;
       }
@@ -495,13 +519,17 @@ function findBroaderChoiceGroupContainer(
   minimumInputCount: number
 ): HTMLElement | null {
   const inputType = element.getAttribute('type') === 'radio' ? 'radio' : 'checkbox';
+  const targetName = normalizeText(element.getAttribute('name'));
   let current: HTMLElement | null = element.parentNode ?? null;
   while (current && current !== rootElement) {
     const sameTypeInputs = current
       .querySelectorAll(`input[type="${inputType}"]`)
       .filter((candidate) => isVisible(candidate));
     if (sameTypeInputs.length > minimumInputCount) {
-      if (hasMultipleDirectChoiceSubgroups(current, inputType)) {
+      if (
+        containsDifferentChoiceNames(current, inputType, targetName) ||
+        hasMultipleDirectChoiceSubgroups(current, inputType)
+      ) {
         current = current.parentNode ?? null;
         continue;
       }

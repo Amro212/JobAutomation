@@ -135,10 +135,20 @@ function createHumanActionEngine(input: {
       );
     },
     async click(locator: Locator) {
+      const clickedInViewport = await clickLocatorCenterIfVisible({
+        page: input.page,
+        locator,
+        preClickDelayMs: pacing.preFieldDelayMs,
+      });
+      if (clickedInViewport) {
+        metrics.pointerActions += 1;
+        await waitWithRange(input.page, pacing.postFieldDelayMs);
+        return;
+      }
+
       await locator.scrollIntoViewIfNeeded().catch(() => undefined);
       await waitWithRange(input.page, pacing.preFieldDelayMs);
-      await locator.hover().catch(() => undefined);
-      await locator.click();
+      await clickLocatorCenterWithoutScroll({ page: input.page, locator });
       metrics.pointerActions += 1;
       await waitWithRange(input.page, pacing.postFieldDelayMs);
     },
@@ -147,11 +157,19 @@ function createHumanActionEngine(input: {
       value: string,
       options?: { ensureClear?: boolean; skipScroll?: boolean }
     ) {
-      if (!options?.skipScroll) {
+      const clickedInViewport = await clickLocatorCenterIfVisible({
+        page: input.page,
+        locator,
+        preClickDelayMs: pacing.preFieldDelayMs,
+      });
+      if (!clickedInViewport && !options?.skipScroll) {
         await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+        await waitWithRange(input.page, pacing.preFieldDelayMs);
+        await clickLocatorCenterWithoutScroll({ page: input.page, locator });
+      } else if (!clickedInViewport) {
+        await waitWithRange(input.page, pacing.preFieldDelayMs);
+        await locator.click();
       }
-      await waitWithRange(input.page, pacing.preFieldDelayMs);
-      await locator.click();
       metrics.pointerActions += 1;
 
       await input.page.keyboard.press('ControlOrMeta+A').catch(() => undefined);
@@ -368,6 +386,43 @@ async function clickLocatorCenterWithoutScroll(input: {
   await input.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+async function clickLocatorCenterIfVisible(input: {
+  page: Page;
+  locator: Locator;
+  preClickDelayMs: [number, number];
+}): Promise<boolean> {
+  const box = await input.locator.boundingBox();
+  if (!box || box.width <= 0 || box.height <= 0) {
+    return false;
+  }
+
+  const viewport = input.page.viewportSize();
+  const viewportSize =
+    viewport ??
+    (await input.page
+      .evaluate(() => ({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }))
+      .catch(() => null));
+  if (!viewportSize) {
+    return false;
+  }
+
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const clickCenterVisible =
+    x >= 0 && x <= viewportSize.width && y >= 0 && y <= viewportSize.height;
+  if (!clickCenterVisible) {
+    return false;
+  }
+
+  await waitWithRange(input.page, input.preClickDelayMs);
+  await input.page.mouse.move(x, y);
+  await input.page.mouse.click(x, y);
+  return true;
+}
+
 async function visibleOptionByText(input: {
   page: Page;
   root: Locator;
@@ -565,13 +620,13 @@ async function executeLocationAutocomplete(input: {
     throw new Error(`No visible location suggestion appeared for "${value}".`);
   }
 
-  await input.actionEngine.press('Enter');
+  await clickLocatorCenterWithoutScroll({ page: input.page, locator: option });
   await input.page.waitForTimeout(300);
   if (await ashbyLocationCommitted({ page: input.page, locator: input.locator })) {
     return;
   }
 
-  await clickLocatorCenterWithoutScroll({ page: input.page, locator: option });
+  await input.actionEngine.press('Enter');
   await input.page.waitForTimeout(300);
   if (!(await ashbyLocationCommitted({ page: input.page, locator: input.locator }))) {
     throw new Error(`Location suggestion did not commit for "${value}".`);

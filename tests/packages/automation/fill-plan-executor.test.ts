@@ -544,7 +544,7 @@ describe('application fill plan executor', () => {
     });
   });
 
-  test('commits Ashby location combobox with Enter after suggestions load', async () => {
+  test('clicks the populated Ashby location option after typing search text', async () => {
     await startServer(`
       <html>
         <body>
@@ -634,7 +634,7 @@ describe('application fill plan executor', () => {
       };
     });
 
-    expect(result.pointerClicks).toBe('0');
+    expect(result.pointerClicks).toBe('1');
     expect(result.selected).toBe('Toronto, Ontario, Canada');
     expect(result.value).toBe('Toronto, Ontario, Canada');
     expect(result.executionResult.summary).toEqual({
@@ -999,6 +999,85 @@ describe('application fill plan executor', () => {
       success: 4,
       skipped: 0,
       failed: 0,
+    });
+  });
+
+  test('does not auto-scroll before clicking a radio option that is already on screen', async () => {
+    await startServer(`
+      <html>
+        <body style="margin: 0;">
+          <div style="height: 900px;"></div>
+          <section id="application">
+            <fieldset style="height: 180px; padding: 20px;">
+              <legend>Work authorization</legend>
+              <label style="display: block; height: 60px;">
+                <input type="radio" name="work_auth" value="yes" />
+                Yes
+              </label>
+              <label style="display: block; height: 60px;">
+                <input id="work_auth_no" type="radio" name="work_auth" value="no" />
+                No
+              </label>
+            </fieldset>
+          </section>
+          <div style="height: 900px;"></div>
+        </body>
+      </html>
+    `);
+
+    await withPage(async (page) => {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+      await page.evaluate(() => window.scrollTo(0, 700));
+      const initialScrollY = await page.evaluate(() => window.scrollY);
+
+      const locatorPrototype = Object.getPrototypeOf(page.locator('body')) as {
+        scrollIntoViewIfNeeded: (...args: unknown[]) => Promise<void>;
+      };
+      const scrollSpy = vi.spyOn(locatorPrototype, 'scrollIntoViewIfNeeded');
+
+      try {
+        const executionResult = await executeApplicationFillPlan({
+          page,
+          boardEntry: boardEntry(),
+          fields: [
+            {
+              id: 'work_auth',
+              label: 'Work authorization',
+              type: 'radio_group',
+              required: true,
+              visible: true,
+              enabled: true,
+              selectorCandidates: ['[name="work_auth"]'],
+              options: [
+                { value: 'yes', label: 'Yes' },
+                { value: 'no', label: 'No' },
+              ],
+            },
+          ],
+          fillPlan: [
+            {
+              fieldId: 'work_auth',
+              action: 'click',
+              value: 'no',
+              confidence: 1,
+              skipReason: '',
+            },
+          ],
+        });
+
+        expect(executionResult.summary).toEqual({
+          total: 1,
+          success: 1,
+          skipped: 0,
+          failed: 0,
+        });
+        expect(await page.locator('#work_auth_no').isChecked()).toBe(true);
+        expect(scrollSpy).not.toHaveBeenCalled();
+        expect(await page.evaluate(() => window.scrollY)).toBe(initialScrollY);
+      } finally {
+        scrollSpy.mockRestore();
+      }
     });
   });
 
