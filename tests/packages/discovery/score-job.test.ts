@@ -72,6 +72,22 @@ describe('scoreJob', () => {
       updatedAt: new Date('2026-03-15T09:00:00.000Z')
     });
 
+    let requestBody: {
+      response_format?: {
+        type?: string;
+        json_schema?: {
+          schema?: {
+            required?: unknown;
+            properties?: {
+              reasoning?: {
+                type?: unknown;
+              };
+            };
+          };
+        };
+      };
+    } | null = null;
+
     const scored = await scoreJob({
       jobId: job.id,
       jobsRepository,
@@ -79,8 +95,9 @@ describe('scoreJob', () => {
         apiKey: 'test-key',
         baseUrl: 'https://openrouter.example/api/v1',
         model: 'openrouter/test-model',
-        fetchImpl: async () =>
-          new Response(
+        fetchImpl: async (_url, init) => {
+          requestBody = JSON.parse(String(init?.body)) as typeof requestBody;
+          return new Response(
             JSON.stringify({
               choices: [
                 {
@@ -102,7 +119,8 @@ describe('scoreJob', () => {
                 'content-type': 'application/json'
               }
             }
-          )
+          );
+        }
       }
     });
 
@@ -114,6 +132,16 @@ describe('scoreJob', () => {
     expect(scored.reviewScoreUpdatedAt).toBeInstanceOf(Date);
     expect(stored?.reviewSummary).toBe(scored.reviewSummary);
     expect(stored?.reviewScore).toBe(86);
+    expect(requestBody?.response_format?.type).toBe('json_schema');
+    expect(requestBody?.response_format?.json_schema?.schema?.required).toEqual([
+      'summary',
+      'score',
+      'reasoning'
+    ]);
+    expect(requestBody?.response_format?.json_schema?.schema?.properties?.reasoning?.type).toEqual([
+      'string',
+      'null'
+    ]);
   });
 
   test('accepts summary and score when reasoning is omitted by the model', async () => {
