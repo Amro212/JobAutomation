@@ -553,6 +553,69 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function hasRequiredClassToken(value: string | null | undefined): boolean {
+  const normalized = normalizeText(value).toLowerCase();
+  return /(^|[_\-\s])required([_\-\s]|$)/.test(normalized);
+}
+
+function elementHasRequiredClassMarker(element: HTMLElement | null | undefined): boolean {
+  if (!element) {
+    return false;
+  }
+
+  return hasRequiredClassToken(element.getAttribute('class'));
+}
+
+function hasNearbyRequiredClassMarker(
+  documentRoot: HTMLElement,
+  element: HTMLElement,
+  label: string
+): boolean {
+  const associatedLabels = labelsForElement(documentRoot, element);
+  if (associatedLabels.some((candidate) => elementHasRequiredClassMarker(candidate))) {
+    return true;
+  }
+
+  const wrappingLabel = element.closest('label');
+  if (elementHasRequiredClassMarker(wrappingLabel)) {
+    return true;
+  }
+
+  const nearestFieldContainer =
+    element.closest(
+      '[data-field-entry-id], [data-field-path], fieldset, .ashby-application-form-field-entry, ._fieldEntry_17tft_29'
+    ) ?? element.closest('fieldset');
+  if (elementHasRequiredClassMarker(nearestFieldContainer)) {
+    return true;
+  }
+
+  if (nearestFieldContainer) {
+    const normalizedLabel = normalizeText(label);
+    const requiredNodes = nearestFieldContainer
+      .querySelectorAll('[class*="required"], [class*="_required_"]')
+      .filter((candidate) => elementHasRequiredClassMarker(candidate));
+    for (const node of requiredNodes) {
+      const nodeText = normalizeText(node.textContent);
+      if (!normalizedLabel || nodeText.includes(normalizedLabel)) {
+        return true;
+      }
+    }
+  }
+
+  let current: HTMLElement | null = element.parentNode ?? null;
+  let depth = 0;
+  while (current && current !== documentRoot && depth < 4) {
+    if (elementHasRequiredClassMarker(current)) {
+      return true;
+    }
+
+    current = current.parentNode ?? null;
+    depth += 1;
+  }
+
+  return false;
+}
+
 function selectorCandidatesForElement(element: HTMLElement): string[] {
   const candidates: string[] = [];
   const id = element.getAttribute('id');
@@ -578,6 +641,24 @@ function selectorCandidatesForElement(element: HTMLElement): string[] {
   const ariaLabel = normalizeText(element.getAttribute('aria-label'));
   if (ariaLabel) {
     candidates.push(`[aria-label="${ariaLabel.replace(/"/g, '\\"')}"]`);
+  }
+
+  const fieldPath = normalizeText(element.closest('[data-field-path]')?.getAttribute('data-field-path'));
+  if (fieldPath) {
+    const escapedPath = fieldPath.replace(/"/g, '\\"');
+    const tagName = element.rawTagName.toLowerCase();
+    if (tagName === 'textarea') {
+      candidates.push(`[data-field-path="${escapedPath}"] textarea`);
+    } else if (tagName === 'input') {
+      candidates.push(`[data-field-path="${escapedPath}"] input`);
+    } else if (tagName === 'select') {
+      candidates.push(`[data-field-path="${escapedPath}"] select`);
+    } else {
+      candidates.push(
+        `[data-field-path="${escapedPath}"] [role="textbox"]`,
+        `[data-field-path="${escapedPath}"] [contenteditable="true"]`
+      );
+    }
   }
 
   return uniqueStrings(candidates);
@@ -665,7 +746,11 @@ function hasComboboxHints(element: HTMLElement): boolean {
   );
 }
 
-function inferRequiredSources(element: HTMLElement, label: string): FieldRequiredSource[] {
+function inferRequiredSources(
+  documentRoot: HTMLElement,
+  element: HTMLElement,
+  label: string
+): FieldRequiredSource[] {
   const sources: FieldRequiredSource[] = [];
   if (element.hasAttribute('required')) {
     sources.push('html_required');
@@ -686,6 +771,10 @@ function inferRequiredSources(element: HTMLElement, label: string): FieldRequire
   const legend = findClosestLegend(element);
   if (hasRequiredMarker(legend)) {
     sources.push('legend_marker');
+  }
+
+  if (hasNearbyRequiredClassMarker(documentRoot, element, label)) {
+    sources.push('nearby_required_text');
   }
 
   return uniqueRequiredSources(sources);
@@ -774,7 +863,7 @@ function scrapeApplicationFieldsFromMarkup(input: {
         }));
         const requiredSources = uniqueRequiredSources([
           ...(hasRequiredMarker(groupLabel) ? (['label_marker'] as FieldRequiredSource[]) : []),
-          ...groupedInputs.flatMap((option) => inferRequiredSources(option, groupLabel))
+          ...groupedInputs.flatMap((option) => inferRequiredSources(input.documentRoot, option, groupLabel))
         ]);
 
         fields.push({
@@ -816,7 +905,7 @@ function scrapeApplicationFieldsFromMarkup(input: {
 
     const options = type === 'select' ? collectSelectOptions(element) : [];
     const specialHandling = inferSpecialHandling(type);
-    const requiredSources = inferRequiredSources(element, label);
+    const requiredSources = inferRequiredSources(input.documentRoot, element, label);
     const optionMode: FieldOptionMode = type === 'combobox' ? 'dynamic_search' : 'none';
 
     fields.push({

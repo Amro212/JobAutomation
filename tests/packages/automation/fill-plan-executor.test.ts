@@ -1002,6 +1002,75 @@ describe('application fill plan executor', () => {
     });
   });
 
+  test('handles Ashby-style hidden checkbox inputs by clicking visible Yes/No buttons', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <div class="ashby-application-form-field-entry" data-field-path="6a7a7e99-1d49-4066-ae75-097e6745c462">
+              <label class="ashby-application-form-question-title">Do you have experience with LLMs?</label>
+              <button id="llm-yes" type="button">Yes</button>
+              <button id="llm-no" type="button">No</button>
+              <input id="llm-hidden" type="checkbox" name="6a7a7e99-1d49-4066-ae75-097e6745c462" style="display:none" />
+            </div>
+            <script>
+              const input = document.getElementById('llm-hidden');
+              document.getElementById('llm-yes').addEventListener('click', () => {
+                input.checked = true;
+              });
+              document.getElementById('llm-no').addEventListener('click', () => {
+                input.checked = false;
+              });
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry('ashby'),
+        fields: [
+          {
+            id: '6a7a7e99-1d49-4066-ae75-097e6745c462',
+            label: 'Do you have experience with LLMs?',
+            type: 'checkbox',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['[name="6a7a7e99-1d49-4066-ae75-097e6745c462"]'],
+            options: [],
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: '6a7a7e99-1d49-4066-ae75-097e6745c462',
+            action: 'check',
+            value: true,
+            confidence: 1,
+            skipReason: '',
+          },
+        ],
+      });
+
+      return {
+        executionResult,
+        checked: await page.locator('#llm-hidden').isChecked(),
+      };
+    });
+
+    expect(result.checked).toBe(true);
+    expect(result.executionResult.summary).toEqual({
+      total: 1,
+      success: 1,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
   test('does not auto-scroll before clicking a radio option that is already on screen', async () => {
     await startServer(`
       <html>

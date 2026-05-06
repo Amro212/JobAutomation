@@ -730,6 +730,56 @@ describe('application field scraper', () => {
     ]);
   });
 
+  test('detects Ashby required questions from required-class markers and includes field-path selectors', async () => {
+    await startServer({
+      '/ashby-required-class': `
+        <html>
+          <body>
+            <section id="application">
+              <div class="_fieldEntry_17tft_29 ashby-application-form-field-entry" data-field-path="f5b06102-3b49-4174-bb5c-945469d1b946">
+                <label class="_heading_101oc_53 _required_101oc_92 _label_17tft_43 ashby-application-form-question-title">
+                  Graduation Date
+                </label>
+                <div class="_inputWrapper_vhnr2_1">
+                  <input type="text" class="_input_vhnr2_29 _greedy_vhnr2_60" />
+                </div>
+              </div>
+              <div class="_fieldEntry_17tft_29 ashby-application-form-field-entry" data-field-path="6a7a7e99-1d49-4066-ae75-097e6745c462">
+                <label class="_heading_101oc_53 _required_101oc_92 _label_17tft_43 ashby-application-form-question-title">
+                  Do you have experience with LLMs?
+                </label>
+                <button type="button">Yes</button>
+                <button type="button">No</button>
+                <input type="checkbox" name="6a7a7e99-1d49-4066-ae75-097e6745c462" class="_input_y2cw4_79" />
+              </div>
+            </section>
+          </body>
+        </html>
+      `
+    });
+
+    const fields = await withPage(async (page) => {
+      await page.goto(`${baseUrl}/ashby-required-class`, { waitUntil: 'domcontentloaded' });
+      const boardEntry = await reachApplicationForm({ page, board: 'ashby' });
+      return scrapeApplicationFields({ page, boardEntry });
+    });
+
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'graduation_date',
+          label: 'Graduation Date',
+          type: 'text',
+          required: true,
+          requiredSources: expect.arrayContaining(['nearby_required_text']),
+          selectorCandidates: expect.arrayContaining([
+            '[data-field-path="f5b06102-3b49-4174-bb5c-945469d1b946"] input'
+          ])
+        })
+      ])
+    );
+  });
+
   test('prefers prompt text inside wrapped labels over helper and status content', async () => {
     await startServer({
       '/wrapped-label-prompts': `

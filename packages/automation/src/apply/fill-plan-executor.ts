@@ -856,6 +856,9 @@ async function executeSelect(input: {
 }
 
 async function executeCheckbox(input: {
+  page: Page;
+  root: Locator;
+  field: ScrapedApplicationField;
   entry: ApplicationFillPlanEntry;
   locator: Locator;
   actionEngine: HumanActionEngine;
@@ -864,9 +867,40 @@ async function executeCheckbox(input: {
     throw new Error('Checkbox action requires a boolean value.');
   }
 
-  const checked = await input.locator.isChecked().catch(() => false);
+  const checked = await input.locator.isChecked().catch(() => null);
   if (checked !== input.entry.value) {
-    await input.actionEngine.click(input.locator);
+    const locatorVisible = await input.locator.isVisible().catch(() => false);
+    if (locatorVisible) {
+      await input.actionEngine.click(input.locator);
+      return;
+    }
+    // Some boards render hidden checkbox inputs and clickable Yes/No buttons.
+
+    const container = input.locator.locator(
+      'xpath=ancestor::*[@data-field-path or @data-field-entry-id or self::fieldset or contains(@class,"fieldEntry") or contains(@class,"field-entry")][1]'
+    );
+    const buttonName = input.entry.value ? /^yes$/i : /^no$/i;
+    const scopedButton = container.getByRole('button', { name: buttonName }).first();
+    if (await scopedButton.isVisible().catch(() => false)) {
+      await input.actionEngine.click(scopedButton);
+      return;
+    }
+
+    if (input.field.label.trim().length > 0) {
+      const labelContainer = input.root
+        .getByText(input.field.label, { exact: false })
+        .first()
+        .locator(
+          'xpath=ancestor::*[@data-field-path or @data-field-entry-id or self::fieldset or contains(@class,"fieldEntry") or contains(@class,"field-entry")][1]'
+        );
+      const labelScopedButton = labelContainer.getByRole('button', { name: buttonName }).first();
+      if (await labelScopedButton.isVisible().catch(() => false)) {
+        await input.actionEngine.click(labelScopedButton);
+        return;
+      }
+    }
+
+    throw new Error('Checkbox target was not visible and no Yes/No button fallback was available.');
   }
 }
 
@@ -1032,14 +1066,25 @@ async function executeWithSelectorFallback(input: {
       selector,
     });
 
-    const locator = await firstVisibleLocator({
-      page: input.page,
-      root: input.root,
-      selector,
-    });
+    const locator =
+      input.entry.action === 'check' && input.field.type === 'checkbox'
+        ? await firstAttachedLocator({
+            page: input.page,
+            root: input.root,
+            selector,
+          })
+        : await firstVisibleLocator({
+            page: input.page,
+            root: input.root,
+            selector,
+          });
 
     if (!locator) {
-      errors.push(`${selector}: not visible`);
+      errors.push(
+        input.entry.action === 'check' && input.field.type === 'checkbox'
+          ? `${selector}: not attached`
+          : `${selector}: not visible`
+      );
       continue;
     }
 
@@ -1109,6 +1154,9 @@ async function executeWithSelectorFallback(input: {
 
       if (input.entry.action === 'check' && input.field.type === 'checkbox') {
         await executeCheckbox({
+          page: input.page,
+          root: input.root,
+          field: input.field,
           entry: input.entry,
           locator,
           actionEngine: input.actionEngine,
