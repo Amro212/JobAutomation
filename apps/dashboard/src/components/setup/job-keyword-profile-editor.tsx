@@ -183,8 +183,8 @@ export function JobKeywordProfileEditor({
       <div className="space-y-1">
         <p className="text-sm font-medium">Titles and keywords</p>
         <p className="text-xs text-muted-foreground">
-          Matching uses case-insensitive substrings in the job title. Negative terms reject a job if they appear
-          in the title.
+          Matching uses deterministic title, keyword, location, and seniority signals. Negative terms
+          reject a job if they appear in the title.
         </p>
       </div>
 
@@ -200,7 +200,7 @@ export function JobKeywordProfileEditor({
 
       <KeywordRow
         label="Positive keywords"
-        description="Skills, tools, or domains you want to see in titles. Entries of 1–3 characters (e.g. c, js) only match as whole tokens, not inside longer words."
+        description="Strong profile-defining skills, tools, or domains. Avoid generic tools unless they are central to this profile."
         items={draft.positive_keywords}
         setDraft={setDraft}
         field="positive_keywords"
@@ -220,10 +220,11 @@ export function JobKeywordProfileEditor({
 
       <div className="space-y-2">
         <label htmlFor="job-filter-seniority" className="text-sm font-medium">
-          Seniority (for experience parsing)
+          Seniority
         </label>
         <p className="text-xs text-muted-foreground">
-          Used with regex on the job description to drop roles that require more years than this level allows.
+          Controls title-level fit and experience parsing. New-grad and junior profiles reject
+          over-level titles unless the posting has clear early-career signals.
         </p>
         <select
           id="job-filter-seniority"

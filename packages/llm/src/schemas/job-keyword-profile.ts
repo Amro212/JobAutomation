@@ -7,13 +7,13 @@ export const jobKeywordProfileJsonSchema = {
     target_titles: {
       type: 'array',
       description:
-        'Many short phrases that may appear in desired job titles; prefer exhaustive synonyms and variants for high recall.',
+        'Precision-first desired job-title phrases for realistic next-step roles at the applicant seniority.',
       items: { type: 'string' }
     },
     positive_keywords: {
       type: 'array',
       description:
-        'Many skills, tools, domains, and abbreviations that signal a good title match; err on the side of including more.',
+        'Strong profile-defining skills, tools, domains, and abbreviations. Avoid broad generic keyword bloat.',
       items: { type: 'string' }
     },
     negative_keywords: {

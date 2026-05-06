@@ -66,12 +66,12 @@ export async function generateJobKeywordProfile(
 
   const systemPrompt = [
     'You extract a job-search filter profile for ONE applicant from their resume and notes.',
-    'Maximize recall while keeping entries useful for FAST substring filtering (avoid weak or generic terms).',
-    'Prefer breadth over minimal lists. Use short lowercase phrases suitable for matching job titles and descriptions.',
+    'Build a precision-first shortlist filter. Avoid broad generic keyword bloat.',
+    'Use short lowercase phrases suitable for deterministic substring filtering.',
     'Rules:',
-    '- target_titles: include ALL plausible job-title phrases with synonyms, variations, abbreviations, and stack-specific versions (e.g. software engineer, software developer, backend engineer, ml engineer, machine learning engineer, embedded engineer, firmware engineer, systems engineer).',
-    '- positive_keywords: include ONLY strong, concrete signals such as programming languages, tools, frameworks, technologies, and domains. Include abbreviations and variants (e.g. javascript, js, node, nodejs, c++, cpp). DO NOT include soft skills (e.g. teamwork, communication).',
-    '- negative_keywords: include title-level terms that indicate poor fit. Focus on roles, not skills (e.g. sales, recruiter, nurse, attorney, accountant, marketing, hr, customer support if not relevant).',
+    '- target_titles: include only realistic next-step job-title phrases for this applicant, seniority-aware and grounded in the profile. Include useful variants, not every possible adjacent role.',
+    '- positive_keywords: include ONLY strong profile-defining skills, tools, frameworks, technologies, and domains. Exclude generic tools or environment words unless central to the profile (e.g. git, github, linux, api, html, css). DO NOT include soft skills (e.g. teamwork, communication).',
+    '- negative_keywords: include title-level terms that indicate poor fit. For new_grad or junior profiles, include over-level terms such as senior, staff, principal, lead, manager, architect unless the profile clearly targets those roles. Also include unrelated role terms such as sales, recruiter, nurse, attorney, accountant, marketing, hr, customer support if not relevant.',
     '- seniority: one of new_grad, junior, mid, senior, lead — match how they present on the resume.',
     'Constraints:',
     '- Every entry must be useful for substring filtering.',

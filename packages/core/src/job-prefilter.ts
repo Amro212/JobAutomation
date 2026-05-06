@@ -10,6 +10,7 @@ export const prefilterReasonSchema = z.enum([
   'title_no_match',
   'location',
   'experience_min_years',
+  'seniority_title_mismatch',
   'low_match_score'
 ]);
 
@@ -84,6 +85,11 @@ const EXPERIENCE_REGEXES: RegExp[] = [
 const MATCH_PASS_THRESHOLD = 45;
 const EXPERIENCE_TOLERANCE_YEARS = 1;
 const MAX_PROFILE_TERMS = 80;
+
+const OVER_LEVEL_TITLE_REGEX =
+  /\b(?:senior|sr\.?|staff|principal|lead|manager|architect)\b/i;
+const EARLY_CAREER_REGEX =
+  /\b(?:new\s+grad(?:uate)?|graduate|intern(?:ship)?|entry[-\s]?level|campus|university|0\s*(?:-|to)\s*2\s+years?|1\+?\s+years?)\b/i;
 
 const STOP_WORDS = new Set([
   'a',
@@ -340,6 +346,26 @@ function passesExperienceFilter(descriptionText: string, profile: DeterministicM
   return null;
 }
 
+function passesSeniorityTitleFilter(
+  title: string,
+  descriptionText: string,
+  profile: DeterministicMatchProfile
+): PrefilterReason | null {
+  if (profile.seniority !== 'new_grad' && profile.seniority !== 'junior') {
+    return null;
+  }
+
+  if (!OVER_LEVEL_TITLE_REGEX.test(title)) {
+    return null;
+  }
+
+  if (EARLY_CAREER_REGEX.test(`${title}\n${descriptionText}`)) {
+    return null;
+  }
+
+  return 'seniority_title_mismatch';
+}
+
 export type PrefilterJobInput = Pick<JobRecord, 'title' | 'location' | 'remoteType' | 'descriptionText'>;
 
 function scoreJobMatch(
@@ -425,6 +451,11 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
   const experiencePass = expReason == null;
   if (expReason) {
     reasons.push(expReason);
+  }
+
+  const seniorityReason = passesSeniorityTitleFilter(job.title, job.descriptionText, profile);
+  if (seniorityReason) {
+    reasons.push(seniorityReason);
   }
 
   const scored = scoreJobMatch(job, ctx, locationPass, experiencePass);

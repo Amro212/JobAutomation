@@ -106,6 +106,78 @@ describe('prefilterJob', () => {
     expect(r.score).toBeLessThan(45);
   });
 
+  test('rejects senior title for new-grad profile even when broad keywords match', () => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Senior Software Engineer',
+        descriptionText:
+          'Build TypeScript services with React, Node.js, Playwright, Docker, Kubernetes, and AWS.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer'],
+          positive_keywords: ['typescript', 'react', 'node.js', 'playwright', 'docker', 'aws']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(false);
+    expect(r.reasons).toContain('seniority_title_mismatch');
+  });
+
+  test.each([
+    'Staff Software Engineer',
+    'Principal Backend Engineer',
+    'Lead Software Engineer',
+    'Engineering Manager'
+  ])('rejects over-level title "%s" for junior profile', (title) => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title,
+        descriptionText: 'Build software systems with TypeScript and backend services.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'junior',
+          target_titles: ['software engineer', 'backend engineer'],
+          positive_keywords: ['typescript', 'backend']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(false);
+    expect(r.reasons).toContain('seniority_title_mismatch');
+  });
+
+  test.each(['New Graduate Software Engineer', 'Software Engineer Internship'])(
+    'allows early-career title "%s" for new-grad profile',
+    (title) => {
+      const r = prefilterJob(
+        {
+          ...baseJob,
+          title,
+          descriptionText: 'Entry level role for university graduates building TypeScript services.'
+        },
+        {
+          jobKeywordProfile: profile({
+            seniority: 'new_grad',
+            target_titles: ['software engineer'],
+            positive_keywords: ['typescript']
+          }),
+          preferredCountries: []
+        }
+      );
+
+      expect(r.pass).toBe(true);
+      expect(r.reasons).not.toContain('seniority_title_mismatch');
+    }
+  );
+
   test('passes title when a positive keyword matches', () => {
     const r = prefilterJob(
       { ...baseJob, title: 'Staff Designer — TypeScript design systems' },
