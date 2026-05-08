@@ -59,6 +59,29 @@ function hasGeneratedResumePdfArtifact(
   );
 }
 
+async function resolveSubmittedArtifacts(
+  app: Parameters<typeof registerApplicationRunRoutes>[0],
+  run: { resumeArtifactId: string | null; coverLetterArtifactId: string | null }
+) {
+  const [resumeArtifact, coverLetterArtifact] = await Promise.all([
+    run.resumeArtifactId
+      ? app.repositories.artifacts.findById(run.resumeArtifactId)
+      : Promise.resolve(null),
+    run.coverLetterArtifactId
+      ? app.repositories.artifacts.findById(run.coverLetterArtifactId)
+      : Promise.resolve(null)
+  ]);
+
+  return {
+    resumeArtifact: resumeArtifact
+      ? artifactRecordSchema.parse(resumeArtifact)
+      : null,
+    coverLetterArtifact: coverLetterArtifact
+      ? artifactRecordSchema.parse(coverLetterArtifact)
+      : null
+  };
+}
+
 export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
   app.get('/application-runs', async () => {
     const runs = await app.repositories.applicationRuns.list();
@@ -70,9 +93,12 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
           return null;
         }
 
+        const submittedArtifacts = await resolveSubmittedArtifacts(app, run);
+
         return {
           run: applicationRunRecordSchema.parse(run),
           job: jobRecordSchema.parse(job),
+          ...submittedArtifacts
         };
       })
     );
@@ -104,6 +130,7 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       app.repositories.logEvents.listByApplicationRun(runId),
       app.repositories.artifacts.listByApplicationRun(runId),
     ]);
+    const submittedArtifacts = await resolveSubmittedArtifacts(app, run);
 
     return {
       run: applicationRunRecordSchema.parse(run),
@@ -112,6 +139,7 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       artifacts: artifacts.map((artifact) =>
         artifactRecordSchema.parse(artifact)
       ),
+      ...submittedArtifacts,
       statusMessage: statusMessageForRun(run.status),
     };
   });

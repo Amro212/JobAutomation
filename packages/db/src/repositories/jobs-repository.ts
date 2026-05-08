@@ -265,6 +265,16 @@ export class JobsRepository {
     return record ? mapJobRecord(record) : null;
   }
 
+  async listByDiscoveryRun(discoveryRunId: string): Promise<JobRecord[]> {
+    const records = await this.db
+      .select()
+      .from(jobsTable)
+      .where(eq(jobsTable.discoveryRunId, discoveryRunId))
+      .orderBy(desc(jobsTable.updatedAt));
+
+    return records.map(mapJobRecord);
+  }
+
   async upsert(input: UpsertJobInput): Promise<JobRecord> {
     const existing = await this.findBySource(input.sourceKind, input.sourceId);
     const recordId = existing?.id ?? input.id ?? randomUUID();
@@ -411,6 +421,23 @@ export class JobsRepository {
     }
 
     await this.db.update(jobsTable).set(updateSet).where(eq(jobsTable.id, id));
+
+    return this.findById(id);
+  }
+
+  async updateStatus(id: string, status: JobStatus): Promise<JobRecord | null> {
+    const existing = await this.findById(id);
+    if (!existing) {
+      return null;
+    }
+
+    await this.db
+      .update(jobsTable)
+      .set({
+        status,
+        updatedAt: new Date()
+      })
+      .where(eq(jobsTable.id, id));
 
     return this.findById(id);
   }

@@ -3,6 +3,7 @@ import { reachApplicationForm } from '../board-entry';
 import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
+import { submitApplicationAndConfirm } from '../submit-application';
 import {
   detectApplicationChallenge,
   warmApplicationFormBeforeFill,
@@ -157,28 +158,58 @@ export const leverApplicationSite: SupportedApplicationSite = {
       });
     }
 
+    const submissionResult = await submitApplicationAndConfirm({
+      page: context.session.page,
+      board: 'lever',
+    });
+
+    if (submissionResult.status !== 'submitted') {
+      return context.pauseForManualReview({
+        step: 'submit_confirmation_missing',
+        message: submissionResult.message,
+        stopReason: submissionResult.status,
+        details: {
+          boardEntry,
+          scrapedFields,
+          ...fillPlanDetails,
+          executionResult,
+          confirmationStatus: submissionResult.status,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content(),
+        },
+      });
+    }
+
     await context.logStep(
-      'fill_plan_executed',
-      'Executed the Lever fill plan against the current visible application form and stopped for Stage 5 review.',
+      'submitted',
+      'Submitted the Lever application automatically.',
       {
         boardEntry,
         scrapedFields,
         ...fillPlanDetails,
         executionResult,
+        confirmationStatus: submissionResult.status,
+        confirmationMessage: submissionResult.confirmationMessage,
+        submitButtonSource: submissionResult.submitButtonSource,
         preEntryWarmup,
         preFillWarmup,
         profileDirectory: context.session.identity.userDataDir ?? null,
       }
     );
 
-    return context.pauseForManualReview({
-      step: 'fill_plan_executed',
-      message: 'Paused after executing the Lever fill plan for Stage 5 review.',
+    return context.completeRun({
+      step: 'submitted',
+      message: 'Submitted the Lever application automatically.',
       details: {
         boardEntry,
         scrapedFields,
         ...fillPlanDetails,
         executionResult,
+        confirmationStatus: submissionResult.status,
+        confirmationMessage: submissionResult.confirmationMessage,
+        submitButtonSource: submissionResult.submitButtonSource,
         preEntryWarmup,
         preFillWarmup,
         profileDirectory: context.session.identity.userDataDir ?? null,

@@ -11,6 +11,7 @@ import type { PrefilterContext } from '@jobautomation/core';
 import {
   ApplicantProfileRepository,
   ApplicationRunsRepository,
+  AutopilotRunsRepository,
   ArtifactsRepository,
   DiscoveryRunsRepository,
   DiscoverySchedulesRepository,
@@ -466,6 +467,85 @@ describe('repositories', () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]?.applicationRunId).toBe(created.id);
     expect(logEvent.id).toBeDefined();
+  });
+
+  test('tracks autopilot runs and links child application runs', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, {
+      migrationsFolder
+    });
+
+    const autopilotRunsRepository = new AutopilotRunsRepository(db);
+    const applicationRunsRepository = new ApplicationRunsRepository(db);
+    const discoveryRunsRepository = new DiscoveryRunsRepository(db);
+    const jobsRepository = new JobsRepository(db);
+
+    const discoveryRun = await discoveryRunsRepository.create({
+      sourceKind: 'structured',
+      runKind: 'structured',
+      triggerKind: 'manual',
+      status: 'completed'
+    });
+
+    const autopilotRun = await autopilotRunsRepository.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      discoveryRunId: discoveryRun.id
+    });
+
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-autopilot-1',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/autopilot-1',
+      companyName: 'Example Corp',
+      title: 'Automation Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Automate application workflows.',
+      rawPayload: null,
+      discoveryRunId: discoveryRun.id,
+      status: 'applied',
+      discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+      updatedAt: new Date('2026-05-08T10:00:00.000Z')
+    });
+
+    const childRun = await applicationRunsRepository.create({
+      jobId: job.id,
+      siteKey: 'greenhouse',
+      status: 'completed',
+      currentStep: 'submitted',
+      autopilotRunId: autopilotRun.id,
+      prefilterReasons: [],
+      createdAt: new Date('2026-05-08T10:10:00.000Z'),
+      startedAt: new Date('2026-05-08T10:10:05.000Z'),
+      completedAt: new Date('2026-05-08T10:12:00.000Z'),
+      updatedAt: new Date('2026-05-08T10:12:00.000Z')
+    });
+
+    await autopilotRunsRepository.update(autopilotRun.id, {
+      status: 'partial',
+      currentStep: 'applications_completed',
+      eligibleJobCount: 1,
+      submittedCount: 1,
+      blockedCount: 0,
+      completedAt: new Date('2026-05-08T10:12:00.000Z')
+    });
+
+    const storedRun = await autopilotRunsRepository.findById(autopilotRun.id);
+    const childRuns = await applicationRunsRepository.listByAutopilotRun(
+      autopilotRun.id
+    );
+
+    expect(storedRun?.discoveryRunId).toBe(discoveryRun.id);
+    expect(storedRun?.status).toBe('partial');
+    expect(storedRun?.submittedCount).toBe(1);
+    expect(childRuns).toHaveLength(1);
+    expect(childRuns[0]?.autopilotRunId).toBe(autopilotRun.id);
+    expect(childRun.autopilotRunId).toBe(autopilotRun.id);
   });
 
   test('filters jobs by locationCountries with case-insensitive alias matching', async () => {

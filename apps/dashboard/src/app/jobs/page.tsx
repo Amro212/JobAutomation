@@ -331,6 +331,8 @@ export default async function JobsPage({
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Structured discovery is live for Greenhouse, Lever, and Ashby, and Camoufox fallback can
           now onboard persisted browser sources when a public jobs page has no supported feed.
+          Applied jobs stay visible with their persisted status instead of falling back into the
+          review queue.
           When you have a job filter profile or preferred countries on Setup, this list defaults to{' '}
           <span className="font-medium text-foreground">My matches</span> so off-target roles stay
           out of the way—use <span className="font-medium text-foreground">All jobs</span> to see the

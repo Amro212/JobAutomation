@@ -1,6 +1,7 @@
 export * from './applicant-profile';
 export * from './autofill-profile';
 export * from './application-run';
+export * from './autopilot-run';
 export * from './artifact';
 export * from './discovery-schedule';
 export * from './discovery-run';

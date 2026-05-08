@@ -1,7 +1,7 @@
 import type {
   ApplicantProfile,
   ApplicationRunRecord,
-  ApplicationRunStatus,
+  AutopilotRunRecord,
   ArtifactRecord,
   DiscoveryRunRecord,
   DiscoveryRunSourceSummary,
@@ -34,6 +34,8 @@ export type ApplicantProfileResponse = {
 export type ApplicationRunSummary = {
   run: ApplicationRunRecord;
   job: JobRecord;
+  resumeArtifact: ArtifactRecord | null;
+  coverLetterArtifact: ArtifactRecord | null;
 };
 
 export type ApplicationRunDetail = ApplicationRunSummary & {
@@ -41,8 +43,22 @@ export type ApplicationRunDetail = ApplicationRunSummary & {
   artifacts: ArtifactRecord[];
 };
 
+export type AutopilotRunSummary = {
+  run: AutopilotRunRecord;
+  discoveryRun: DiscoveryRunRecord | null;
+};
+
+export type AutopilotRunDetail = AutopilotRunSummary & {
+  applications: ApplicationRunSummary[];
+};
+
 export function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
+}
+
+export function buildArtifactFileUrl(artifactId: string, download = false): string {
+  const search = download ? '?download=1' : '';
+  return `${getApiBaseUrl()}/artifacts/${artifactId}/file${search}`;
 }
 
 function buildQueryString(
@@ -243,6 +259,40 @@ export async function getApplicationRun(runId: string): Promise<ApplicationRunDe
   }
 
   return (await response.json()) as ApplicationRunDetail;
+}
+
+export async function getAutopilotRuns(): Promise<AutopilotRunSummary[]> {
+  const response = await fetchFromApi<{ runs: AutopilotRunSummary[] }>('/autopilot-runs');
+  return response.runs;
+}
+
+export async function getAutopilotRun(runId: string): Promise<AutopilotRunDetail | null> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-runs/${runId}`, {
+    cache: 'no-store'
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`API request failed: /autopilot-runs/${runId}`);
+  }
+
+  return (await response.json()) as AutopilotRunDetail;
+}
+
+export async function createAutopilotRun(): Promise<{ run: AutopilotRunRecord }> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-runs`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as { run: AutopilotRunRecord };
 }
 
 export async function createApplicationRun(payload: {

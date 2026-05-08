@@ -2,9 +2,36 @@ import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
 const sections = [
-  { href: '/jobs', title: 'Jobs', description: 'Inspect structured discovery output and downstream status.' },
-  { href: '/runs', title: 'Runs', description: 'Review empty-state and later live discovery run history.' },
-  { href: '/setup', title: 'Setup', description: 'Store the reusable applicant context and base LaTeX resume source.' }
+  {
+    href: '/autopilot',
+    title: 'Autopilot',
+    description: 'Launch a full discovery-to-submit batch and monitor blocked versus submitted outcomes.'
+  },
+  {
+    href: '/jobs',
+    title: 'Jobs',
+    description: 'Inspect structured discovery output, applied state, and downstream automation entry points.'
+  },
+  {
+    href: '/submitted',
+    title: 'Submitted',
+    description: 'Review confirmed submissions with the exact resume and cover letter used.'
+  },
+  {
+    href: '/applications',
+    title: 'Applications',
+    description: 'Inspect the full application run history, including blocked and failed runs.'
+  },
+  {
+    href: '/runs',
+    title: 'Runs',
+    description: 'Review discovery run history and source-level scrape outcomes.'
+  },
+  {
+    href: '/setup',
+    title: 'Setup',
+    description: 'Store the reusable applicant context and base LaTeX resume source.'
+  }
 ];
 
 export default function HomePage() {
@@ -19,7 +46,7 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {sections.map((section) => (
           <Link
             key={section.href}

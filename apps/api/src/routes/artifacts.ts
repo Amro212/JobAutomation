@@ -1,17 +1,18 @@
 import {
-  type ArtifactRecord,
   artifactRecordSchema,
   applicantProfileSchema,
   jobRecordSchema
 } from '@jobautomation/core';
-import { createOpenRouterProvider } from '@jobautomation/llm';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { generateCoverLetterVariant, generateResumeVariant } from '@jobautomation/documents';
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync } from 'fastify';
 
-type GenerateArtifactsMode = 'both' | 'resume' | 'cover-letter';
+import {
+  generateJobArtifactsForJob,
+  JobArtifactGenerationError,
+  type GenerateArtifactsMode
+} from '../services/generate-job-artifacts';
 
 function parseGeneratePayload(body: unknown): { mode: GenerateArtifactsMode } {
   const mode =
@@ -24,42 +25,6 @@ function parseGeneratePayload(body: unknown): { mode: GenerateArtifactsMode } {
   }
 
   return { mode };
-}
-
-function buildOpenRouterClient(
-  app: Pick<FastifyInstance, 'config'>
-): ReturnType<typeof createOpenRouterProvider> | null {
-  if (!app.config.OPENROUTER_API_KEY || !app.config.OPENROUTER_JOB_SUMMARY_MODEL) {
-    return null;
-  }
-
-  return createOpenRouterProvider({
-    apiKey: app.config.OPENROUTER_API_KEY,
-    baseUrl: app.config.OPENROUTER_API_BASE_URL,
-    model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
-  });
-}
-
-async function readResumeVariantTexFromArtifacts(artifacts: ArtifactRecord[]): Promise<string | null> {
-  const texArtifact = artifacts.find((a) => a.kind === 'resume-variant' && a.format === 'tex');
-  if (!texArtifact || !existsSync(texArtifact.storagePath)) {
-    return null;
-  }
-  return readFile(texArtifact.storagePath, 'utf8');
-}
-
-async function readLatestResumeVariantTexForJob(
-  jobId: string,
-  artifactsRepository: {
-    listByJobAndKind(jobId: string, kind: string): Promise<ArtifactRecord[]>;
-  }
-): Promise<string | null> {
-  const rows = await artifactsRepository.listByJobAndKind(jobId, 'resume-variant');
-  const texArtifact = rows.find((a) => a.format === 'tex');
-  if (!texArtifact || !existsSync(texArtifact.storagePath)) {
-    return null;
-  }
-  return readFile(texArtifact.storagePath, 'utf8');
 }
 
 export const registerArtifactsRoutes: FastifyPluginAsync = async (app) => {
@@ -114,98 +79,31 @@ export const registerArtifactsRoutes: FastifyPluginAsync = async (app) => {
   app.post('/jobs/:jobId/artifacts', async (request, reply) => {
     const { jobId } = request.params as { jobId: string };
     const { mode } = parseGeneratePayload(request.body);
-    const job = await app.repositories.jobs.findById(jobId);
 
-    if (!job) {
-      return reply.code(404).send({ message: 'Job not found.' });
-    }
-
-    const profile = await app.repositories.applicantProfile.get();
-    if (!profile || !profile.baseResumeTex.trim() || !profile.reusableContext.trim()) {
-      return reply.code(409).send({
-        message: 'Save the canonical LaTeX resume and reusable applicant context before generating artifacts.'
+    try {
+      const result = await generateJobArtifactsForJob({
+        jobId,
+        mode,
+        repositories: {
+          applicantProfile: app.repositories.applicantProfile,
+          artifacts: app.repositories.artifacts,
+          jobs: app.repositories.jobs
+        },
+        config: app.config
       });
-    }
 
-    const openRouter = buildOpenRouterClient(app);
-    const generatedArtifacts: Array<{
-      applicantProfileId: string | null;
-      applicantProfileUpdatedAt: Date | null;
-      createdAt: Date;
-      discoveryRunId: string | null;
-      fileName: string;
-      format: string;
-      id: string;
-      jobId: string | null;
-      kind: string;
-      storagePath: string;
-      version: number;
-    }> = [];
-    const errors: string[] = [];
-
-    let resumeTexForCoverLetter: string | null = null;
-    let coverLetterUsesTailoredResume = false;
-
-    if (mode === 'both' || mode === 'resume') {
-      try {
-        const resumeArtifacts = await generateResumeVariant({
-          job,
-          applicantProfile: profile,
-          artifactsRepository: app.repositories.artifacts,
-          openRouter
-        });
-        generatedArtifacts.push(...resumeArtifacts);
-
-        if (mode === 'both') {
-          const tex = await readResumeVariantTexFromArtifacts(resumeArtifacts);
-          if (tex) {
-            resumeTexForCoverLetter = tex;
-            coverLetterUsesTailoredResume = true;
-          }
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Resume generation failed.';
-        app.log.error({ err: error, jobId }, 'Resume variant generation failed');
-        errors.push(`Resume: ${message}`);
-      }
-    }
-
-    if (mode === 'both' || mode === 'cover-letter') {
-      if (mode === 'cover-letter') {
-        const tex = await readLatestResumeVariantTexForJob(jobId, app.repositories.artifacts);
-        if (tex) {
-          resumeTexForCoverLetter = tex;
-          coverLetterUsesTailoredResume = true;
-        }
+      return {
+        artifacts: result.artifacts.map((artifact) =>
+          artifactRecordSchema.parse(artifact)
+        ),
+        warnings: result.warnings
+      };
+    } catch (error) {
+      if (error instanceof JobArtifactGenerationError) {
+        return reply.code(error.statusCode).send({ message: error.message });
       }
 
-      try {
-        generatedArtifacts.push(
-          ...(await generateCoverLetterVariant({
-            job,
-            applicantProfile: profile,
-            artifactsRepository: app.repositories.artifacts,
-            openRouter,
-            resumeTexForCoverLetter,
-            coverLetterResumeIsTailoredVariant: coverLetterUsesTailoredResume
-          }))
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Cover letter generation failed.';
-        app.log.error({ err: error, jobId }, 'Cover letter variant generation failed');
-        errors.push(`Cover letter: ${message}`);
-      }
+      throw error;
     }
-
-    if (generatedArtifacts.length === 0 && errors.length > 0) {
-      return reply.code(500).send({
-        message: `Artifact generation failed: ${errors.join('; ')}`
-      });
-    }
-
-    return {
-      artifacts: generatedArtifacts.map((artifact) => artifactRecordSchema.parse(artifact)),
-      warnings: errors.length > 0 ? errors : undefined
-    };
   });
 };

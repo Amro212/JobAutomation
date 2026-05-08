@@ -3,6 +3,7 @@ import { reachApplicationForm } from '../board-entry';
 import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
+import { submitApplicationAndConfirm } from '../submit-application';
 import {
   createGmailApiClient,
   isEnabledForGmailVerification,
@@ -193,29 +194,58 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       hasRefreshToken: Boolean(emailVerificationConfig?.gmailRefreshToken.trim())
     });
     if (!isEnabledForGmailVerification(emailVerificationConfig)) {
+      const submissionResult = await submitApplicationAndConfirm({
+        page: context.session.page,
+        board: 'greenhouse',
+      });
+
+      if (submissionResult.status !== 'submitted') {
+        return context.pauseForManualReview({
+          step: 'submit_confirmation_missing',
+          message: submissionResult.message,
+          stopReason: submissionResult.status,
+          details: {
+            boardEntry,
+            scrapedFields,
+            ...fillPlanDetails,
+            executionResult,
+            confirmationStatus: submissionResult.status,
+            preEntryWarmup,
+            preFillWarmup,
+            profileDirectory: context.session.identity.userDataDir ?? null,
+            pageHtml: await context.session.page.content(),
+          },
+        });
+      }
+
       await context.logStep(
-        'fill_plan_executed',
-        'Executed the Greenhouse fill plan against the current visible application form and stopped for Stage 5 review.',
+        'submitted',
+        'Submitted the Greenhouse application automatically.',
         {
           boardEntry,
           scrapedFields,
           ...fillPlanDetails,
           executionResult,
+          confirmationStatus: submissionResult.status,
+          confirmationMessage: submissionResult.confirmationMessage,
+          submitButtonSource: submissionResult.submitButtonSource,
           preEntryWarmup,
           preFillWarmup,
           profileDirectory: context.session.identity.userDataDir ?? null,
         }
       );
 
-      return context.pauseForManualReview({
-        step: 'fill_plan_executed',
-        message:
-          'Paused after executing the Greenhouse fill plan for Stage 5 review.',
+      return context.completeRun({
+        step: 'submitted',
+        message: 'Submitted the Greenhouse application automatically.',
         details: {
           boardEntry,
           scrapedFields,
           ...fillPlanDetails,
           executionResult,
+          confirmationStatus: submissionResult.status,
+          confirmationMessage: submissionResult.confirmationMessage,
+          submitButtonSource: submissionResult.submitButtonSource,
           preEntryWarmup,
           preFillWarmup,
           profileDirectory: context.session.identity.userDataDir ?? null,
@@ -294,14 +324,45 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       });
     }
 
+    const submissionResult = await submitApplicationAndConfirm({
+      page: context.session.page,
+      board: 'greenhouse',
+    });
+
+    if (submissionResult.status !== 'submitted') {
+      return context.pauseForManualReview({
+        step: 'submit_confirmation_missing',
+        message: submissionResult.message,
+        stopReason: submissionResult.status,
+        details: {
+          boardEntry,
+          scrapedFields,
+          ...fillPlanDetails,
+          executionResult,
+          confirmationStatus: submissionResult.status,
+          verificationStatus: verificationResult.status,
+          verificationMessageId: verificationResult.messageId,
+          verificationSubject: verificationResult.subject,
+          verificationCodeLength: verificationResult.codeLength,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+          pageHtml: await context.session.page.content(),
+        },
+      });
+    }
+
     await context.logStep(
-      'email_verification_code_entered',
-      'Submitted Greenhouse application into verification, entered the email security code, and stopped before final resubmit.',
+      'submitted',
+      'Submitted the Greenhouse application after entering the email security code.',
       {
         boardEntry,
         scrapedFields,
         ...fillPlanDetails,
         executionResult,
+        confirmationStatus: submissionResult.status,
+        confirmationMessage: submissionResult.confirmationMessage,
+        submitButtonSource: submissionResult.submitButtonSource,
         verificationStatus: verificationResult.status,
         verificationMessageId: verificationResult.messageId,
         verificationSubject: verificationResult.subject,
@@ -312,16 +373,17 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       }
     );
 
-    return context.pauseForManualReview({
-      step: 'email_verification_code_entered',
-      message:
-        'Entered the Greenhouse security code and paused before final resubmit.',
-      stopReason: 'email_verification_code_entered',
+    return context.completeRun({
+      step: 'submitted',
+      message: 'Submitted the Greenhouse application after entering the email security code.',
       details: {
         boardEntry,
         scrapedFields,
         ...fillPlanDetails,
         executionResult,
+        confirmationStatus: submissionResult.status,
+        confirmationMessage: submissionResult.confirmationMessage,
+        submitButtonSource: submissionResult.submitButtonSource,
         verificationStatus: verificationResult.status,
         verificationMessageId: verificationResult.messageId,
         verificationSubject: verificationResult.subject,

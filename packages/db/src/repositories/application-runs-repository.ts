@@ -16,6 +16,7 @@ import { applicationRunsTable } from '../schema';
 
 export type CreateApplicationRunInput = {
   jobId: string;
+  autopilotRunId?: string | null;
   siteKey: ApplicationRunType;
   status: ApplicationRunStatus;
   currentStep: string;
@@ -37,6 +38,7 @@ export type UpdateApplicationRunInput = Partial<
     | 'siteKey'
     | 'status'
     | 'currentStep'
+    | 'autopilotRunId'
     | 'stopReason'
     | 'prefilterReasons'
     | 'reviewUrl'
@@ -66,6 +68,7 @@ function mapApplicationRun(record: typeof applicationRunsTable.$inferSelect): Ap
   return applicationRunRecordSchema.parse({
     id: record.id,
     jobId: record.jobId,
+    autopilotRunId: record.autopilotRunId ?? null,
     siteKey: record.siteKey,
     status: record.status,
     currentStep: record.currentStep,
@@ -103,6 +106,16 @@ export class ApplicationRunsRepository {
     return records.map(mapApplicationRun);
   }
 
+  async listByAutopilotRun(autopilotRunId: string): Promise<ApplicationRunRecord[]> {
+    const records = await this.db
+      .select()
+      .from(applicationRunsTable)
+      .where(eq(applicationRunsTable.autopilotRunId, autopilotRunId))
+      .orderBy(desc(applicationRunsTable.updatedAt));
+
+    return records.map(mapApplicationRun);
+  }
+
   async findById(id: string): Promise<ApplicationRunRecord | null> {
     const record = await this.db.query.applicationRunsTable.findFirst({
       where: eq(applicationRunsTable.id, id)
@@ -115,6 +128,7 @@ export class ApplicationRunsRepository {
     const record = {
       id: input.id ?? randomUUID(),
       jobId: input.jobId,
+      autopilotRunId: input.autopilotRunId ?? null,
       siteKey: input.siteKey,
       status: input.status,
       currentStep: input.currentStep,
@@ -152,6 +166,7 @@ export class ApplicationRunsRepository {
       siteKey: record.siteKey,
       status: record.status,
       currentStep: record.currentStep,
+      autopilotRunId: record.autopilotRunId,
       stopReason: record.stopReason,
       prefilterReasonsJson: JSON.stringify(record.prefilterReasons),
       reviewUrl: record.reviewUrl,

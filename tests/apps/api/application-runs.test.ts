@@ -223,6 +223,12 @@ describe('application run routes', () => {
           title: 'Senior Platform Engineer',
           companyName: 'Acme Corp',
         }),
+        resumeArtifact: expect.objectContaining({
+          id: resumeArtifact.id,
+          kind: 'resume-variant',
+          format: 'pdf',
+        }),
+        coverLetterArtifact: null,
       }),
     ]);
 
@@ -234,6 +240,12 @@ describe('application run routes', () => {
       stopReason: 'manual_review_required',
       reviewUrl: sourceUrl,
     });
+    expect(detailResponse.json().resumeArtifact).toMatchObject({
+      id: resumeArtifact.id,
+      kind: 'resume-variant',
+      format: 'pdf',
+    });
+    expect(detailResponse.json().coverLetterArtifact).toBeNull();
     expect(
       detailResponse.json().logs.map((log: { message: string }) => log.message)
     ).toEqual(

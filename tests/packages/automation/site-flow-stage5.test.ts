@@ -186,6 +186,10 @@ describe('stage 5 site flow integration', () => {
       const executeApplicationFillPlan = vi
         .fn()
         .mockResolvedValue(executionResult);
+      const submitApplicationAndConfirm = vi.fn().mockResolvedValue({
+        status: 'submitted',
+        confirmationMessage: 'Application submitted successfully.',
+      });
       const warmApplicationPageBeforeEntry = vi.fn().mockResolvedValue({
         totalDwellMs: 1200,
       });
@@ -212,6 +216,9 @@ describe('stage 5 site flow integration', () => {
           executeApplicationFillPlan,
         })
       );
+      vi.doMock('../../../packages/automation/src/apply/submit-application', () => ({
+        submitApplicationAndConfirm,
+      }));
       vi.doMock('../../../packages/automation/src/apply/trust-runtime', () => ({
         warmApplicationPageBeforeEntry,
         warmApplicationFormBeforeFill,
@@ -250,14 +257,17 @@ describe('stage 5 site flow integration', () => {
         fillPlan,
         pacing: context.session.pacing,
       });
-      expect(context.pauseForManualReview).toHaveBeenCalledWith({
-        step: 'fill_plan_executed',
-        message: expect.stringContaining('Paused after executing'),
+      expect(submitApplicationAndConfirm).toHaveBeenCalledTimes(1);
+      expect(context.completeRun).toHaveBeenCalledWith({
+        step: 'submitted',
+        message: expect.stringContaining('Submitted'),
         details: expect.objectContaining({
           boardEntry,
           scrapedFields,
           fillPlan,
           executionResult,
+          confirmationStatus: 'submitted',
+          confirmationMessage: 'Application submitted successfully.',
           preEntryWarmup: { totalDwellMs: 1200 },
           preFillWarmup: { totalDwellMs: 900 },
           profileDirectory: 'C:/profiles/apply/board',
@@ -396,6 +406,10 @@ describe('stage 5 site flow integration', () => {
       fillPlan,
     });
     const executeApplicationFillPlan = vi.fn().mockResolvedValue(executionResult);
+    const submitApplicationAndConfirm = vi.fn().mockResolvedValue({
+      status: 'submitted',
+      confirmationMessage: 'Application submitted successfully.',
+    });
     const warmApplicationPageBeforeEntry = vi.fn().mockResolvedValue({
       totalDwellMs: 1200,
     });
@@ -448,6 +462,9 @@ describe('stage 5 site flow integration', () => {
         executeApplicationFillPlan,
       })
     );
+    vi.doMock('../../../packages/automation/src/apply/submit-application', () => ({
+      submitApplicationAndConfirm,
+    }));
     vi.doMock('../../../packages/automation/src/apply/trust-runtime', () => ({
       warmApplicationPageBeforeEntry,
       warmApplicationFormBeforeFill,
@@ -509,15 +526,17 @@ describe('stage 5 site flow integration', () => {
         timeoutMs: 180000,
       })
     );
-    expect(context.pauseForManualReview).toHaveBeenCalledWith({
-      step: 'email_verification_code_entered',
-      message: 'Entered the Greenhouse security code and paused before final resubmit.',
-      stopReason: 'email_verification_code_entered',
+    expect(submitApplicationAndConfirm).toHaveBeenCalledTimes(1);
+    expect(context.completeRun).toHaveBeenCalledWith({
+      step: 'submitted',
+      message: 'Submitted the Greenhouse application after entering the email security code.',
       details: expect.objectContaining({
         boardEntry,
         scrapedFields,
         fillPlan,
         executionResult,
+        confirmationStatus: 'submitted',
+        confirmationMessage: 'Application submitted successfully.',
         verificationStatus: 'code_entered',
         verificationMessageId: 'message-1',
         verificationSubject: 'Security code for your application to Capco',
@@ -790,6 +809,11 @@ function createContext(input: {
     captureScreenshot: vi.fn().mockResolvedValue({
       artifactId: 'artifact-1',
       storagePath: 'C:/tmp/screenshot.png',
+    }),
+    completeRun: vi.fn().mockResolvedValue({
+      id: 'run-1',
+      status: 'completed',
+      currentStep: 'submitted',
     }),
     stopBeforeSubmit: vi.fn(),
     pauseForManualReview: vi.fn().mockResolvedValue({

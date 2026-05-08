@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import { getApplicationRun } from '@/lib/api';
+import { buildArtifactFileUrl, getApplicationRun } from '@/lib/api';
 
 type ParsedLogDetails = Record<string, unknown> & {
   classification?: string;
@@ -62,13 +62,13 @@ function statusSummary(
   detail?: Awaited<ReturnType<typeof getApplicationRun>> | null
 ): string {
   if (status === 'paused' && stopReason === 'manual_review_required') {
-    return 'Paused at final review and waiting for a human to submit.';
+    return 'Paused because required answers still need manual intervention.';
   }
   if (status === 'paused' && stopReason === 'not_configured') {
     return 'Greenhouse reached email verification, but Gmail OAuth is incomplete.';
   }
   if (status === 'paused' && stopReason === 'submit_button_not_found') {
-    return 'Greenhouse submit button was not found, so verification flow never started.';
+    return 'Final submit button was not found.';
   }
   if (status === 'paused' && stopReason === 'challenge_not_visible') {
     return 'Greenhouse submit was attempted, but verification challenge did not appear.';
@@ -88,6 +88,9 @@ function statusSummary(
   if (status === 'paused' && stopReason === 'email_verification_code_entered') {
     return 'Greenhouse verification code was entered and run paused before final resubmit.';
   }
+  if (status === 'paused' && stopReason === 'submission_confirmation_missing') {
+    return 'Submit clicked, but the post-submit confirmation was not visible.';
+  }
 
   switch (status) {
     case 'paused':
@@ -97,7 +100,7 @@ function statusSummary(
     case 'running':
       return 'Automation is still in progress.';
     case 'completed':
-      return 'Automation completed successfully.';
+      return 'Application submitted successfully.';
     case 'failed':
       return 'Automation failed before completion.';
     default:
@@ -248,8 +251,8 @@ export default async function ApplicationRunDetailPage({
           {statusSummary(detail.run.status, detail.run.stopReason, detail)}
         </h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          This read model stays explicit about skipped and manual review required outcomes so the
-          operator never has to infer whether browser automation ran.
+          This read model stays explicit about auto-submit success, blocked outcomes, and skipped
+          runs so the operator never has to infer what happened.
         </p>
         {detail.run.stopReason ? (
           <p className="mt-3 text-sm text-muted-foreground">
@@ -291,6 +294,52 @@ export default async function ApplicationRunDetailPage({
             </Button>
           </div>
         ) : null}
+      </section>
+
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="border-b px-6 py-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Submitted Artifacts
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-foreground">Resume and cover letter</h3>
+        </div>
+        {!detail.resumeArtifact && !detail.coverLetterArtifact ? (
+          <div className="px-6 py-5 text-sm text-muted-foreground">
+            No submitted resume or cover letter artifacts were linked to this run.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Type</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead>File</TableHead>
+                <TableHead>Open</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[
+                { label: 'Resume', artifact: detail.resumeArtifact },
+                { label: 'Cover letter', artifact: detail.coverLetterArtifact }
+              ].map(({ label, artifact }) =>
+                artifact ? (
+                  <TableRow key={artifact.id}>
+                    <TableCell>{label}</TableCell>
+                    <TableCell>v{artifact.version}</TableCell>
+                    <TableCell>{artifact.fileName}</TableCell>
+                    <TableCell>
+                      <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                        <a href={buildArtifactFileUrl(artifact.id)} target="_blank" rel="noreferrer">
+                          Open PDF
+                        </a>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ) : null
+              )}
+            </TableBody>
+          </Table>
+        )}
       </section>
 
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm">

@@ -15,10 +15,12 @@ import {
 
 function statusVariant(status: string) {
   switch (status) {
-    case 'shortlisted':
+    case 'applied':
       return 'success' as const;
-    case 'reviewing':
+    case 'shortlisted':
       return 'warning' as const;
+    case 'reviewing':
+      return 'outline' as const;
     case 'archived':
       return 'secondary' as const;
     default:

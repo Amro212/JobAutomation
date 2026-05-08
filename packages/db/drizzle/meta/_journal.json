@@ -85,6 +85,13 @@
       "when": 1778000000000,
       "tag": "0011_job_prefilter_score",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1778100000000,
+      "tag": "0012_autopilot_runs",
+      "breakpoints": true
     }
   ]
 }

@@ -68,6 +68,7 @@ export default async function JobDetailPage({
           | 'discovered'
           | 'reviewing'
           | 'shortlisted'
+          | 'applied'
           | 'archived',
         reviewNotes: String(formData.get('reviewNotes') ?? ''),
       });
@@ -213,7 +214,12 @@ export default async function JobDetailPage({
             <p className="mt-3 text-sm text-muted-foreground">
               Generate tailored artifacts before starting an application run.
             </p>
-          ) : null}
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Manual runs are still available as an advanced path and now submit automatically
+              after required fields are completed and the success state is confirmed.
+            </p>
+          )}
         </div>
         <dl className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div>
@@ -229,7 +235,9 @@ export default async function JobDetailPage({
             <dd className="mt-1">
               <Badge
                 variant={
-                  job.status === 'shortlisted'
+                  job.status === 'applied'
+                    ? 'success'
+                    : job.status === 'shortlisted'
                     ? 'success'
                     : job.status === 'reviewing'
                       ? 'warning'

@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import {
   ApplicationRunsRepository,
   ApplicantProfileRepository,
+  AutopilotRunsRepository,
   ArtifactsRepository,
   DiscoveryRunsRepository,
   DiscoverySchedulesRepository,
@@ -17,6 +18,7 @@ import {
 export interface ApiRepositories {
   applicationRuns: ApplicationRunsRepository;
   applicantProfile: ApplicantProfileRepository;
+  autopilotRuns: AutopilotRunsRepository;
   artifacts: ArtifactsRepository;
   discoveryRuns: DiscoveryRunsRepository;
   discoverySchedules: DiscoverySchedulesRepository;
@@ -40,6 +42,7 @@ export const registerDatabasePlugin = fp(async (app) => {
   app.decorate('repositories', {
     applicationRuns: new ApplicationRunsRepository(db),
     applicantProfile: new ApplicantProfileRepository(db),
+    autopilotRuns: new AutopilotRunsRepository(db),
     artifacts: new ArtifactsRepository(db),
     discoveryRuns: new DiscoveryRunsRepository(db),
     discoverySchedules: new DiscoverySchedulesRepository(db),

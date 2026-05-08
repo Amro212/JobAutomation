@@ -61,6 +61,11 @@ const INTERACTIVE_FIELD_SELECTOR = [
 const MIN_VISIBLE_FIELDS = 1;
 const DEFAULT_POLL_MIN_DELAY_MS = 80;
 const DEFAULT_POLL_MAX_DELAY_MS = 180;
+const DIRECT_FORM_TIMEOUT_MS: Record<SupportedApplicationBoard, number> = {
+  greenhouse: 750,
+  lever: 1_500,
+  ashby: 2_500,
+};
 
 function parsePositiveInt(value: string | undefined): number | null {
   if (!value) {
@@ -194,7 +199,11 @@ export async function reachApplicationForm(input: {
   const startUrl = input.page.url();
   await input.page.waitForLoadState('domcontentloaded');
 
-  const directForm = await waitForApplicationForm(input.page, input.board, 750);
+  const directForm = await waitForApplicationForm(
+    input.page,
+    input.board,
+    DIRECT_FORM_TIMEOUT_MS[input.board]
+  );
   if (directForm) {
     return {
       board: input.board,

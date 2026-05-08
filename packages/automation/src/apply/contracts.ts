@@ -69,6 +69,12 @@ export type ApplicationSiteFlowContext = {
     message: string;
     details?: Record<string, unknown>;
   }) => Promise<{ artifactId: string; storagePath: string }>;
+  completeRun: (input: {
+    step: string;
+    message: string;
+    reviewUrl?: string | null;
+    details?: Record<string, unknown>;
+  }) => Promise<ApplicationRunRecordLike>;
   stopBeforeSubmit: (input: {
     step: string;
     reviewUrl?: string | null;
