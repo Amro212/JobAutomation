@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 
 import {
   discoveryRunRecordSchema,
@@ -41,6 +41,15 @@ export class DiscoveryRunsRepository {
   async findById(id: string): Promise<DiscoveryRunRecord | null> {
     const record = await this.db.query.discoveryRunsTable.findFirst({
       where: eq(discoveryRunsTable.id, id)
+    });
+
+    return record ? mapDiscoveryRun(record) : null;
+  }
+
+  async findLatestCompleted(): Promise<DiscoveryRunRecord | null> {
+    const record = await this.db.query.discoveryRunsTable.findFirst({
+      where: inArray(discoveryRunsTable.status, ['completed', 'partial']),
+      orderBy: [desc(discoveryRunsTable.completedAt)]
     });
 
     return record ? mapDiscoveryRun(record) : null;

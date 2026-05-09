@@ -152,48 +152,67 @@ export class AutopilotQueueService {
     }
 
     try {
-      const discoveryRun = await this.input.repositories.discoveryRuns.create({
-        sourceKind:
-          input.sources.length === 1 ? input.sources[0]!.sourceKind : 'structured',
-        runKind: input.sources.length === 1 ? 'single-source' : 'structured',
-        triggerKind: 'manual',
-        discoverySourceId: input.sources.length === 1 ? input.sources[0]!.id : null,
-        status: 'pending'
-      });
+      let discoveryRunId: string;
+      const latestDiscoveryRun = await this.input.repositories.discoveryRuns.findLatestCompleted();
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
 
-      await this.input.repositories.autopilotRuns.update(run.id, {
-        discoveryRunId: discoveryRun.id
-      });
+      const shouldSkipDiscovery =
+        latestDiscoveryRun &&
+        latestDiscoveryRun.completedAt &&
+        latestDiscoveryRun.completedAt > threeHoursAgo;
 
-      if (input.sources.length === 1 && input.sources[0]?.sourceKind === 'playwright') {
-        await this.runPlaywrightDiscoveryImpl({
-          run: discoveryRun,
-          source: input.sources[0],
-          jobsRepository: this.input.repositories.jobs,
-          runsRepository: this.input.repositories.discoveryRuns,
-          logEventsRepository: this.input.repositories.logEvents,
-          artifactsRepository: this.input.repositories.artifacts,
-          artifactsRootDir: join(
-            dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
-            'artifacts'
-          )
+      if (shouldSkipDiscovery) {
+        discoveryRunId = latestDiscoveryRun.id;
+        await this.input.repositories.autopilotRuns.update(run.id, {
+          discoveryRunId,
+          currentStep: 'discovery_skipped'
         });
       } else {
-        await this.runStructuredDiscoveryImpl({
-          run: discoveryRun,
-          sources: input.sources,
-          jobsRepository: this.input.repositories.jobs,
-          runsRepository: this.input.repositories.discoveryRuns,
-          logEventsRepository: this.input.repositories.logEvents,
-          greenhouseBaseUrl: this.input.config.GREENHOUSE_API_BASE_URL,
-          leverBaseUrl: this.input.config.LEVER_API_BASE_URL,
-          ashbyBaseUrl: this.input.config.ASHBY_API_BASE_URL
+        const discoveryRun = await this.input.repositories.discoveryRuns.create({
+          sourceKind:
+            input.sources.length === 1 ? input.sources[0]!.sourceKind : 'structured',
+          runKind: input.sources.length === 1 ? 'single-source' : 'structured',
+          triggerKind: 'manual',
+          discoverySourceId: input.sources.length === 1 ? input.sources[0]!.id : null,
+          status: 'pending'
+        });
+
+        discoveryRunId = discoveryRun.id;
+
+        await this.input.repositories.autopilotRuns.update(run.id, {
+          discoveryRunId: discoveryRun.id
+        });
+
+        if (input.sources.length === 1 && input.sources[0]?.sourceKind === 'playwright') {
+          await this.runPlaywrightDiscoveryImpl({
+            run: discoveryRun,
+            source: input.sources[0],
+            jobsRepository: this.input.repositories.jobs,
+            runsRepository: this.input.repositories.discoveryRuns,
+            logEventsRepository: this.input.repositories.logEvents,
+            artifactsRepository: this.input.repositories.artifacts,
+            artifactsRootDir: join(
+              dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
+              'artifacts'
+            )
+          });
+        } else {
+          await this.runStructuredDiscoveryImpl({
+            run: discoveryRun,
+            sources: input.sources,
+            jobsRepository: this.input.repositories.jobs,
+            runsRepository: this.input.repositories.discoveryRuns,
+            logEventsRepository: this.input.repositories.logEvents,
+            greenhouseBaseUrl: this.input.config.GREENHOUSE_API_BASE_URL,
+            leverBaseUrl: this.input.config.LEVER_API_BASE_URL,
+            ashbyBaseUrl: this.input.config.ASHBY_API_BASE_URL
+          });
+        }
+
+        await this.input.repositories.autopilotRuns.update(run.id, {
+          currentStep: 'discovery_completed'
         });
       }
-
-      await this.input.repositories.autopilotRuns.update(run.id, {
-        currentStep: 'discovery_completed'
-      });
 
       await this.input.repositories.autopilotRuns.update(run.id, {
         currentStep: 'prefilter_running'
@@ -206,8 +225,8 @@ export class AutopilotQueueService {
         currentStep: 'prefilter_completed'
       });
 
-      const jobs = await this.input.repositories.jobs.listByDiscoveryRun(discoveryRun.id);
-      let discoveredJobCount = jobs.length;
+      const jobs = await this.input.repositories.jobs.listByDiscoveryRun(discoveryRunId);
+      const discoveredJobCount = jobs.length;
       let eligibleJobCount = 0;
       let skippedJobCount = 0;
       let submittedCount = 0;
