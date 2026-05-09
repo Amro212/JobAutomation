@@ -316,17 +316,22 @@ function passesLocationFilter(
     return true;
   }
 
-  if (remoteType === 'remote') {
-    return true;
-  }
+  const locNorm = location.toLowerCase().trim();
 
-  const locNorm = location.toLowerCase();
-
+  // Check if the location text matches any preferred country
   for (const code of preferredCountries) {
     for (const token of getCountrySearchTokens(code)) {
       if (locNorm.includes(token)) {
         return true;
       }
+    }
+  }
+
+  // Remote jobs with a generic/empty location pass (truly worldwide remote)
+  if (remoteType === 'remote') {
+    const stripped = locNorm.replace(/\bremote\b/gi, '').replace(/[^a-z]/g, '').trim();
+    if (stripped.length === 0) {
+      return true;
     }
   }
 

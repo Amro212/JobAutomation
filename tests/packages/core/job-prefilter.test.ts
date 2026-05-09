@@ -238,9 +238,21 @@ describe('prefilterJob', () => {
     expect(r.reasons).toContain('location');
   });
 
-  test('passes location for remote jobs when countries are set', () => {
+  test('rejects remote jobs with region-specific location when countries are set', () => {
     const r = prefilterJob(
       { ...baseJob, location: 'EMEA', remoteType: 'remote' },
+      {
+        jobKeywordProfile: null,
+        preferredCountries: ['US']
+      }
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reasons).toContain('location');
+  });
+
+  test('passes generic remote jobs when countries are set', () => {
+    const r = prefilterJob(
+      { ...baseJob, location: 'Remote', remoteType: 'remote' },
       {
         jobKeywordProfile: null,
         preferredCountries: ['US']

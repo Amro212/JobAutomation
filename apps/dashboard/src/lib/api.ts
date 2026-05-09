@@ -295,6 +295,19 @@ export async function createAutopilotRun(): Promise<{ run: AutopilotRunRecord }>
   return (await response.json()) as { run: AutopilotRunRecord };
 }
 
+export async function cancelAutopilotRun(runId: string): Promise<{ run: AutopilotRunRecord }> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-runs/${runId}/cancel`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as { run: AutopilotRunRecord };
+}
+
 export async function createApplicationRun(payload: {
   jobId: string;
 }): Promise<ApplicationRunSummary> {

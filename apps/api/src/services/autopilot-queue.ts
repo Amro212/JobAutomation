@@ -80,6 +80,7 @@ export class AutopilotQueueService {
   private readonly runPlaywrightDiscoveryImpl: typeof runPlaywrightDiscovery;
   private readonly generateArtifactsImpl: typeof generateJobArtifactsForJob;
   private readonly runApplicationImpl: typeof runApplication;
+  private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly input: {
@@ -102,20 +103,45 @@ export class AutopilotQueueService {
   }
 
   enqueueRun(input: QueueAutopilotRunInput): void {
+    const controller = new AbortController();
+    this.abortControllers.set(input.run.id, controller);
+
     void this.queue
       .add(async () => {
-        await this.executeRun(input);
+        try {
+          await this.executeRun(input, controller.signal);
+        } finally {
+          this.abortControllers.delete(input.run.id);
+        }
       })
       .catch(() => {
         // execution handles its own failure state
       });
   }
 
+  async cancelRun(runId: string): Promise<boolean> {
+    const controller = this.abortControllers.get(runId);
+    if (!controller) {
+      return false;
+    }
+
+    controller.abort();
+    this.abortControllers.delete(runId);
+
+    await this.input.repositories.autopilotRuns.update(runId, {
+      status: 'cancelled',
+      currentStep: 'cancelled',
+      completedAt: new Date()
+    });
+
+    return true;
+  }
+
   async onIdle(): Promise<void> {
     await this.queue.onIdle();
   }
 
-  private async executeRun(input: QueueAutopilotRunInput): Promise<void> {
+  private async executeRun(input: QueueAutopilotRunInput, signal: AbortSignal): Promise<void> {
     const run = await this.input.repositories.autopilotRuns.update(input.run.id, {
       status: 'running',
       currentStep: 'discovery_running',
@@ -182,6 +208,10 @@ export class AutopilotQueueService {
       });
 
       for (const job of jobs) {
+        if (signal.aborted) {
+          break;
+        }
+
         const matchedSite = applicationSites().find((site) => site.supports(job));
         const supported = Boolean(matchedSite);
         const alreadySubmitted = await jobAlreadySubmitted(
@@ -283,21 +313,33 @@ export class AutopilotQueueService {
         });
       }
 
-      await this.input.repositories.autopilotRuns.update(run.id, {
-        status: finalAutopilotStatus({
+      if (signal.aborted) {
+        // cancelRun() already updated status; just persist final counts
+        await this.updateCounts(run.id, {
+          discoveredJobCount,
+          eligibleJobCount,
+          skippedJobCount,
           submittedCount,
           blockedCount,
           failedCount
-        }),
-        currentStep: 'applications_completed',
-        discoveredJobCount,
-        eligibleJobCount,
-        skippedJobCount,
-        submittedCount,
-        blockedCount,
-        failedCount,
-        completedAt: new Date()
-      });
+        });
+      } else {
+        await this.input.repositories.autopilotRuns.update(run.id, {
+          status: finalAutopilotStatus({
+            submittedCount,
+            blockedCount,
+            failedCount
+          }),
+          currentStep: 'applications_completed',
+          discoveredJobCount,
+          eligibleJobCount,
+          skippedJobCount,
+          submittedCount,
+          blockedCount,
+          failedCount,
+          completedAt: new Date()
+        });
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown autopilot queue error.';

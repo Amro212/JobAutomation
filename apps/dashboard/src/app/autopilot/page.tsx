@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { AutopilotAutoRefresh } from '@/components/autopilot-auto-refresh';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +14,7 @@ import {
   TableRow
 } from '@/components/ui/table';
 import {
+  cancelAutopilotRun,
   createAutopilotRun,
   getApplicantProfile,
   getAutopilotRun,
@@ -30,6 +32,8 @@ function statusVariant(status: string) {
       return 'destructive' as const;
     case 'running':
       return 'warning' as const;
+    case 'cancelled':
+      return 'outline' as const;
     default:
       return 'outline' as const;
   }
@@ -43,6 +47,11 @@ function selectedRunIdFromSearchParams(
   value: string | string[] | undefined
 ): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function formatDate(value: string | Date): string {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return date.toLocaleString();
 }
 
 export default async function AutopilotPage({
@@ -70,6 +79,32 @@ export default async function AutopilotPage({
     }
   }
 
+  async function cancelAutopilotAction(): Promise<void> {
+    'use server';
+
+    try {
+      const allRuns = await getAutopilotRuns();
+      const activeRun = allRuns.find(
+        (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
+      );
+
+      if (!activeRun) {
+        redirect(`/autopilot?error=${encodeURIComponent('No active autopilot run to cancel.')}`);
+      }
+
+      await cancelAutopilotRun(activeRun.run.id);
+      revalidatePath('/autopilot');
+      revalidatePath('/applications');
+      redirect(
+        `/autopilot?message=${encodeURIComponent('Autopilot batch cancelled.')}`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to cancel autopilot.';
+      redirect(`/autopilot?error=${encodeURIComponent(message)}`);
+    }
+  }
+
   const [profileState, sources, runs] = await Promise.all([
     getApplicantProfile(),
     getDiscoverySources(),
@@ -81,8 +116,14 @@ export default async function AutopilotPage({
     selectedRunIdFromSearchParams(resolvedSearchParams.runId) ?? runs[0]?.run.id;
   const selectedRun = selectedRunId ? await getAutopilotRun(selectedRunId) : null;
 
+  const hasActiveRun = runs.some(
+    (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
+  );
+
   return (
     <section className="space-y-6">
+      <AutopilotAutoRefresh hasActiveRun={hasActiveRun} />
+
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           Autopilot
@@ -102,9 +143,20 @@ export default async function AutopilotPage({
             </p>
             <h3 className="mt-2 text-xl font-semibold text-foreground">Launch checks</h3>
           </div>
-          <form action={launchAutopilotAction}>
-            <Button type="submit">Launch autopilot</Button>
-          </form>
+          <div className="flex items-center gap-2">
+            {hasActiveRun ? (
+              <form action={cancelAutopilotAction}>
+                <Button type="submit" variant="destructive">
+                  Stop autopilot
+                </Button>
+              </form>
+            ) : null}
+            <form action={launchAutopilotAction}>
+              <Button type="submit" disabled={hasActiveRun}>
+                Launch autopilot
+              </Button>
+            </form>
+          </div>
         </div>
         <div className="mt-6 grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
@@ -186,7 +238,7 @@ export default async function AutopilotPage({
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {entry.run.updatedAt.toLocaleString()}
+                    {formatDate(entry.run.updatedAt)}
                   </TableCell>
                   <TableCell>
                     <Button variant="link" size="sm" className="h-auto p-0" asChild>

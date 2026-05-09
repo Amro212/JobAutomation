@@ -38,7 +38,8 @@ export const autopilotRunStatusSchema = z.enum([
   'running',
   'completed',
   'partial',
-  'failed'
+  'failed',
+  'cancelled'
 ]);
 
 export const autopilotRunTriggerKindSchema = z.enum(['manual']);

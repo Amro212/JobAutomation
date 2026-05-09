@@ -100,4 +100,29 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
       run: autopilotRunRecordSchema.parse(run)
     };
   });
+
+  app.post('/autopilot-runs/:runId/cancel', async (request, reply) => {
+    const { runId } = request.params as { runId: string };
+    const existing = await app.repositories.autopilotRuns.findById(runId);
+    if (!existing) {
+      return reply.code(404).send({ message: 'Autopilot run not found.' });
+    }
+
+    if (existing.status !== 'pending' && existing.status !== 'running') {
+      return reply.code(409).send({ message: 'Run is not active.' });
+    }
+
+    const cancelled = await app.autopilotQueue.cancelRun(runId);
+    if (!cancelled) {
+      // Run exists but no active controller — update DB directly
+      await app.repositories.autopilotRuns.update(runId, {
+        status: 'cancelled',
+        currentStep: 'cancelled',
+        completedAt: new Date()
+      });
+    }
+
+    const updated = await app.repositories.autopilotRuns.findById(runId);
+    return { run: autopilotRunRecordSchema.parse(updated!) };
+  });
 };
