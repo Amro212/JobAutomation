@@ -191,8 +191,20 @@ export class AutopilotQueueService {
         });
       }
 
+      await this.input.repositories.autopilotRuns.update(run.id, {
+        currentStep: 'discovery_completed'
+      });
+
+      await this.input.repositories.autopilotRuns.update(run.id, {
+        currentStep: 'prefilter_running'
+      });
+
       const profile = await this.input.repositories.applicantProfile.get();
       await recomputeJobPrefilterMatches(this.input.repositories.jobs, profile);
+
+      await this.input.repositories.autopilotRuns.update(run.id, {
+        currentStep: 'prefilter_completed'
+      });
 
       const jobs = await this.input.repositories.jobs.listByDiscoveryRun(discoveryRun.id);
       let discoveredJobCount = jobs.length;
@@ -234,6 +246,10 @@ export class AutopilotQueueService {
         eligibleJobCount += 1;
 
         try {
+          await this.input.repositories.autopilotRuns.update(run.id, {
+            currentStep: `generating_artifacts:${job.title}`
+          });
+
           const generated = await this.generateArtifactsImpl({
             jobId: job.id,
             mode: 'both',
@@ -263,6 +279,10 @@ export class AutopilotQueueService {
             prefilterReasons: [],
             resumeArtifactId: resumeArtifact?.id ?? null,
             coverLetterArtifactId: coverLetterArtifact?.id ?? null
+          });
+
+          await this.input.repositories.autopilotRuns.update(run.id, {
+            currentStep: `submitting_application:${job.title}`
           });
 
           const result = await this.runApplicationImpl({

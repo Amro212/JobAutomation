@@ -119,13 +119,23 @@ export default async function AutopilotPage({
     selectedRunIdFromSearchParams(resolvedSearchParams.runId) ?? runs[0]?.run.id;
   const selectedRun = selectedRunId ? await getAutopilotRun(selectedRunId) : null;
 
-  const hasActiveRun = runs.some(
+  const activeRunEntry = runs.find(
     (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
   );
+  const hasActiveRun = Boolean(activeRunEntry);
 
   return (
     <section className="space-y-6">
-      <AutopilotAutoRefresh hasActiveRun={hasActiveRun} />
+      <AutopilotAutoRefresh
+        hasActiveRun={hasActiveRun}
+        currentStep={activeRunEntry?.run.currentStep}
+        status={activeRunEntry?.run.status}
+        discoveredJobCount={activeRunEntry?.run.discoveredJobCount}
+        eligibleJobCount={activeRunEntry?.run.eligibleJobCount}
+        submittedCount={activeRunEntry?.run.submittedCount}
+        blockedCount={activeRunEntry?.run.blockedCount}
+        failedCount={activeRunEntry?.run.failedCount}
+      />
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
