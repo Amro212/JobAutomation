@@ -64,45 +64,48 @@ export default async function AutopilotPage({
   async function launchAutopilotAction(): Promise<void> {
     'use server';
 
+    let result: Awaited<ReturnType<typeof createAutopilotRun>>;
     try {
-      const result = await createAutopilotRun();
-      revalidatePath('/autopilot');
-      revalidatePath('/applications');
-      revalidatePath('/submitted');
-      redirect(
-        `/autopilot?runId=${result.run.id}&message=${encodeURIComponent('Autopilot batch queued.')}`
-      );
+      result = await createAutopilotRun();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to launch autopilot.';
       redirect(`/autopilot?error=${encodeURIComponent(message)}`);
     }
+
+    revalidatePath('/autopilot');
+    revalidatePath('/applications');
+    revalidatePath('/submitted');
+    redirect(
+      `/autopilot?runId=${result.run.id}&message=${encodeURIComponent('Autopilot launched — discovery and applications will run automatically.')}`
+    );
   }
 
   async function cancelAutopilotAction(): Promise<void> {
     'use server';
 
+    const allRuns = await getAutopilotRuns();
+    const activeRun = allRuns.find(
+      (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
+    );
+
+    if (!activeRun) {
+      redirect(`/autopilot?error=${encodeURIComponent('No active autopilot run to cancel.')}`);
+    }
+
     try {
-      const allRuns = await getAutopilotRuns();
-      const activeRun = allRuns.find(
-        (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
-      );
-
-      if (!activeRun) {
-        redirect(`/autopilot?error=${encodeURIComponent('No active autopilot run to cancel.')}`);
-      }
-
       await cancelAutopilotRun(activeRun.run.id);
-      revalidatePath('/autopilot');
-      revalidatePath('/applications');
-      redirect(
-        `/autopilot?message=${encodeURIComponent('Autopilot batch cancelled.')}`
-      );
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Failed to cancel autopilot.';
+        error instanceof Error ? error.message : 'Failed to stop autopilot.';
       redirect(`/autopilot?error=${encodeURIComponent(message)}`);
     }
+
+    revalidatePath('/autopilot');
+    revalidatePath('/applications');
+    redirect(
+      `/autopilot?message=${encodeURIComponent('Autopilot stopped — no further jobs will be processed.')}`
+    );
   }
 
   const [profileState, sources, runs] = await Promise.all([

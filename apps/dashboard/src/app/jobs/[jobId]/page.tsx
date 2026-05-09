@@ -142,7 +142,6 @@ export default async function JobDetailPage({
   async function startApplicationRunAction(): Promise<void> {
     'use server';
 
-    let runId = '';
     const currentArtifacts = await getJobArtifacts(jobId);
     if (!hasGeneratedResumePdfArtifact(currentArtifacts)) {
       redirect(
@@ -153,6 +152,7 @@ export default async function JobDetailPage({
       );
     }
 
+    let runId: string;
     try {
       const result = await createApplicationRun({ jobId });
       runId = result.run.id;

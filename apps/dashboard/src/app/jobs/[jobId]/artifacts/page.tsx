@@ -136,6 +136,7 @@ export default async function JobArtifactsPage({
     }
 
     redirect(buildJobArtifactsHref(jobId, { message: `${getGenerateMessage(payloadMode)}${warningText}` }));
+
   }
 
   const readiness = profileState.readiness;
