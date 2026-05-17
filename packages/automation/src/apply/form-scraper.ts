@@ -1048,6 +1048,40 @@ async function collectComboboxOptions(input: {
   return uniqueOptions(options);
 }
 
+function isCountryComboboxSkippable(field: ScrapedApplicationField): boolean {
+  const fingerprint = `${field.id} ${field.label}`.toLowerCase();
+
+  // Explicit phone + country/code combination in field id/label
+  const hasPhoneHint = fingerprint.includes('phone');
+  const hasCountryCodeHint =
+    fingerprint.includes('country') ||
+    fingerprint.includes('code') ||
+    fingerprint.includes('prefix') ||
+    fingerprint.includes('dial');
+  if (hasPhoneHint && hasCountryCodeHint) {
+    return true;
+  }
+
+  // Check selector candidates for phone-related country code selectors
+  // (e.g., Greenhouse uses selectors like [name="phone_country_code"])
+  const selectorFingerprint = field.selectorCandidates.join(' ').toLowerCase();
+  if (
+    selectorFingerprint.includes('phone') &&
+    (selectorFingerprint.includes('country') || selectorFingerprint.includes('code'))
+  ) {
+    return true;
+  }
+
+  // Standalone "Country" label combobox (Greenhouse phone country code pattern)
+  // Country lists always have 200+ entries; dynamic_search is always correct.
+  const normalizedLabel = field.label.replace(/[*✱\s]+$/g, '').trim().toLowerCase();
+  if (normalizedLabel === 'country') {
+    return true;
+  }
+
+  return false;
+}
+
 async function enrichComboboxFields(input: {
   page: Page;
   boardEntry: ApplicationBoardEntryResult;
@@ -1057,6 +1091,19 @@ async function enrichComboboxFields(input: {
   for (const field of input.fields) {
     if (field.type !== 'combobox') {
       enriched.push(field);
+      continue;
+    }
+
+    if (isCountryComboboxSkippable(field)) {
+      logStage3('skip_country_code_scrape', {
+        label: field.label,
+        id: field.id,
+        reason: 'phone_country_code_combobox_detected'
+      });
+      enriched.push({
+        ...field,
+        optionMode: 'dynamic_search'
+      });
       continue;
     }
 

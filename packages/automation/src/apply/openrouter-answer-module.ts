@@ -2540,6 +2540,24 @@ function normalizeEntryForField(
         });
       }
 
+      // For direct_profile dynamic comboboxes (e.g. country code dropdowns), always
+      // resolve the value deterministically from the profile instead of trusting the
+      // LLM's text. The LLM tends to copy the raw ISO code ("CA") from the profile
+      // rather than the full country name ("Canada") that the combobox actually needs.
+      if (optionMode === 'dynamic_search' && answerability === 'direct_profile') {
+        const profileValue = identityFallbackValue(field, serializedProfile);
+        if (profileValue) {
+          return createAcceptedResult({
+            field,
+            answerability,
+            rawEntry: entry,
+            normalizedAction: 'fill',
+            value: profileValue,
+            confidence: 1
+          });
+        }
+      }
+
       return textValue.length > 0
         ? createAcceptedResult({
             field,
