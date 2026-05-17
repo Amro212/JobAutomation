@@ -207,7 +207,10 @@ async function collectJobs(input: {
   artifactIds: string[];
 }): Promise<PlaywrightCollectedJob[]> {
   const extractor = createGenericListingExtractor();
-  const sourcePage = await input.context.newPage();
+  const pages = input.context.pages();
+  const sourcePage = pages.length > 0 && pages[0].url() === 'about:blank' 
+    ? pages[0] 
+    : await input.context.newPage();
   input.currentPageUrlRef.value = input.source.sourceKey;
 
   await sourcePage.goto(input.source.sourceKey, {

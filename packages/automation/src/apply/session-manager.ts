@@ -26,7 +26,10 @@ export async function createApplicationSession(input: {
     snapshots: true
   });
 
-  const page = await context.newPage();
+  const pages = context.pages();
+  const page = pages.length > 0 && pages[0].url() === 'about:blank' 
+    ? pages[0] 
+    : await context.newPage();
   if (input.startUrl) {
     await page.goto(input.startUrl, {
       waitUntil: 'domcontentloaded'
