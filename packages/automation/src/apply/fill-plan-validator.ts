@@ -98,6 +98,11 @@ export function validateRequiredFillPlan(input: {
       continue;
     }
 
+    // Optional fields: imperfect LLM output must not veto the whole fill plan.
+    if (!required) {
+      continue;
+    }
+
     if (field.type === 'select' || field.type === 'radio_group') {
       const value = typeof entry.value === 'string' ? entry.value : '';
       if (!value || !exactOptionValue(field.options, value)) {

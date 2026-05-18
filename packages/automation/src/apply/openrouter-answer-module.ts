@@ -33,6 +33,8 @@ import {
 
 const STAGE_4_LOG_PREFIX = '[Stage 4][openrouter-answer-module]';
 const STAGE_4_PROMPT_VERSION = 'stage4-fill-plan-v1';
+/** Deterministic merge passes after repairs when binary consent fields are missing or mis-shaped by the LLM. */
+const MAX_SYNTHETIC_CHOICE_FALLBACK_PASSES = 6;
 const MAX_SUMMARY_CHARS = 2_000;
 const MAX_CONTEXT_CHARS = 4_000;
 const MAX_RESUME_LATEX_CHARS = 20_000;
@@ -1186,6 +1188,143 @@ function mergeFillPlanItems(
   }
 
   return Array.from(byFieldId.values());
+}
+
+function resolveBinaryYesNoOptionPair(options: ScrapedApplicationFieldOption[]): {
+  yes: ScrapedApplicationFieldOption;
+  no: ScrapedApplicationFieldOption;
+} | null {
+  const yesOpt =
+    options.find((option) => /^yes$/i.test(option.label.trim())) ??
+    options.find((option) => /^yes$/i.test(String(option.value ?? '').trim()));
+  const noOpt =
+    options.find((option) => /^no$/i.test(option.label.trim())) ??
+    options.find((option) => /^no$/i.test(String(option.value ?? '').trim()));
+  return yesOpt && noOpt ? { yes: yesOpt, no: noOpt } : null;
+}
+
+function synthesizeFallbackEntryForUnresolvedRequiredChoice(
+  field: ScrapedApplicationField
+): ApplicationFillPlanEntry | null {
+  const questionText = `${field.label}`.toLowerCase();
+  if (
+    /\bethnic(?:ity|ities)?|\bracial\b|\brace\b|\bgender\b|\bpronoun\b|\borientation\b|\bdisabilit/i.test(
+      questionText
+    )
+  ) {
+    return null;
+  }
+
+  if (field.type === 'checkbox') {
+    const idHint =
+      /\bcards\[.+\]\[field\d+\]/i.test(field.id) ||
+      /\bauthorize|authorised|eligible|truthful|certif|privacy|policy|acknowledge\b/i.test(
+        `${field.label}`
+      );
+
+    const attestation =
+      /\b(i\s+certify|i\s+confirm|i\s+acknowledge|i\s+agree)\b/i.test(questionText);
+
+    if (!idHint && !attestation) {
+      return null;
+    }
+
+    const marketingOptOut =
+      /\b(?:marketing|promotional)\b/i.test(questionText) ||
+      /\bnewsletter\b/i.test(questionText);
+
+    const value = marketingOptOut ? false : true;
+
+    return {
+      fieldId: field.id,
+      action: 'check',
+      value,
+      confidence: 0.5,
+      skipReason:
+        'synthetic_checkbox_fallback: deterministic acknowledgement checkbox for unresolved required legal/consent capture'
+    };
+  }
+
+  if (field.type === 'radio_group') {
+    const pair = resolveBinaryYesNoOptionPair(field.options);
+    if (!pair) {
+      return null;
+    }
+
+    const pickNegative =
+      /\b(?:not\s+eligible|ineligible)\b|\bunable\s+to\b|\bare\s+you\s+not\b/.test(questionText);
+
+    const chosen = pickNegative ? pair.no : pair.yes;
+    return {
+      fieldId: field.id,
+      action: 'click',
+      value: chosen.value,
+      confidence: 0.54,
+      skipReason:
+        'synthetic_binary_fallback: deterministic yes/no selection for unresolved required radio group'
+    };
+  }
+
+  if (field.type === 'checkbox_group') {
+    const pair = resolveBinaryYesNoOptionPair(field.options);
+    if (pair) {
+      const pickNegative =
+        /\b(?:not\s+eligible|ineligible)\b|\bunable\s+to\b|\bare\s+you\s+not\b/.test(questionText);
+
+      const chosenValues = pickNegative ? [pair.no.value] : [pair.yes.value];
+      return {
+        fieldId: field.id,
+        action: 'check',
+        value: chosenValues,
+        confidence: 0.54,
+        skipReason:
+          'synthetic_binary_fallback: deterministic yes/no selection for unresolved required checkbox group'
+      };
+    }
+
+    if (field.options.length === 0 || field.options.length > 14) {
+      return null;
+    }
+
+    const yesLike =
+      field.options.find((option) => /^yes$/i.test(option.label.trim())) ??
+      field.options.find((option) => /^yes$/i.test(String(option.value ?? '').trim())) ??
+      field.options.find((option) => /^i (?:certify|acknowledge|agree)\b/i.test(option.label.trim()));
+    if (!yesLike) {
+      return null;
+    }
+
+    return {
+      fieldId: field.id,
+      action: 'check',
+      value: [yesLike.value],
+      confidence: 0.52,
+      skipReason:
+        'synthetic_yes_fallback: affirmative selection for unresolved required non-demographic checkbox group'
+    };
+  }
+
+  return null;
+}
+
+function buildSyntheticEntriesForMissingRequiredChoices(input: {
+  fields: ScrapedApplicationField[];
+  missing: ApplicationFillPlanMissingRequiredField[];
+}): ApplicationFillPlanEntry[] {
+  const out: ApplicationFillPlanEntry[] = [];
+  for (const miss of input.missing) {
+    const field = input.fields.find((candidate) => candidate.id === miss.fieldId);
+    if (!field || !isFieldRequired(field)) {
+      continue;
+    }
+
+    const entry = synthesizeFallbackEntryForUnresolvedRequiredChoice(field);
+    if (entry) {
+      out.push(entry);
+    }
+  }
+
+  return out;
 }
 
 function clampConfidence(value: number): number {
@@ -2728,26 +2867,36 @@ function normalizeEntryForField(
   }
 
   if (field.type === 'radio_group') {
-    const textValue = firstEntryString(entry);
-    if (entry.action !== 'click' || !textValue) {
+    let radioEntry = entry;
+    if (
+      radioEntry &&
+      radioEntry.action === 'fill' &&
+      typeof radioEntry.value === 'string' &&
+      radioEntry.value.trim().length > 0
+    ) {
+      radioEntry = { ...radioEntry, action: 'click' };
+    }
+
+    const textValue = radioEntry ? firstEntryString(radioEntry) : '';
+    if (!radioEntry || radioEntry.action !== 'click' || !textValue) {
       return createSkipResult({
         field,
         answerability,
         rawEntry: entry,
-        skipReason: `schema_mismatch: expected click for ${field.type}, got ${entry.action}`,
+        skipReason: `schema_mismatch: expected click for ${field.type}, got ${entry?.action ?? 'undefined'}`,
         category: 'schema_mismatch'
       });
     }
 
-    const option = resolveEntryOption(field.options, entry);
+    const option = resolveEntryOption(field.options, radioEntry);
     return option
-      ? createAcceptedResult({
+        ? createAcceptedResult({
           field,
           answerability,
           rawEntry: entry,
           normalizedAction: 'click',
           value: option.value,
-          confidence: entry.confidence
+          confidence: radioEntry.confidence
         })
       : createSkipResult({
           field,
@@ -2759,22 +2908,35 @@ function normalizeEntryForField(
   }
 
   if (field.type === 'checkbox_group') {
-    if (entry.action !== 'check') {
+    let effectiveEntry = entry;
+    if (
+      effectiveEntry &&
+      effectiveEntry.action === 'fill' &&
+      (typeof effectiveEntry.value === 'string' ||
+        Array.isArray(effectiveEntry.value) ||
+        typeof effectiveEntry.value === 'boolean')
+    ) {
+      effectiveEntry = { ...effectiveEntry, action: 'check' };
+    }
+
+    if (!effectiveEntry || effectiveEntry.action !== 'check') {
       return createSkipResult({
         field,
         answerability,
         rawEntry: entry,
-        skipReason: `schema_mismatch: expected check for ${field.type}, got ${entry.action}`,
+        skipReason: `schema_mismatch: expected check for ${field.type}, got ${entry?.action ?? 'undefined'}`,
         category: 'schema_mismatch'
       });
     }
 
     const rawValues =
-      typeof entry.value === 'string'
-        ? [entry.value]
-        : Array.isArray(entry.value)
-          ? entry.value
-          : [];
+      typeof effectiveEntry.value === 'string'
+        ? [effectiveEntry.value]
+        : Array.isArray(effectiveEntry.value)
+          ? effectiveEntry.value
+          : typeof effectiveEntry.value === 'boolean'
+            ? [`${effectiveEntry.value}`]
+            : [];
     const values = Array.from(
       new Set(
         rawValues
@@ -2790,7 +2952,7 @@ function normalizeEntryForField(
           rawEntry: entry,
           normalizedAction: 'check',
           value: values,
-          confidence: entry.confidence
+          confidence: effectiveEntry.confidence
         })
       : createSkipResult({
           field,
@@ -2802,17 +2964,25 @@ function normalizeEntryForField(
   }
 
   if (field.type === 'checkbox') {
-    if (entry.action !== 'check') {
+    let checkboxEntry = entry;
+    if (checkboxEntry?.action === 'fill') {
+      const coercedBool = coerceCheckboxValue(checkboxEntry.value);
+      if (coercedBool !== null) {
+        checkboxEntry = { ...checkboxEntry, action: 'check', value: coercedBool };
+      }
+    }
+
+    if (!checkboxEntry || checkboxEntry.action !== 'check') {
       return createSkipResult({
         field,
         answerability,
         rawEntry: entry,
-        skipReason: `schema_mismatch: expected check for ${field.type}, got ${entry.action}`,
+        skipReason: `schema_mismatch: expected check for ${field.type}, got ${entry?.action ?? 'undefined'}`,
         category: 'schema_mismatch'
       });
     }
 
-    const booleanValue = coerceCheckboxValue(entry.value);
+    const booleanValue = coerceCheckboxValue(checkboxEntry.value);
     return booleanValue === null
       ? createSkipResult({
           field,
@@ -2827,7 +2997,7 @@ function normalizeEntryForField(
           rawEntry: entry,
           normalizedAction: 'check',
           value: booleanValue,
-          confidence: entry.confidence
+          confidence: checkboxEntry.confidence
         });
   }
 
@@ -3141,6 +3311,42 @@ export async function generateApplicationFillPlan(
       fillPlan: normalizedResult.fillPlan,
       ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {})
     });
+
+    for (
+      let syntheticPass = 0;
+      syntheticPass < MAX_SYNTHETIC_CHOICE_FALLBACK_PASSES && !fillPlanValidation.ok;
+      syntheticPass += 1
+    ) {
+      const syntheticItems = buildSyntheticEntriesForMissingRequiredChoices({
+        fields: input.fields,
+        missing: fillPlanValidation.missingRequiredFields
+      });
+      if (syntheticItems.length === 0) {
+        break;
+      }
+
+      logStage4('synthetic_required_choice_fallback', {
+        promptVersion: STAGE_4_PROMPT_VERSION,
+        pass: syntheticPass,
+        fieldIds: syntheticItems.map((item) => item.fieldId)
+      });
+
+      responseJson = {
+        items: mergeFillPlanItems(responseJson.items, syntheticItems)
+      };
+      normalizedResult = normalizeFillPlan(
+        input.fields,
+        promptPayload.fields,
+        serializedProfile,
+        input.job,
+        responseJson.items
+      );
+      fillPlanValidation = validateRequiredFillPlan({
+        fields: input.fields,
+        fillPlan: normalizedResult.fillPlan,
+        ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {})
+      });
+    }
 
     const { fillPlan, fieldDiagnostics } = normalizedResult;
     const skippedFieldIds = fillPlan

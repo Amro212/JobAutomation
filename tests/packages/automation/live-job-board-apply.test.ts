@@ -95,7 +95,7 @@ liveDescribe('live job board application fill checks', () => {
         await session.close();
       }
     },
-    240_000
+    360_000
   );
 });
 

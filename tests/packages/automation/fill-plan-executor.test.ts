@@ -1002,6 +1002,83 @@ describe('application fill plan executor', () => {
     });
   });
 
+  test('matches underscore demographic slugs to hyphenated checkbox values', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <fieldset>
+              <legend>Pronouns</legend>
+              <label>
+                <input type="checkbox" name="pronouns[]" value="she-her" />
+                She/her
+              </label>
+              <label>
+                <input type="checkbox" name="pronouns[]" value="prefer-not-to-say" />
+                Prefer not to say
+              </label>
+            </fieldset>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const fields: ScrapedApplicationField[] = [
+        {
+          id: 'pronouns',
+          label: 'Pronouns',
+          type: 'checkbox_group',
+          required: false,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['[name="pronouns[]"]'],
+          options: [
+            { value: 'she-her', label: 'She/her' },
+            { value: 'prefer-not-to-say', label: 'Prefer not to say' },
+          ],
+        },
+      ];
+      const fillPlan: ApplicationFillPlanEntry[] = [
+        {
+          fieldId: 'pronouns',
+          action: 'fill',
+          value: 'prefer_not_to_say',
+          confidence: 0.9,
+          skipReason: '',
+        },
+      ];
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        fields,
+        fillPlan,
+      });
+
+      return {
+        executionResult,
+        pronounPreferNot: await page
+          .locator('input[name="pronouns[]"][value="prefer-not-to-say"]')
+          .isChecked(),
+        pronounShe: await page
+          .locator('input[name="pronouns[]"][value="she-her"]')
+          .isChecked(),
+      };
+    });
+
+    expect(result.pronounPreferNot).toBe(true);
+    expect(result.pronounShe).toBe(false);
+    expect(result.executionResult.summary).toEqual({
+      total: 1,
+      success: 1,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
   test('handles Ashby-style hidden checkbox inputs by clicking visible Yes/No buttons', async () => {
     await startServer(`
       <html>
@@ -1652,7 +1729,7 @@ describe('application fill plan executor', () => {
     );
   });
 
-  test('avoids direct bulk setter APIs for human-style interactions', async () => {
+  test('avoids locator.fill() and locator.setChecked; native <select> uses selectOption for reliability', async () => {
     await startServer(`
       <html>
         <body>
@@ -1781,8 +1858,8 @@ describe('application fill plan executor', () => {
         });
       } finally {
         expect(fillSpy).not.toHaveBeenCalled();
-        expect(selectOptionSpy).not.toHaveBeenCalled();
         expect(setCheckedSpy).not.toHaveBeenCalled();
+        expect(selectOptionSpy).toHaveBeenCalledTimes(1);
         fillSpy.mockRestore();
         selectOptionSpy.mockRestore();
         setCheckedSpy.mockRestore();

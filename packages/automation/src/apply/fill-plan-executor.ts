@@ -8,7 +8,7 @@ import type {
   ApplicationBoardEntryResult,
   SupportedApplicationBoard,
 } from './board-entry';
-import type { ScrapedApplicationField } from './form-scraper';
+import type { ScrapedApplicationField, ScrapedApplicationFieldOption } from './form-scraper';
 import type { ApplicationFillPlanEntry } from './openrouter-answer-module';
 import { uploadArtifactFile } from './file-upload';
 import { isFieldRequired, uploadArtifactKindForField } from './field-contract';
@@ -60,6 +60,8 @@ export type ExecuteApplicationFillPlanResult = {
 };
 
 const STAGE_5_LOG_PREFIX = '[Stage 5][fill-plan-executor]';
+/** Playwright locator actions for human-fill must not rely on infinite default timeouts on slow/heavy ATS pages. */
+const LOCATOR_ACTION_TIMEOUT_MS = 20_000;
 const DEFAULT_PACING: Required<InteractionPacingProfile> = {
   preFieldDelayMs: [10, 30],
   postFieldDelayMs: [10, 30],
@@ -146,7 +148,7 @@ function createHumanActionEngine(input: {
         return;
       }
 
-      await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+      await locator.scrollIntoViewIfNeeded({ timeout: LOCATOR_ACTION_TIMEOUT_MS }).catch(() => undefined);
       await waitWithRange(input.page, pacing.preFieldDelayMs);
       await clickLocatorCenterWithoutScroll({ page: input.page, locator });
       metrics.pointerActions += 1;
@@ -163,12 +165,12 @@ function createHumanActionEngine(input: {
         preClickDelayMs: pacing.preFieldDelayMs,
       });
       if (!clickedInViewport && !options?.skipScroll) {
-        await locator.scrollIntoViewIfNeeded().catch(() => undefined);
+        await locator.scrollIntoViewIfNeeded({ timeout: LOCATOR_ACTION_TIMEOUT_MS }).catch(() => undefined);
         await waitWithRange(input.page, pacing.preFieldDelayMs);
         await clickLocatorCenterWithoutScroll({ page: input.page, locator });
       } else if (!clickedInViewport) {
         await waitWithRange(input.page, pacing.preFieldDelayMs);
-        await locator.click();
+        await locator.click({ timeout: LOCATOR_ACTION_TIMEOUT_MS });
       }
       metrics.pointerActions += 1;
 
@@ -277,16 +279,75 @@ function normalizeOptionText(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+/** Compares demographic / EEO slug-like tokens across `_`, `-`, and whitespace (e.g. `prefer_not_to_say` vs `prefer-not-to-say`). */
+function normalizeComparableSlug(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[_\s-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function choiceOptionMatchesRequestedValue(
+  candidate: ScrapedApplicationFieldOption,
+  requestedValue: string,
+  comparableRequested?: string
+): boolean {
+  if (candidate.value === requestedValue) {
+    return true;
+  }
+
+  const nv = normalizeOptionText(requestedValue);
+  if (
+    normalizeOptionText(candidate.value) === nv ||
+    normalizeOptionText(candidate.label) === nv
+  ) {
+    return true;
+  }
+
+  const cr = comparableRequested ?? normalizeComparableSlug(requestedValue);
+  return (
+    normalizeComparableSlug(candidate.value) === cr ||
+    normalizeComparableSlug(candidate.label) === cr
+  );
+}
+
+function expandComboboxSemanticAliases(raw: string): string[] {
+  const v = normalizeOptionText(raw);
+  const aliases = new Set<string>([raw]);
+  const addIf = (...candidates: string[]) => {
+    for (const candidate of candidates) {
+      aliases.add(candidate);
+    }
+  };
+
+  if (v === 'yes' || raw.trim() === 'Yes') {
+    addIf('Yes', 'yes', 'I agree', 'Agree');
+  }
+  if (v === 'no' || raw.trim() === 'No') {
+    addIf('No', 'no');
+  }
+
+  if (/\bu\.?s\.?\s*citizens?|us\s*citizen/i.test(raw)) {
+    addIf('U.S. Citizen', 'US Citizen', 'Citizen', 'Authorized to work in the United States');
+  }
+
+  return Array.from(aliases).filter((candidate) => candidate.trim().length > 0);
+}
+
 function comboboxCandidateLabels(input: {
   field: ScrapedApplicationField;
   value: string;
 }): string[] {
-  const normalizedValue = normalizeOptionText(input.value);
-  const matchingFieldOptions = input.field.options.filter(
-    (option) =>
-      normalizeOptionText(option.value) === normalizedValue ||
-      normalizeOptionText(option.label) === normalizedValue
-  );
+  const valueVariants = expandComboboxSemanticAliases(input.value).map(normalizeOptionText);
+  const matchingFieldOptions = input.field.options.filter((option) => {
+    const ov = normalizeOptionText(option.value);
+    const ol = normalizeOptionText(option.label);
+    return valueVariants.some((vv) => vv === ov || vv === ol || ov.includes(vv) || ol.includes(vv));
+  });
+
+  const fromAliases = expandComboboxSemanticAliases(input.value);
 
   return Array.from(
     new Set(
@@ -295,6 +356,7 @@ function comboboxCandidateLabels(input: {
           option.label,
           option.value,
         ]),
+        ...fromAliases,
         input.value,
       ].filter((candidate) => candidate.trim().length > 0)
     )
@@ -522,14 +584,31 @@ async function waitForLeverLocationOption(input: {
   timeoutMs?: number;
   pollMs?: number;
 }): Promise<Locator | null> {
-  const timeoutMs = input.timeoutMs ?? 2_500;
-  const pollMs = input.pollMs ?? 100;
+  const timeoutMs = input.timeoutMs ?? 8_500;
+  const pollMs = input.pollMs ?? 120;
   const deadline = Date.now() + timeoutMs;
 
+  // Scope to suggestion panels only. `[data-qa*="location"]` must NOT be used loosely — it matches
+  // Lever's main combobox (#location-input) which appears earlier in DOM than `.dropdown-results`,
+  // so `locator(...).first()` would treat the input as the "option" and never commit a selection.
+
+  const panelLocator = input.page.locator([
+    '.dropdown-results',
+    '[class*="dropdown-results"]',
+    '[class*="candidate-list"]',
+  ].join(', '));
+  const optionLocator = panelLocator.locator([
+    '.dropdown-location',
+    '[id^="location-"]:not(input)',
+    'button',
+    '[role="option"]',
+    'li[class*="candidate"]',
+    '[data-qa*="location-suggestion"]',
+    '[data-qa*="location-result"]',
+  ].join(', '));
+
   while (Date.now() <= deadline) {
-    const option = input.page
-      .locator('.dropdown-results .dropdown-location, .dropdown-results [id^="location-"]')
-      .first();
+    const option = optionLocator.first();
     if (await option.isVisible().catch(() => false)) {
       return option;
     }
@@ -541,14 +620,34 @@ async function waitForLeverLocationOption(input: {
 }
 
 async function hasLeverSelectedLocation(page: Page): Promise<boolean> {
-  const selectedLocation = page
-    .locator('#selected-location, [name="selectedLocation"]')
-    .first();
-  if ((await selectedLocation.count().catch(() => 0)) === 0) {
-    return true;
+  const selectedMirror = page.locator('#selected-location, [name="selectedLocation"]').first();
+  const hasMirror = (await selectedMirror.count().catch(() => 0)) > 0;
+
+  if (hasMirror) {
+    const hiddenValue = (await selectedMirror.inputValue().catch(() => '')).trim();
+    if (hiddenValue.length >= 2) {
+      return true;
+    }
+
+    const mirroredText = normalizeOptionText((await selectedMirror.textContent().catch(() => null)) ?? '');
+    if (mirroredText.length >= 3) {
+      return true;
+    }
   }
 
-  return (await selectedLocation.inputValue().catch(() => '')).trim().length > 0;
+  // Legacy Lever layouts without a separate selectedLocation mirror rely on typed text only.
+  if (!hasMirror) {
+    const inputSelectors = ['#location-input', '[data-qa="location-input"]', '[name="location"]'];
+    for (const selector of inputSelectors) {
+      const locator = page.locator(selector).first();
+      const value = (await locator.inputValue().catch(() => '')).trim();
+      if (value.length >= 2) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 async function ashbyLocationCommitted(input: {
@@ -590,7 +689,7 @@ async function executeLocationAutocomplete(input: {
     ensureClear: true,
     skipScroll: true,
   });
-  await waitWithRange(input.page, [1000, 2000]);
+  await waitWithRange(input.page, input.board === 'lever' ? [1400, 2400] : [1000, 2000]);
 
   if (input.board === 'lever') {
     const option = await waitForLeverLocationOption({ page: input.page });
@@ -598,8 +697,12 @@ async function executeLocationAutocomplete(input: {
       throw new Error(`No visible location suggestion appeared for "${value}".`);
     }
 
-    await clickLocatorCenterWithoutScroll({ page: input.page, locator: option });
-    await input.page.waitForTimeout(300);
+    await input.actionEngine.click(option);
+    await input.page.waitForTimeout(600);
+    if (!(await hasLeverSelectedLocation(input.page))) {
+      await input.actionEngine.press('Enter');
+      await input.page.waitForTimeout(450);
+    }
     if (!(await hasLeverSelectedLocation(input.page))) {
       throw new Error(`Location suggestion did not commit for "${value}".`);
     }
@@ -697,12 +800,18 @@ async function executeCombobox(input: {
 
   await input.actionEngine.typeText(input.locator, value);
 
+  const dynamicComboboxProbe =
+    optionMode !== 'static'
+      ? { timeoutMs: 6_500 as const, pollMs: 90 as const }
+      : {};
+
   const option = await waitForComboboxOption({
     page: input.page,
     root: input.root,
     labels: candidateLabels,
     optionRoots,
     allowFirstVisibleFallback: optionMode !== 'static',
+    ...dynamicComboboxProbe,
   });
 
   if (!option) {
@@ -724,6 +833,7 @@ async function firstVisibleChoiceLocator(input: {
   root: Locator;
   selector: string;
   value: string;
+  ariaRole: 'radio' | 'checkbox';
   label?: string;
 }): Promise<Locator | null> {
   const valueSelector = `${input.selector}[value="${escapeAttributeValue(input.value)}"]`;
@@ -736,18 +846,26 @@ async function firstVisibleChoiceLocator(input: {
     return byValue;
   }
 
-  if (!input.label) {
-    return null;
-  }
+  if (input.label && input.label.trim().length > 0) {
+    const scopedRole = input.root.getByRole(input.ariaRole, { name: input.label.trim(), exact: true }).first();
+    if (await scopedRole.isVisible().catch(() => false)) {
+      return scopedRole;
+    }
 
-  const scopedByLabel = input.root.getByLabel(input.label).first();
-  if (await scopedByLabel.isVisible().catch(() => false)) {
-    return scopedByLabel;
-  }
+    const pageRole = input.page.getByRole(input.ariaRole, { name: input.label.trim(), exact: true }).first();
+    if (await pageRole.isVisible().catch(() => false)) {
+      return pageRole;
+    }
 
-  const pageByLabel = input.page.getByLabel(input.label).first();
-  if (await pageByLabel.isVisible().catch(() => false)) {
-    return pageByLabel;
+    const scopedByLabel = input.root.getByLabel(input.label.trim()).first();
+    if (await scopedByLabel.isVisible().catch(() => false)) {
+      return scopedByLabel;
+    }
+
+    const pageByLabel = input.page.getByLabel(input.label.trim()).first();
+    if (await pageByLabel.isVisible().catch(() => false)) {
+      return pageByLabel;
+    }
   }
 
   return null;
@@ -766,16 +884,27 @@ async function executeChoiceGroup(input: {
     throw new Error('Choice group action did not include option values.');
   }
 
+  const ariaRole: 'radio' | 'checkbox' =
+    input.field.type === 'radio_group' ? 'radio' : 'checkbox';
+
   for (const value of values) {
-    const option = input.field.options.find(
-      (candidate) => candidate.value === value
+    const comparable = normalizeComparableSlug(value);
+    const option = input.field.options.find((candidate) =>
+      choiceOptionMatchesRequestedValue(candidate, value, comparable)
     );
+    const domValue =
+      option && option.value.trim().length > 0 ? option.value : value;
     const locator = await firstVisibleChoiceLocator({
       page: input.page,
       root: input.root,
       selector: input.selector,
-      value,
-      ...(option?.label ? { label: option.label } : {}),
+      value: domValue,
+      ariaRole,
+      ...(option?.label.trim().length
+        ? { label: option.label.trim() }
+        : option?.value.trim().length
+          ? { label: option.value.trim() }
+          : {}),
     });
 
     if (!locator) {
@@ -828,12 +957,29 @@ async function executeSelect(input: {
   }
 
   const value = input.entry.value;
-  const targetIndex = input.field.options.findIndex(
-    (option) =>
-      option.value === value || normalizeOptionText(option.label) === normalizeOptionText(value)
+  const comparableRequested = normalizeComparableSlug(value);
+  const targetIndex = input.field.options.findIndex((option) =>
+    choiceOptionMatchesRequestedValue(option, value, comparableRequested)
   );
   if (targetIndex < 0) {
     throw new Error(`No known select option matched "${value}".`);
+  }
+
+  const targetOption = input.field.options[targetIndex];
+  const tagName =
+    (await input.locator.evaluate((element) => element.tagName?.toLowerCase() ?? '').catch(() => '')) ??
+    '';
+
+  if (tagName === 'select') {
+    try {
+      await input.locator.selectOption({ value }, { timeout: 12_000 });
+    } catch {
+      await input.locator.selectOption(
+        { label: targetOption?.label.trim() ?? value },
+        { timeout: 12_000 }
+      );
+    }
+    return;
   }
 
   await input.actionEngine.click(input.locator);
@@ -846,7 +992,7 @@ async function executeSelect(input: {
 
   const selectedValue = await input.locator.inputValue().catch(() => '');
   if (selectedValue !== value) {
-    const targetLabel = input.field.options[targetIndex]?.label.trim() ?? '';
+    const targetLabel = targetOption?.label.trim() ?? '';
     await input.locator.focus();
     if (targetLabel.length > 0) {
       await input.locator.press(targetLabel[0] ?? '');
@@ -1172,8 +1318,10 @@ async function executeWithSelectorFallback(input: {
       }
 
       if (
-        input.entry.action === 'check' &&
-        input.field.type === 'checkbox_group'
+        input.field.type === 'checkbox_group' &&
+        (input.entry.action === 'check' ||
+          (input.entry.action === 'fill' &&
+            (typeof input.entry.value === 'string' || Array.isArray(input.entry.value))))
       ) {
         await executeChoiceGroup({
           page: input.page,

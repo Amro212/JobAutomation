@@ -4,11 +4,15 @@ import type { Locator, Page } from 'playwright';
 import type { ApplicationBoardEntryResult } from './board-entry';
 import {
   hasRequiredMarker,
+  isFieldRequired,
   normalizeFieldText,
   uniqueRequiredSources,
   type FieldOptionMode,
   type FieldRequiredSource
 } from './field-contract';
+
+/** Bounds combobox probe waits so scrapes cannot hang multi-minute Playwright defaults. */
+const SCRAPE_PROBE_ACTION_TIMEOUT_MS = 8500;
 
 export type ScrapedApplicationFieldOption = {
   value: string;
@@ -958,13 +962,14 @@ async function firstAttachedFieldLocator(input: {
 }
 
 async function visibleRoleOptions(locator: Locator): Promise<ScrapedApplicationFieldOption[]> {
+  const probeTimeout = { timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS } as const;
   const options: ScrapedApplicationFieldOption[] = [];
   const roleOptions = locator.getByRole('option');
-  const count = Math.min(await roleOptions.count().catch(() => 0), 100);
+  const count = Math.min(await roleOptions.count().catch(() => 0), 50);
 
   for (let index = 0; index < count; index += 1) {
     const option = roleOptions.nth(index);
-    if (!(await option.isVisible().catch(() => false))) {
+    if (!(await option.isVisible(probeTimeout).catch(() => false))) {
       continue;
     }
 
@@ -1003,6 +1008,11 @@ function uniqueOptions(options: ScrapedApplicationFieldOption[]): ScrapedApplica
   return unique;
 }
 
+async function dismissListboxOverlay(page: Page): Promise<void> {
+  await page.keyboard.press('Escape').catch(() => undefined);
+  await page.waitForTimeout(40);
+}
+
 async function collectComboboxOptions(input: {
   page: Page;
   boardEntry: ApplicationBoardEntryResult;
@@ -1011,6 +1021,8 @@ async function collectComboboxOptions(input: {
   if (input.field.type !== 'combobox' || input.field.selectorCandidates.length === 0) {
     return [];
   }
+
+  await dismissListboxOverlay(input.page);
 
   const locator = await firstAttachedFieldLocator({
     page: input.page,
@@ -1030,9 +1042,9 @@ async function collectComboboxOptions(input: {
     }
   }
 
-  await locator.scrollIntoViewIfNeeded().catch(() => undefined);
-  await locator.click({ timeout: 750 }).catch(() => undefined);
-  await locator.focus({ timeout: 750 }).catch(() => undefined);
+  await locator.scrollIntoViewIfNeeded({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
+  await locator.click({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
+  await locator.focus({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
   await input.page.waitForTimeout(150);
 
   const options: ScrapedApplicationFieldOption[] = [];
@@ -1082,25 +1094,63 @@ function isCountryComboboxSkippable(field: ScrapedApplicationField): boolean {
   return false;
 }
 
+const COMBOBOX_STATIC_SCRAPE_WALL_CLOCK_MS = 28_000;
+
+/** Prefer scraping options for required comboboxes before optional ones (expensive optional widgets shouldn't burn the wall clock). */
+function comboboxFieldsInScrapePriorityOrder(fields: ScrapedApplicationField[]): ScrapedApplicationField[] {
+  type Item = { field: ScrapedApplicationField; index: number };
+  const items: Item[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index];
+    if (!field || field.type !== 'combobox') {
+      continue;
+    }
+    items.push({ field, index });
+  }
+
+  items.sort((a, b) => {
+    const reqA = isFieldRequired(a.field);
+    const reqB = isFieldRequired(b.field);
+    if (reqA !== reqB) {
+      return reqA ? -1 : 1;
+    }
+    return a.index - b.index;
+  });
+
+  return items.map((entry) => entry.field);
+}
+
 async function enrichComboboxFields(input: {
   page: Page;
   boardEntry: ApplicationBoardEntryResult;
   fields: ScrapedApplicationField[];
 }): Promise<ScrapedApplicationField[]> {
-  const enriched: ScrapedApplicationField[] = [];
-  for (const field of input.fields) {
-    if (field.type !== 'combobox') {
-      enriched.push(field);
-      continue;
-    }
+  const enrichedById = new Map<string, ScrapedApplicationField>();
+  const scrapeDeadline = Date.now() + COMBOBOX_STATIC_SCRAPE_WALL_CLOCK_MS;
+  const prioritizedComboBoxes = comboboxFieldsInScrapePriorityOrder(input.fields);
 
+  for (const field of prioritizedComboBoxes) {
     if (isCountryComboboxSkippable(field)) {
       logStage3('skip_country_code_scrape', {
         label: field.label,
         id: field.id,
         reason: 'phone_country_code_combobox_detected'
       });
-      enriched.push({
+      enrichedById.set(field.id, {
+        ...field,
+        optionMode: 'dynamic_search'
+      });
+      continue;
+    }
+
+    if (Date.now() > scrapeDeadline) {
+      logStage3('combobox_option_scrape_time_budget_hit', {
+        label: field.label,
+        id: field.id,
+        deadlineMs: COMBOBOX_STATIC_SCRAPE_WALL_CLOCK_MS,
+        note: 'skipping dropdown option scrape; planner will treat as dynamic_search'
+      });
+      enrichedById.set(field.id, {
         ...field,
         optionMode: 'dynamic_search'
       });
@@ -1113,24 +1163,56 @@ async function enrichComboboxFields(input: {
       field
     });
     if (options.length === 0) {
-      enriched.push({
+      enrichedById.set(field.id, {
         ...field,
         optionMode: field.optionMode ?? 'dynamic_search'
       });
       continue;
     }
 
-    enriched.push({
+    enrichedById.set(field.id, {
       ...field,
       options,
       optionMode: 'static'
     });
   }
 
+  const enriched: ScrapedApplicationField[] = [];
+  for (const field of input.fields) {
+    if (field.type !== 'combobox') {
+      enriched.push(field);
+      continue;
+    }
+
+    enriched.push(enrichedById.get(field.id) ?? field);
+  }
+
   return enriched;
 }
 
 export async function scrapeApplicationFields(input: {
+  page: Page;
+  boardEntry: ApplicationBoardEntryResult;
+}): Promise<ScrapedApplicationField[]> {
+  const PLAYWRIGHT_DEFAULT_ACTION_TIMEOUT_MS = 30_000;
+  let restoreDefaultTimeout:
+    | undefined
+    | (() => void) = undefined;
+  if (typeof input.page.setDefaultTimeout === 'function') {
+    input.page.setDefaultTimeout(SCRAPE_PROBE_ACTION_TIMEOUT_MS);
+    restoreDefaultTimeout = () => {
+      input.page.setDefaultTimeout(PLAYWRIGHT_DEFAULT_ACTION_TIMEOUT_MS);
+    };
+  }
+
+  try {
+    return await scrapeApplicationFieldsUnsafe(input);
+  } finally {
+    restoreDefaultTimeout?.();
+  }
+}
+
+async function scrapeApplicationFieldsUnsafe(input: {
   page: Page;
   boardEntry: ApplicationBoardEntryResult;
 }): Promise<ScrapedApplicationField[]> {

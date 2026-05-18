@@ -394,7 +394,9 @@ export async function createApplicationBrowserRuntime(input: {
       createIdentityAwareCamoufoxOptions(identity)
     );
     const context = await browserType.launchPersistentContext(identity.userDataDir, {
-      ...launchOptions
+      ...launchOptions,
+      // Camoufox/cold-disk launches can exceed Playwright's 180s default on Windows CI or heavy profiles.
+      timeout: Math.max(Number(launchOptions.timeout ?? 0), 320_000)
     });
 
     return {

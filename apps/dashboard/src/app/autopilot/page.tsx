@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { AutopilotAutoRefresh } from '@/components/autopilot-auto-refresh';
+import { SubmitButton } from '@/components/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -159,15 +160,15 @@ export default async function AutopilotPage({
           <div className="flex items-center gap-2">
             {hasActiveRun ? (
               <form action={cancelAutopilotAction}>
-                <Button type="submit" variant="destructive">
+                <SubmitButton variant="destructive" pendingText="Stopping...">
                   Stop autopilot
-                </Button>
+                </SubmitButton>
               </form>
             ) : null}
             <form action={launchAutopilotAction}>
-              <Button type="submit" disabled={hasActiveRun}>
+              <SubmitButton disabled={hasActiveRun} pendingText="Launching...">
                 Launch autopilot
-              </Button>
+              </SubmitButton>
             </form>
           </div>
         </div>
