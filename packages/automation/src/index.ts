@@ -7,6 +7,8 @@ export * from './apply/file-upload';
 export * from './apply/form-scraper';
 export * from './apply/openrouter-answer-module';
 export * from './apply/pause-application-run';
+export * from './apply/required-field-execution-guard';
+export * from './apply/required-field-submit-gate';
 export * from './apply/email-verification';
 export * from './apply/session-manager';
 export * from './apply/stop-before-submit';

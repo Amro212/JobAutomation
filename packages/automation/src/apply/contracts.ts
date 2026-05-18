@@ -62,6 +62,7 @@ export type ApplicationSiteFlowContext = {
   job: JobRecord;
   run: ApplicationRunRecordLike;
   session: ApplicationSession;
+  submissionMode?: 'submit' | 'stop_before_submit';
   openRouter?: OpenRouterConfig | null;
   logStep: (step: string, message: string, details?: Record<string, unknown>) => Promise<void>;
   captureScreenshot: (input: {

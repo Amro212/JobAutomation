@@ -3,6 +3,7 @@ import { reachApplicationForm } from '../board-entry';
 import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
+import { guardRequiredFieldsBeforeSubmit } from '../required-field-submit-gate';
 import { submitApplicationAndConfirm } from '../submit-application';
 import {
   createGmailApiClient,
@@ -166,6 +167,20 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           pageHtml: await context.session.page.content(),
         },
       });
+    }
+
+    const requiredFieldGateResult = await guardRequiredFieldsBeforeSubmit({
+      context,
+      boardEntry,
+      scrapedFields,
+      fillPlan: fillPlanResult.fillPlan,
+      fillPlanDetails,
+      executionResult,
+      preEntryWarmup,
+      preFillWarmup,
+    });
+    if (requiredFieldGateResult) {
+      return requiredFieldGateResult;
     }
 
     const emailVerificationConfig = resolveEmailVerificationConfig(

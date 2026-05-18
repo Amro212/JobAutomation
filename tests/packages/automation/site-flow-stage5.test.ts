@@ -276,6 +276,259 @@ describe('stage 5 site flow integration', () => {
     }
   );
 
+  test.each([
+    {
+      siteKey: 'greenhouse',
+      modulePath:
+        '../../../packages/automation/src/apply/sites/greenhouse-apply',
+      exportName: 'greenhouseApplicationSite',
+      title: 'Greenhouse',
+    },
+    {
+      siteKey: 'ashby',
+      modulePath: '../../../packages/automation/src/apply/sites/ashby-apply',
+      exportName: 'ashbyApplicationSite',
+      title: 'Ashby',
+    },
+    {
+      siteKey: 'lever',
+      modulePath: '../../../packages/automation/src/apply/sites/lever-apply',
+      exportName: 'leverApplicationSite',
+      title: 'Lever',
+    },
+  ])(
+    'pauses before submit when required field execution is incomplete for $title',
+    async ({ siteKey, modulePath, exportName }) => {
+      const boardEntry = boardEntryBySite[siteKey];
+      const scrapedFields = [
+        {
+          ...scrapedFieldsBySite[siteKey][0],
+          required: true,
+        },
+      ];
+      const fillPlan = fillPlanBySite[siteKey];
+      const executionResult = {
+        results: [
+          {
+            fieldId: scrapedFields[0].id,
+            label: scrapedFields[0].label,
+            action: fillPlan[0].action,
+            status: 'failed',
+            selector: scrapedFields[0].selectorCandidates[0],
+            message: `${scrapedFields[0].selectorCandidates[0]}: not visible`,
+          },
+        ],
+        summary: {
+          total: 1,
+          success: 0,
+          skipped: 0,
+          failed: 1,
+        },
+        telemetry: {
+          totalPreFillDwellMs: 100,
+          totalTypingDurationMs: 0,
+          totalPointerActions: 0,
+          forbiddenDirectApiUsage: [],
+        },
+      };
+
+      const submitApplicationAndConfirm = vi.fn();
+
+      vi.doMock('../../../packages/automation/src/apply/board-entry', () => ({
+        reachApplicationForm: vi.fn().mockResolvedValue(boardEntry),
+      }));
+      vi.doMock('../../../packages/automation/src/apply/form-scraper', () => ({
+        scrapeApplicationFields: vi.fn().mockResolvedValue(scrapedFields),
+      }));
+      vi.doMock(
+        '../../../packages/automation/src/apply/openrouter-answer-module',
+        () => ({
+          generateApplicationFillPlan: vi.fn().mockResolvedValue({
+            promptVersion: 'stage4-fill-plan-v1',
+            rawResponseLength: 100,
+            promptPayload: { fields: [] },
+            responseJson: { items: fillPlan },
+            fieldDiagnostics: [],
+            fillPlanValidation: { ok: true, missingRequiredFields: [] },
+            fillPlan,
+          }),
+        })
+      );
+      vi.doMock(
+        '../../../packages/automation/src/apply/fill-plan-executor',
+        () => ({
+          executeApplicationFillPlan: vi.fn().mockResolvedValue(executionResult),
+        })
+      );
+      vi.doMock('../../../packages/automation/src/apply/submit-application', () => ({
+        submitApplicationAndConfirm,
+      }));
+      vi.doMock('../../../packages/automation/src/apply/trust-runtime', () => ({
+        warmApplicationPageBeforeEntry: vi.fn().mockResolvedValue({ totalDwellMs: 1200 }),
+        warmApplicationFormBeforeFill: vi.fn().mockResolvedValue({ totalDwellMs: 900 }),
+        detectApplicationChallenge: vi.fn().mockResolvedValue(null),
+      }));
+
+      const importedModule = await import(modulePath);
+      const site = importedModule[
+        exportName as keyof typeof importedModule
+      ] as {
+        run: (context: ApplicationSiteFlowContext) => Promise<unknown>;
+      };
+      const context = createContext({
+        siteKey,
+        finalUrl: boardEntry.finalUrl,
+      });
+
+      await site.run(context);
+
+      expect(submitApplicationAndConfirm).not.toHaveBeenCalled();
+      expect(context.pauseForManualReview).toHaveBeenCalledWith({
+        step: 'required_fields_incomplete_after_fill',
+        message:
+          'Paused before submit because required application fields were not filled successfully.',
+        stopReason: 'manual_review_required',
+        details: expect.objectContaining({
+          boardEntry,
+          scrapedFields,
+          fillPlan,
+          executionResult,
+          requiredFieldExecutionValidation: {
+            ok: false,
+            missingRequiredFields: [
+              {
+                fieldId: scrapedFields[0].id,
+                label: scrapedFields[0].label,
+                type: scrapedFields[0].type,
+                reason: `required_field_execution_failed: ${scrapedFields[0].selectorCandidates[0]}: not visible`,
+              },
+            ],
+          },
+        }),
+      });
+    }
+  );
+
+  test.each([
+    {
+      siteKey: 'greenhouse',
+      modulePath:
+        '../../../packages/automation/src/apply/sites/greenhouse-apply',
+      exportName: 'greenhouseApplicationSite',
+      title: 'Greenhouse',
+    },
+    {
+      siteKey: 'ashby',
+      modulePath: '../../../packages/automation/src/apply/sites/ashby-apply',
+      exportName: 'ashbyApplicationSite',
+      title: 'Ashby',
+    },
+    {
+      siteKey: 'lever',
+      modulePath: '../../../packages/automation/src/apply/sites/lever-apply',
+      exportName: 'leverApplicationSite',
+      title: 'Lever',
+    },
+  ])(
+    'stops before submit after required fields pass for $title',
+    async ({ siteKey, modulePath, exportName }) => {
+      const boardEntry = boardEntryBySite[siteKey];
+      const scrapedFields = scrapedFieldsBySite[siteKey];
+      const fillPlan = fillPlanBySite[siteKey];
+      const executionResult = {
+        results: [
+          {
+            fieldId: scrapedFields[0].id,
+            label: scrapedFields[0].label,
+            action: fillPlan[0].action,
+            status: 'success',
+            selector: scrapedFields[0].selectorCandidates[0],
+            message: 'Filled field.',
+          },
+        ],
+        summary: {
+          total: 1,
+          success: 1,
+          skipped: 0,
+          failed: 0,
+        },
+        telemetry: {
+          totalPreFillDwellMs: 100,
+          totalTypingDurationMs: 80,
+          totalPointerActions: 2,
+          forbiddenDirectApiUsage: [],
+        },
+      };
+
+      const submitApplicationAndConfirm = vi.fn();
+
+      vi.doMock('../../../packages/automation/src/apply/board-entry', () => ({
+        reachApplicationForm: vi.fn().mockResolvedValue(boardEntry),
+      }));
+      vi.doMock('../../../packages/automation/src/apply/form-scraper', () => ({
+        scrapeApplicationFields: vi.fn().mockResolvedValue(scrapedFields),
+      }));
+      vi.doMock(
+        '../../../packages/automation/src/apply/openrouter-answer-module',
+        () => ({
+          generateApplicationFillPlan: vi.fn().mockResolvedValue({
+            promptVersion: 'stage4-fill-plan-v1',
+            rawResponseLength: 100,
+            promptPayload: { fields: [] },
+            responseJson: { items: fillPlan },
+            fieldDiagnostics: [],
+            fillPlanValidation: { ok: true, missingRequiredFields: [] },
+            fillPlan,
+          }),
+        })
+      );
+      vi.doMock(
+        '../../../packages/automation/src/apply/fill-plan-executor',
+        () => ({
+          executeApplicationFillPlan: vi.fn().mockResolvedValue(executionResult),
+        })
+      );
+      vi.doMock('../../../packages/automation/src/apply/submit-application', () => ({
+        submitApplicationAndConfirm,
+      }));
+      vi.doMock('../../../packages/automation/src/apply/trust-runtime', () => ({
+        warmApplicationPageBeforeEntry: vi.fn().mockResolvedValue({ totalDwellMs: 1200 }),
+        warmApplicationFormBeforeFill: vi.fn().mockResolvedValue({ totalDwellMs: 900 }),
+        detectApplicationChallenge: vi.fn().mockResolvedValue(null),
+      }));
+
+      const importedModule = await import(modulePath);
+      const site = importedModule[
+        exportName as keyof typeof importedModule
+      ] as {
+        run: (context: ApplicationSiteFlowContext) => Promise<unknown>;
+      };
+      const context = createContext({
+        siteKey,
+        finalUrl: boardEntry.finalUrl,
+        submissionMode: 'stop_before_submit',
+      });
+
+      await site.run(context);
+
+      expect(submitApplicationAndConfirm).not.toHaveBeenCalled();
+      expect(context.stopBeforeSubmit).toHaveBeenCalledWith({
+        step: 'required_fields_filled',
+        reviewUrl: boardEntry.finalUrl,
+        details: expect.objectContaining({
+          boardEntry,
+          scrapedFields,
+          fillPlan,
+          executionResult,
+          requiredFieldExecutionValidation: {
+            ok: true,
+            missingRequiredFields: [],
+          },
+        }),
+      });
+    }
+  );
+
   test('pauses early when challenge detection trips before scraping', async () => {
     const boardEntry = boardEntryBySite.greenhouse;
     const challengeSignal = {
@@ -696,8 +949,17 @@ describe('stage 5 site flow integration', () => {
     }));
     vi.doMock('../../../packages/automation/src/apply/fill-plan-executor', () => ({
       executeApplicationFillPlan: vi.fn().mockResolvedValue({
-        results: [],
-        summary: { total: 0, success: 0, skipped: 0, failed: 0 },
+        results: [
+          {
+            fieldId: scrapedFields[0].id,
+            label: scrapedFields[0].label,
+            action: fillPlan[0].action,
+            status: 'success',
+            selector: scrapedFields[0].selectorCandidates[0],
+            message: 'Filled field.',
+          },
+        ],
+        summary: { total: 1, success: 1, skipped: 0, failed: 0 },
         telemetry: {
           totalPreFillDwellMs: 0,
           totalTypingDurationMs: 0,
@@ -756,6 +1018,7 @@ function createContext(input: {
   siteKey: 'greenhouse' | 'ashby' | 'lever';
   finalUrl: string;
   pageHtml?: string;
+  submissionMode?: 'submit' | 'stop_before_submit';
 }): ApplicationSiteFlowContext {
   return {
     applicantProfile: null,
@@ -805,6 +1068,7 @@ function createContext(input: {
       baseUrl: 'https://openrouter.example/api/v1',
       model: 'openrouter/test-model',
     },
+    submissionMode: input.submissionMode ?? 'submit',
     logStep: vi.fn().mockResolvedValue(undefined),
     captureScreenshot: vi.fn().mockResolvedValue({
       artifactId: 'artifact-1',
@@ -815,7 +1079,11 @@ function createContext(input: {
       status: 'completed',
       currentStep: 'submitted',
     }),
-    stopBeforeSubmit: vi.fn(),
+    stopBeforeSubmit: vi.fn().mockResolvedValue({
+      id: 'run-1',
+      status: 'paused',
+      currentStep: 'required_fields_filled',
+    }),
     pauseForManualReview: vi.fn().mockResolvedValue({
       id: 'run-1',
       status: 'paused',
