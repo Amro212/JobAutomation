@@ -779,7 +779,8 @@ describe('openrouter answer module', () => {
       applicantProfile: baseApplicant({
         autofillProfile: minimalAutofillProfileSchema.parse({
           workAuthorizationCountriesCsv: 'CA',
-          requiresSponsorship: 'yes'
+          requiresSponsorship: 'yes',
+          currentCountryCode: 'CA'
         })
       }),
       job: baseJob(),
@@ -1656,6 +1657,49 @@ describe('openrouter answer module', () => {
         skipReason: ''
       }
     ]);
+  });
+
+  test('maps privacy notice combobox policy yes to acknowledge option label', async () => {
+    const provider = createProvider({ items: [] });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob({ companyName: 'Capco' }),
+      fields: [
+        {
+          id: 'question_65985372',
+          label: 'Capco Job Candidate Privacy Notice Acknowledgement*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_65985372'],
+          optionMode: 'static',
+          options: [{ value: 'acknowledge', label: 'Acknowledge' }]
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlanValidation.ok).toBe(true);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'question_65985372',
+        action: 'fill',
+        value: 'Acknowledge',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+    expect(result.fieldDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: 'question_65985372',
+          category: 'policy_default_consent',
+          normalizedAction: 'fill'
+        })
+      ])
+    );
   });
 
   test('uses consent policy defaults and sensitive self-id defaults instead of skipping', async () => {

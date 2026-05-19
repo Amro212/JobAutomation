@@ -313,7 +313,22 @@ function choiceOptionMatchesRequestedValue(
   );
 }
 
-function expandComboboxSemanticAliases(raw: string): string[] {
+function isConsentNoticeComboboxField(field: ScrapedApplicationField): boolean {
+  const fingerprint = `${field.id} ${field.label}`.toLowerCase();
+  return (
+    fingerprint.includes('privacy') ||
+    fingerprint.includes('acknowledge') ||
+    fingerprint.includes('acknowledgement') ||
+    fingerprint.includes('consent') ||
+    fingerprint.includes('notice at collection') ||
+    fingerprint.includes('notice-at-collection')
+  );
+}
+
+function expandComboboxSemanticAliases(
+  raw: string,
+  field?: ScrapedApplicationField
+): string[] {
   const v = normalizeOptionText(raw);
   const aliases = new Set<string>([raw]);
   const addIf = (...candidates: string[]) => {
@@ -324,6 +339,9 @@ function expandComboboxSemanticAliases(raw: string): string[] {
 
   if (v === 'yes' || raw.trim() === 'Yes') {
     addIf('Yes', 'yes', 'I agree', 'Agree');
+    if (field && isConsentNoticeComboboxField(field)) {
+      addIf('Acknowledge', 'acknowledge', 'Acknowledgement', 'acknowledgement');
+    }
   }
   if (v === 'no' || raw.trim() === 'No') {
     addIf('No', 'no');
@@ -340,14 +358,14 @@ function comboboxCandidateLabels(input: {
   field: ScrapedApplicationField;
   value: string;
 }): string[] {
-  const valueVariants = expandComboboxSemanticAliases(input.value).map(normalizeOptionText);
+  const valueVariants = expandComboboxSemanticAliases(input.value, input.field).map(normalizeOptionText);
   const matchingFieldOptions = input.field.options.filter((option) => {
     const ov = normalizeOptionText(option.value);
     const ol = normalizeOptionText(option.label);
     return valueVariants.some((vv) => vv === ov || vv === ol || ov.includes(vv) || ol.includes(vv));
   });
 
-  const fromAliases = expandComboboxSemanticAliases(input.value);
+  const fromAliases = expandComboboxSemanticAliases(input.value, input.field);
 
   return Array.from(
     new Set(

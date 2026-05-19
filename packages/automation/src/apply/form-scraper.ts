@@ -13,6 +13,7 @@ import {
 
 /** Bounds combobox probe waits so scrapes cannot hang multi-minute Playwright defaults. */
 const SCRAPE_PROBE_ACTION_TIMEOUT_MS = 8500;
+const COMBOBOX_STATIC_SCRAPE_WALL_CLOCK_MS = 45_000;
 
 export type ScrapedApplicationFieldOption = {
   value: string;
@@ -1010,7 +1011,138 @@ function uniqueOptions(options: ScrapedApplicationFieldOption[]): ScrapedApplica
 
 async function dismissListboxOverlay(page: Page): Promise<void> {
   await page.keyboard.press('Escape').catch(() => undefined);
-  await page.waitForTimeout(40);
+  await page.waitForTimeout(80);
+}
+
+function isConsentPrivacyComboboxField(field: ScrapedApplicationField): boolean {
+  const fingerprint = `${field.id} ${field.label}`.toLowerCase();
+  return (
+    fingerprint.includes('privacy') ||
+    fingerprint.includes('acknowledge') ||
+    fingerprint.includes('acknowledgement') ||
+    fingerprint.includes('consent') ||
+    fingerprint.includes('notice at collection') ||
+    fingerprint.includes('notice-at-collection')
+  );
+}
+
+function inferReactSelectListboxId(field: ScrapedApplicationField): string | null {
+  const fieldId = normalizeText(field.id);
+  if (!fieldId) {
+    return null;
+  }
+
+  return `react-select-${fieldId}-listbox`;
+}
+
+async function collectLinkedListboxIds(
+  field: ScrapedApplicationField,
+  locator: Locator
+): Promise<Set<string>> {
+  const linkedIds = new Set<string>();
+  const reactSelectId = inferReactSelectListboxId(field);
+  if (reactSelectId) {
+    linkedIds.add(reactSelectId);
+  }
+
+  for (const attribute of ['aria-controls', 'aria-owns', 'list']) {
+    const value = normalizeText(await locator.getAttribute(attribute).catch(() => null));
+    for (const id of value.split(/\s+/).map(normalizeText).filter(Boolean)) {
+      linkedIds.add(id);
+    }
+  }
+
+  return linkedIds;
+}
+
+async function waitForLinkedListboxVisible(input: {
+  page: Page;
+  linkedIds: Set<string>;
+  timeoutMs: number;
+}): Promise<string | null> {
+  const deadline = Date.now() + input.timeoutMs;
+
+  while (Date.now() <= deadline) {
+    for (const id of input.linkedIds) {
+      const listbox = input.page.locator(`#${cssEscape(id)}`);
+      if (await listbox.count().catch(() => 0)) {
+        const visible = await listbox.isVisible().catch(() => false);
+        const hasOptions = await listbox
+          .locator('[role="option"]')
+          .count()
+          .catch(() => 0);
+        if (visible || hasOptions > 0) {
+          return id;
+        }
+      }
+    }
+
+    await input.page.waitForTimeout(50);
+  }
+
+  return null;
+}
+
+async function scrapeOptionsFromListboxId(
+  page: Page,
+  listboxId: string
+): Promise<ScrapedApplicationFieldOption[]> {
+  const raw = await page
+    .evaluate((id) => {
+      const root = document.getElementById(id);
+      if (!root) {
+        return [] as Array<{ value: string; label: string }>;
+      }
+
+      return Array.from(root.querySelectorAll('[role="option"]'))
+        .map((option) => {
+          const label = (option.textContent ?? '').replace(/\s+/g, ' ').trim();
+          const value =
+            option.getAttribute('data-value')?.trim() ||
+            option.getAttribute('value')?.trim() ||
+            option.id?.trim() ||
+            label;
+          return { value, label };
+        })
+        .filter((option) => option.label.length > 0);
+    }, listboxId)
+    .catch(() => [] as Array<{ value: string; label: string }>);
+
+  return raw.map((option) => ({
+    value: option.value,
+    label: option.label,
+    source: 'combobox_option' as const,
+    visible: true
+  }));
+}
+
+async function openComboboxForOptionScrape(input: {
+  page: Page;
+  locator: Locator;
+  linkedIds: Set<string>;
+}): Promise<string | null> {
+  await input.locator.scrollIntoViewIfNeeded({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
+  await input.locator.click({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
+  await input.locator.focus({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
+
+  let openedListboxId = await waitForLinkedListboxVisible({
+    page: input.page,
+    linkedIds: input.linkedIds,
+    timeoutMs: 2_000
+  });
+
+  if (!openedListboxId) {
+    await input.locator.click({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
+    await input.page.keyboard.press('ArrowDown').catch(() => undefined);
+    openedListboxId = await waitForLinkedListboxVisible({
+      page: input.page,
+      linkedIds: input.linkedIds,
+      timeoutMs: 1_000
+    });
+  }
+
+  await input.page.waitForTimeout(150);
+  return openedListboxId;
 }
 
 async function collectComboboxOptions(input: {
@@ -1034,29 +1166,30 @@ async function collectComboboxOptions(input: {
     return [];
   }
 
-  const linkedIds = new Set<string>();
-  for (const attribute of ['aria-controls', 'aria-owns', 'list']) {
-    const value = normalizeText(await locator.getAttribute(attribute).catch(() => null));
-    for (const id of value.split(/\s+/).map(normalizeText).filter(Boolean)) {
-      linkedIds.add(id);
+  const linkedIds = await collectLinkedListboxIds(input.field, locator);
+
+  const openedListboxId = await openComboboxForOptionScrape({
+    page: input.page,
+    locator,
+    linkedIds
+  });
+
+  const options: ScrapedApplicationFieldOption[] = [];
+  const idsToScrape = openedListboxId ? [openedListboxId, ...linkedIds] : [...linkedIds];
+  for (const id of idsToScrape) {
+    options.push(...(await scrapeOptionsFromListboxId(input.page, id)));
+    if (options.length > 0) {
+      break;
+    }
+
+    options.push(
+      ...(await visibleRoleOptions(input.page.locator(`#${cssEscape(id)}`)))
+    );
+    if (options.length > 0) {
+      break;
     }
   }
 
-  await locator.scrollIntoViewIfNeeded({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
-  await locator.click({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
-  await locator.focus({ timeout: SCRAPE_PROBE_ACTION_TIMEOUT_MS }).catch(() => undefined);
-  await input.page.waitForTimeout(150);
-
-  const options: ScrapedApplicationFieldOption[] = [];
-  for (const id of linkedIds) {
-    options.push(...(await visibleRoleOptions(input.page.locator(`#${cssEscape(id)}`))));
-  }
-
-  if (options.length > 0) {
-    return uniqueOptions(options);
-  }
-
-  options.push(...(await visibleRoleOptions(input.page.locator('body'))));
   return uniqueOptions(options);
 }
 
@@ -1094,8 +1227,6 @@ function isCountryComboboxSkippable(field: ScrapedApplicationField): boolean {
   return false;
 }
 
-const COMBOBOX_STATIC_SCRAPE_WALL_CLOCK_MS = 28_000;
-
 /** Prefer scraping options for required comboboxes before optional ones (expensive optional widgets shouldn't burn the wall clock). */
 function comboboxFieldsInScrapePriorityOrder(fields: ScrapedApplicationField[]): ScrapedApplicationField[] {
   type Item = { field: ScrapedApplicationField; index: number };
@@ -1109,6 +1240,12 @@ function comboboxFieldsInScrapePriorityOrder(fields: ScrapedApplicationField[]):
   }
 
   items.sort((a, b) => {
+    const consentA = isConsentPrivacyComboboxField(a.field);
+    const consentB = isConsentPrivacyComboboxField(b.field);
+    if (consentA !== consentB) {
+      return consentA ? -1 : 1;
+    }
+
     const reqA = isFieldRequired(a.field);
     const reqB = isFieldRequired(b.field);
     if (reqA !== reqB) {
@@ -1163,12 +1300,24 @@ async function enrichComboboxFields(input: {
       field
     });
     if (options.length === 0) {
+      logStage3('combobox_options_empty', {
+        label: field.label,
+        id: field.id,
+        selectorCandidates: field.selectorCandidates
+      });
       enrichedById.set(field.id, {
         ...field,
         optionMode: field.optionMode ?? 'dynamic_search'
       });
       continue;
     }
+
+    logStage3('combobox_options_scraped', {
+      label: field.label,
+      id: field.id,
+      optionCount: options.length,
+      optionLabels: options.slice(0, 8).map((option) => option.label)
+    });
 
     enrichedById.set(field.id, {
       ...field,

@@ -541,26 +541,92 @@ describe('application field scraper', () => {
           required: true,
           requiredSources: ['label_marker'],
           selectorCandidates: expect.arrayContaining(['#country', '[name="country"]']),
+          optionMode: 'dynamic_search',
+          options: []
+        }),
+        expect.objectContaining({
+          id: 'status',
+          label: 'Veteran Status',
+          type: 'combobox',
           optionMode: 'static',
           options: [
-            {
-              value: 'ca',
-              label: 'Canada',
-              source: 'combobox_option',
-              visible: true
-            },
-            {
-              value: 'us',
-              label: 'United States',
-              source: 'combobox_option',
-              visible: true
-            }
+            expect.objectContaining({
+              value: 'not_veteran',
+              label: 'Not a veteran',
+              source: 'combobox_option'
+            })
           ]
         })
       ])
     );
     expect(fields.find((field) => field.id === 'country')?.selectorCandidates).not.toContain(
       '[role="combobox"]'
+    );
+  });
+
+  test('scrapes capco-style privacy acknowledgement combobox options', async () => {
+    await startServer({
+      '/greenhouse-capco-privacy': `
+        <html>
+          <body>
+            <section id="application">
+              <label id="question_65985372-label" for="question_65985372">
+                Capco Job Candidate Privacy Notice Acknowledgement*
+              </label>
+              <input
+                id="question_65985372"
+                role="combobox"
+                aria-labelledby="question_65985372-label"
+                aria-autocomplete="list"
+                aria-controls="question_65985372-options"
+              />
+              <div id="question_65985372-options" role="listbox" hidden>
+                <div role="option" data-value="acknowledge">Acknowledge</div>
+              </div>
+
+              <script>
+                for (const input of document.querySelectorAll('[role="combobox"]')) {
+                  const open = () => {
+                    const listbox = document.getElementById(input.getAttribute('aria-controls'));
+                    if (listbox) {
+                      listbox.hidden = false;
+                    }
+                  };
+                  input.addEventListener('focus', open);
+                  input.addEventListener('click', open);
+                }
+              </script>
+            </section>
+          </body>
+        </html>
+      `
+    });
+
+    const fields = await withPage(async (page) => {
+      await page.goto(`${baseUrl}/greenhouse-capco-privacy`, {
+        waitUntil: 'domcontentloaded'
+      });
+      const boardEntry = await reachApplicationForm({ page, board: 'greenhouse' });
+      return scrapeApplicationFields({ page, boardEntry });
+    });
+
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'question_65985372',
+          label: 'Capco Job Candidate Privacy Notice Acknowledgement*',
+          type: 'combobox',
+          required: true,
+          optionMode: 'static',
+          options: [
+            expect.objectContaining({
+              value: 'acknowledge',
+              label: 'Acknowledge',
+              source: 'combobox_option'
+            })
+          ]
+        })
+      ])
     );
   });
 

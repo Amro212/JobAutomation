@@ -1339,10 +1339,19 @@ function normalizeForComparison(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function optionAliases(candidate: string): string[] {
+function optionAliases(candidate: string, field?: ScrapedApplicationField): string[] {
   const normalizedCandidate = normalizeForComparison(candidate);
   const aliases = new Set([normalizedCandidate]);
   const compactCandidate = normalizedCandidate.replace(/[^a-z0-9]+/g, '');
+
+  if (
+    field &&
+    isConsentOrNoticeFieldFingerprint(normalizeTextForMatching(`${field.id} ${field.label}`)) &&
+    (normalizedCandidate === 'yes' || compactCandidate === 'yes')
+  ) {
+    aliases.add('acknowledge');
+    aliases.add('acknowledgement');
+  }
 
   if (['bachelor', 'bachelors', 'bachelorsdegree', 'bs', 'bsc', 'ba'].includes(compactCandidate)) {
     aliases.add("bachelor's degree");
@@ -1388,9 +1397,10 @@ function optionAliases(candidate: string): string[] {
 
 function resolveOptionValue(
   options: ScrapedApplicationFieldOption[],
-  candidate: string
+  candidate: string,
+  field?: ScrapedApplicationField
 ): string | null {
-  const candidateAliases = optionAliases(candidate);
+  const candidateAliases = optionAliases(candidate, field);
   if (candidateAliases.length === 0 || candidateAliases[0]?.length === 0) {
     return null;
   }
@@ -1430,14 +1440,15 @@ function optionForResolvedValue(
 
 function resolveOptionFromCandidates(
   options: ScrapedApplicationFieldOption[],
-  candidates: Array<string | null | undefined>
+  candidates: Array<string | null | undefined>,
+  field?: ScrapedApplicationField
 ): ScrapedApplicationFieldOption | null {
   for (const candidate of candidates) {
     if (!candidate) {
       continue;
     }
 
-    const optionValue = resolveOptionValue(options, candidate);
+    const optionValue = resolveOptionValue(options, candidate, field);
     const option = optionValue ? optionForResolvedValue(options, optionValue) : null;
     if (option) {
       return option;
@@ -1455,7 +1466,7 @@ function selectorAlignedLabel(
     return candidates.find((candidate) => (candidate?.trim().length ?? 0) > 0)?.trim() ?? null;
   }
 
-  const option = resolveOptionFromCandidates(field.options, candidates);
+  const option = resolveOptionFromCandidates(field.options, candidates, field);
   return option ? option.label || option.value : null;
 }
 
@@ -1809,6 +1820,59 @@ function textValueForEnum(value: 'yes' | 'no' | 'prefer_not_to_say'): string {
   }
 }
 
+function isConsentOrNoticeFieldFingerprint(fingerprint: string): boolean {
+  return includesAny(fingerprint, [
+    'consent',
+    'privacy notice',
+    'privacy policy',
+    'notice at collection',
+    'acknowledge',
+    'acknowledgement',
+    'demographic data',
+    'self-identification data'
+  ]);
+}
+
+function pickAffirmativeConsentComboboxOption(
+  options: ScrapedApplicationFieldOption[],
+  policy: 'yes' | 'no'
+): ScrapedApplicationFieldOption | null {
+  if (options.length === 0) {
+    return null;
+  }
+
+  if (policy === 'no') {
+    return (
+      options.find((option) => /^no$/i.test(option.label.trim())) ??
+      options.find((option) => /^no$/i.test(String(option.value ?? '').trim())) ??
+      null
+    );
+  }
+
+  return (
+    options.find((option) => /\b(?:i\s+)?acknowledge(?:ment)?\b/i.test(option.label.trim())) ??
+    options.find((option) => /\bi agree\b/i.test(option.label.trim())) ??
+    options.find((option) => /\bi confirm\b/i.test(option.label.trim())) ??
+    options.find((option) => /^yes$/i.test(option.label.trim())) ??
+    options.find((option) => /^yes$/i.test(String(option.value ?? '').trim())) ??
+    (options.length === 1 ? options[0] ?? null : null)
+  );
+}
+
+function resolveConsentFillTextValue(
+  field: ScrapedApplicationField,
+  policy: 'yes' | 'no'
+): string {
+  if (field.type === 'combobox' && field.options.length > 0) {
+    const option = pickAffirmativeConsentComboboxOption(field.options, policy);
+    if (option) {
+      return option.label || option.value;
+    }
+  }
+
+  return textValueForEnum(policy);
+}
+
 function createDeterministicFieldResult(input: {
   field: ScrapedApplicationField;
   answerability: PromptFieldAnswerability;
@@ -1837,7 +1901,7 @@ function createDeterministicFieldResult(input: {
   }
 
   if (field.type === 'radio_group') {
-    const optionValue = resolveOptionValue(field.options, textValue);
+    const optionValue = resolveOptionValue(field.options, textValue, field);
     return optionValue
       ? createAcceptedResult({
           field,
@@ -1860,7 +1924,7 @@ function createDeterministicFieldResult(input: {
   }
 
   if (field.type === 'select') {
-    const optionValue = resolveOptionValue(field.options, textValue);
+    const optionValue = resolveOptionValue(field.options, textValue, field);
     return optionValue
       ? createAcceptedResult({
           field,
@@ -1885,7 +1949,7 @@ function createDeterministicFieldResult(input: {
   if (field.type === 'combobox') {
     const optionMode = field.optionMode ?? (field.options.length > 0 ? 'static' : 'dynamic_search');
     if (optionMode === 'static' && field.options.length > 0) {
-      const optionValue = resolveOptionValue(field.options, textValue);
+      const optionValue = resolveOptionValue(field.options, textValue, field);
       const option = optionValue ? optionForResolvedValue(field.options, optionValue) : null;
       return option
         ? createAcceptedResult({
@@ -2487,7 +2551,7 @@ function normalizeEntryForField(
       field,
       answerability,
       rawEntry: entry,
-      textValue: textValueForEnum(consentResolution.value),
+      textValue: resolveConsentFillTextValue(field, consentResolution.value),
       category: 'policy_default_consent',
       reason: `policy_default_consent: used ${consentResolution.source}`
     });
@@ -2940,7 +3004,7 @@ function normalizeEntryForField(
     const values = Array.from(
       new Set(
         rawValues
-          .map((value) => resolveOptionValue(field.options, value))
+          .map((value) => resolveOptionValue(field.options, value, field))
           .filter((value): value is string => Boolean(value))
       )
     );
