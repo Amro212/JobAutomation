@@ -3,7 +3,10 @@ import { createServer } from 'node:http';
 import type { Page } from 'playwright';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { reachApplicationForm } from '../../../packages/automation/src/apply/board-entry';
+import {
+  ApplicationLinkExpiredError,
+  reachApplicationForm
+} from '../../../packages/automation/src/apply/board-entry';
 import { createDiscoveryBrowser } from '../../../packages/automation/src/playwright/browser';
 
 describe('application board entry', () => {
@@ -105,5 +108,61 @@ describe('application board entry', () => {
         readyFieldCount: 2,
       })
     );
+  });
+
+  test('throws ApplicationLinkExpiredError when a Greenhouse page shows an expired-listing message', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <main>
+            <h1>Sorry, this position has been closed.</h1>
+            <p>We are no longer accepting applications for this role.</p>
+            <form id="search-form">
+              <input type="search" name="q" placeholder="Search jobs" />
+              <button type="submit">Search</button>
+            </form>
+          </main>
+        </body>
+      </html>
+    `);
+
+    await expect(
+      withPage(async (page) => {
+        await page.goto(`${baseUrl}/jobs/expired`, {
+          waitUntil: 'domcontentloaded'
+        });
+
+        return reachApplicationForm({
+          page,
+          board: 'greenhouse'
+        });
+      })
+    ).rejects.toBeInstanceOf(ApplicationLinkExpiredError);
+  });
+
+  test('throws ApplicationLinkExpiredError when a Lever page shows a closed-posting message', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <main>
+            <h1>Posting</h1>
+            <p>The job you are looking for is no longer available.</p>
+          </main>
+        </body>
+      </html>
+    `);
+
+    await expect(
+      withPage(async (page) => {
+        await page.goto(`${baseUrl}/spotify/closed`, {
+          waitUntil: 'domcontentloaded'
+        });
+
+        return reachApplicationForm({
+          page,
+          board: 'lever'
+        });
+      })
+    ).rejects.toBeInstanceOf(ApplicationLinkExpiredError);
   });
 });

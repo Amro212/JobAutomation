@@ -271,6 +271,7 @@ export class AutopilotQueueService {
 
         eligibleJobCount += 1;
 
+        let createdRunId: string | null = null;
         try {
           await this.input.repositories.autopilotRuns.update(run.id, {
             currentStep: `generating_artifacts:${job.title}`
@@ -306,6 +307,7 @@ export class AutopilotQueueService {
             resumeArtifactId: resumeArtifact?.id ?? null,
             coverLetterArtifactId: coverLetterArtifact?.id ?? null
           });
+          createdRunId = createdRun.id;
 
           await this.input.repositories.autopilotRuns.update(run.id, {
             currentStep: `submitting_application:${job.title}`
@@ -320,6 +322,7 @@ export class AutopilotQueueService {
             artifactsRepository: this.input.repositories.artifacts,
             logEventsRepository: this.input.repositories.logEvents,
             siteFlows: applicationSites(),
+            leaveBrowserOpenOnPause: false,
             openRouter: this.input.config.OPENROUTER_API_KEY
               ? {
                   apiKey: this.input.config.OPENROUTER_API_KEY,
@@ -345,8 +348,38 @@ export class AutopilotQueueService {
           } else {
             blockedCount += 1;
           }
-        } catch {
+        } catch (error) {
           failedCount += 1;
+          // runApplicationImpl can throw before its own catch (e.g. browser
+          // launch failure). Persist 'failed' so the run never stays stuck in
+          // 'running'.
+          if (createdRunId) {
+            await this.input.repositories.applicationRuns
+              .update(createdRunId, {
+                status: 'failed',
+                currentStep: 'autopilot_error',
+                stopReason: 'autopilot_error',
+                completedAt: new Date(),
+                updatedAt: new Date()
+              })
+              .catch(() => null);
+          }
+          await this.input.repositories.logEvents
+            .create({
+              applicationRunId: createdRunId,
+              jobId: job.id,
+              level: 'error',
+              message:
+                'Autopilot application run threw before completion; marked as failed.',
+              detailsJson: JSON.stringify({
+                applicationRunId: createdRunId,
+                jobId: job.id,
+                siteKey: matchedSite!.siteKey,
+                errorMessage:
+                  error instanceof Error ? error.message : String(error)
+              })
+            })
+            .catch(() => null);
         }
 
         await this.updateCounts(run.id, {

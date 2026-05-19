@@ -2,6 +2,97 @@ import type { Locator, Page } from 'playwright';
 
 export type SupportedApplicationBoard = 'greenhouse' | 'lever' | 'ashby';
 
+export class ApplicationLinkExpiredError extends Error {
+  readonly board: SupportedApplicationBoard;
+  readonly signal: string;
+  readonly url: string;
+
+  constructor(input: {
+    board: SupportedApplicationBoard;
+    signal: string;
+    url: string;
+    message?: string;
+  }) {
+    super(
+      input.message ??
+        `Application link for ${input.board} appears expired or no longer accepting applications (${input.signal}).`
+    );
+    this.name = 'ApplicationLinkExpiredError';
+    this.board = input.board;
+    this.signal = input.signal;
+    this.url = input.url;
+  }
+}
+
+const EXPIRED_PAGE_TEXT_PATTERNS: RegExp[] = [
+  /no longer accepting applications/i,
+  /we (are|'?re) no longer accepting/i,
+  /this (job|position|posting|role|listing) (is no longer|has been|is) (open|available|active|accepting|posted)/i,
+  /this (job|position|posting|role|listing) (has (been )?(closed|removed|filled|expired)|is closed)/i,
+  /position has been (closed|filled|removed)/i,
+  /(job|posting) (not found|has expired|no longer exists)/i,
+  /sorry,? (this|the) (job|posting|role|position|page) (is no longer|has been|cannot be|could not be|doesn'?t exist)/i,
+  /the (job|posting|page) you (are looking for|requested) (has been|is no longer|cannot be|could not be)/i,
+  /this (page|listing) (does not|doesn'?t) exist/i,
+  /404[\s\u2014\u2013\-]*not found/i,
+];
+
+const EXPIRED_URL_PATTERNS: RegExp[] = [
+  /\/404(\/|$)/i,
+  /\/not[-_]?found(\/|$)/i,
+  /\/expired(\/|$)/i,
+  /\/closed(\/|$)/i,
+];
+
+async function isExpiredPageTextVisible(page: Page): Promise<string | null> {
+  for (const pattern of EXPIRED_PAGE_TEXT_PATTERNS) {
+    const visible = await page
+      .getByText(pattern)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (visible) {
+      return `text:${pattern.source}`;
+    }
+  }
+
+  return null;
+}
+
+function isExpiredUrl(url: string): string | null {
+  for (const pattern of EXPIRED_URL_PATTERNS) {
+    if (pattern.test(url)) {
+      return `url:${pattern.source}`;
+    }
+  }
+
+  return null;
+}
+
+async function assertApplicationLinkNotExpired(input: {
+  page: Page;
+  board: SupportedApplicationBoard;
+}): Promise<void> {
+  const url = input.page.url();
+  const urlSignal = isExpiredUrl(url);
+  if (urlSignal) {
+    throw new ApplicationLinkExpiredError({
+      board: input.board,
+      signal: urlSignal,
+      url,
+    });
+  }
+
+  const textSignal = await isExpiredPageTextVisible(input.page);
+  if (textSignal) {
+    throw new ApplicationLinkExpiredError({
+      board: input.board,
+      signal: textSignal,
+      url,
+    });
+  }
+}
+
 export type ApplicationBoardEntryAction =
   | 'direct_form'
   | 'clicked_apply_button'
@@ -199,6 +290,11 @@ export async function reachApplicationForm(input: {
   const startUrl = input.page.url();
   await input.page.waitForLoadState('domcontentloaded');
 
+  await assertApplicationLinkNotExpired({
+    page: input.page,
+    board: input.board,
+  });
+
   const directForm = await waitForApplicationForm(
     input.page,
     input.board,
@@ -215,6 +311,11 @@ export async function reachApplicationForm(input: {
       rootIndex: directForm.rootIndex
     };
   }
+
+  await assertApplicationLinkNotExpired({
+    page: input.page,
+    board: input.board,
+  });
 
   if (input.board === 'greenhouse') {
     throw new Error(

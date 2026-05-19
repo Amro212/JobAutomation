@@ -18,6 +18,7 @@ import type {
   ApplicationRunRecordLike,
   SupportedApplicationSite
 } from './contracts';
+import { ApplicationLinkExpiredError } from './board-entry';
 import { completeApplicationRun } from './complete-application-run';
 import { pauseApplicationRun } from './pause-application-run';
 import { createApplicationSession } from './session-manager';
@@ -93,6 +94,10 @@ export type RunApplicationInput = {
   siteFlows: SupportedApplicationSite[];
   openRouter?: OpenRouterConfig | null;
   artifactsRootDir?: string;
+  // Autopilot sets this to false so headed browsers don't accumulate when
+  // applications pause for manual review. Manual single-run mode keeps the
+  // default (true) so the user can finish in the same window.
+  leaveBrowserOpenOnPause?: boolean;
   createBrowser?: () => Promise<ApplicationSessionRuntime>;
   createSession?: typeof createApplicationSession;
 };
@@ -525,7 +530,9 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     });
 
     const headedApply = session.identity.headless === false;
-    const forceCloseBrowser = process.env.JOBAUTOMATION_APPLICATION_AUTO_CLOSE_BROWSER === '1';
+    const forceCloseBrowser =
+      process.env.JOBAUTOMATION_APPLICATION_AUTO_CLOSE_BROWSER === '1' ||
+      input.leaveBrowserOpenOnPause === false;
     if (result.status === 'paused' && headedApply && !forceCloseBrowser) {
       leaveBrowserOpenForManualReview = true;
     }
@@ -533,23 +540,34 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown application automation error.';
+    const isExpiredLink = error instanceof ApplicationLinkExpiredError;
+    const stopReason = isExpiredLink ? 'expired_link' : 'automation_error';
     await logRunEvent(input.logEventsRepository, {
       applicationRunId: runningRun.id,
       jobId: job.id,
-      level: 'error',
-      message: 'Application run failed.',
+      level: isExpiredLink ? 'warn' : 'error',
+      message: isExpiredLink
+        ? 'Application link is expired or no longer accepting applications.'
+        : 'Application run failed.',
       details: {
         applicationRunId: runningRun.id,
         siteKey: siteFlow.siteKey,
         step: runningRun.currentStep,
         pageUrl: session.page.url(),
-        errorMessage: message
+        errorMessage: message,
+        ...(isExpiredLink
+          ? {
+              expiredSignal: (error as ApplicationLinkExpiredError).signal,
+              expiredUrl: (error as ApplicationLinkExpiredError).url
+            }
+          : {})
       }
     });
 
     const failedRun = await input.applicationRunsRepository.update(runningRun.id, {
       status: 'failed',
-      stopReason: 'automation_error',
+      currentStep: isExpiredLink ? 'expired_link' : runningRun.currentStep,
+      stopReason,
       completedAt: new Date(),
       updatedAt: new Date()
     });

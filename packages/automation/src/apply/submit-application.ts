@@ -7,6 +7,7 @@ export type SubmitApplicationResult =
       status: 'submitted';
       confirmationMessage: string;
       submitButtonSource: string;
+      confirmationSignal: string;
     }
   | {
       status: 'submit_button_not_found' | 'submission_confirmation_missing';
@@ -15,21 +16,45 @@ export type SubmitApplicationResult =
 
 const SUCCESS_TEXT_BY_BOARD: Record<SupportedApplicationBoard, RegExp[]> = {
   greenhouse: [
-    /thank you for applying/i,
-    /application submitted/i,
-    /we have received your application/i
+    /thank(s| you) for (applying|your (application|interest|submission))/i,
+    /application (submitted|received|complete|sent)/i,
+    /we['\u2019]?(ve| have) received your application/i,
+    /your application (has been|was) (received|submitted|sent)/i,
+    /your application is being reviewed/i,
+    /successfully (applied|submitted)/i,
+    /submission (received|successful)/i,
+    /you['\u2019]?(ve| have) (successfully )?applied/i
   ],
   ashby: [
-    /thank you for applying/i,
-    /application submitted/i,
-    /we've received your application/i
+    /thank(s| you) for (applying|your (application|interest|submission))/i,
+    /application (submitted|received|complete|sent)/i,
+    /we['\u2019]?(ve| have) received your application/i,
+    /your application (has been|was) (received|submitted|sent)/i,
+    /successfully (applied|submitted)/i,
+    /submission (received|successful)/i
   ],
   lever: [
-    /thank you for applying/i,
-    /application submitted/i,
-    /your application has been submitted/i
+    /thank(s| you) for (applying|your (application|interest|submission))/i,
+    /application (submitted|received|complete|sent)/i,
+    /your application has been (submitted|received|sent)/i,
+    /successfully (applied|submitted)/i,
+    /submission (received|successful)/i
   ]
 };
+
+const SUCCESS_URL_PATTERNS: RegExp[] = [
+  /[?&]confirmation(=|&|$)/i,
+  /[?&]submitted(=|&|$)/i,
+  /[?&]success(=|&|$)/i,
+  /\/thank[-_]?you(\/|$|\?)/i,
+  /\/confirmation(\/|$|\?)/i,
+  /\/submitted(\/|$|\?)/i,
+  /\/success(\/|$|\?)/i,
+  /\/applied(\/|$|\?)/i
+];
+
+const DEFAULT_SUCCESS_POLL_TIMEOUT_MS = 10_000;
+const SUCCESS_POLL_INTERVAL_MS = 250;
 
 async function findSubmitButton(
   page: Page
@@ -54,19 +79,53 @@ async function findSubmitButton(
   return { locator: null, source: null };
 }
 
-async function successTextVisible(page: Page, patterns: RegExp[]): Promise<boolean> {
-  for (const pattern of patterns) {
-    if (await page.getByText(pattern).first().isVisible().catch(() => false)) {
-      return true;
+async function detectSuccessSignal(
+  page: Page,
+  patterns: RegExp[]
+): Promise<string | null> {
+  const url = page.url();
+  for (const urlPattern of SUCCESS_URL_PATTERNS) {
+    if (urlPattern.test(url)) {
+      return `url:${urlPattern.source}`;
     }
   }
 
-  return false;
+  for (const pattern of patterns) {
+    const visible = await page
+      .getByText(pattern)
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (visible) {
+      return `text:${pattern.source}`;
+    }
+  }
+
+  return null;
+}
+
+async function waitForSuccessSignal(input: {
+  page: Page;
+  patterns: RegExp[];
+  timeoutMs: number;
+}): Promise<string | null> {
+  const deadline = Date.now() + input.timeoutMs;
+  while (Date.now() <= deadline) {
+    const signal = await detectSuccessSignal(input.page, input.patterns);
+    if (signal) {
+      return signal;
+    }
+
+    await input.page.waitForTimeout(SUCCESS_POLL_INTERVAL_MS);
+  }
+
+  return detectSuccessSignal(input.page, input.patterns);
 }
 
 export async function submitApplicationAndConfirm(input: {
   page: Page;
   board: SupportedApplicationBoard;
+  confirmationTimeoutMs?: number;
 }): Promise<SubmitApplicationResult> {
   const submitButton = await findSubmitButton(input.page);
   if (!submitButton.locator || !submitButton.source) {
@@ -77,13 +136,13 @@ export async function submitApplicationAndConfirm(input: {
   }
 
   await submitButton.locator.click();
-  await input.page.waitForTimeout(1_000);
 
-  const successVisible = await successTextVisible(
-    input.page,
-    SUCCESS_TEXT_BY_BOARD[input.board]
-  );
-  if (!successVisible) {
+  const confirmationSignal = await waitForSuccessSignal({
+    page: input.page,
+    patterns: SUCCESS_TEXT_BY_BOARD[input.board],
+    timeoutMs: input.confirmationTimeoutMs ?? DEFAULT_SUCCESS_POLL_TIMEOUT_MS
+  });
+  if (!confirmationSignal) {
     return {
       status: 'submission_confirmation_missing',
       message: 'Post-submit confirmation was not visible after clicking submit.'
@@ -93,6 +152,7 @@ export async function submitApplicationAndConfirm(input: {
   return {
     status: 'submitted',
     confirmationMessage: 'Application submitted successfully.',
-    submitButtonSource: submitButton.source
+    submitButtonSource: submitButton.source,
+    confirmationSignal
   };
 }
