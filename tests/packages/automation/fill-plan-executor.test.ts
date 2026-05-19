@@ -1148,6 +1148,79 @@ describe('application fill plan executor', () => {
     });
   });
 
+  test('clicks No for required Ashby hidden checkbox fields when fill plan value is false', async () => {
+    await startServer(`
+      <html>
+        <body>
+          <section id="application">
+            <div class="ashby-application-form-field-entry" data-field-path="required_no_answer">
+              <label class="ashby-application-form-question-title">Do you require sponsorship now or in future?</label>
+              <button id="sponsorship-yes" type="button">Yes</button>
+              <button id="sponsorship-no" type="button">No</button>
+              <input id="sponsorship-hidden" type="checkbox" name="required_no_answer" style="display:none" />
+            </div>
+            <script>
+              const input = document.getElementById('sponsorship-hidden');
+              document.getElementById('sponsorship-yes').addEventListener('click', () => {
+                input.checked = true;
+                input.dataset.answer = 'yes';
+              });
+              document.getElementById('sponsorship-no').addEventListener('click', () => {
+                input.checked = false;
+                input.dataset.answer = 'no';
+              });
+            </script>
+          </section>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry('ashby'),
+        fields: [
+          {
+            id: 'required_no_answer',
+            label: 'Do you require sponsorship now or in future?',
+            type: 'checkbox',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['[name="required_no_answer"]'],
+            options: [],
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: 'required_no_answer',
+            action: 'check',
+            value: false,
+            confidence: 1,
+            skipReason: '',
+          },
+        ],
+      });
+
+      return {
+        executionResult,
+        answer: await page.locator('#sponsorship-hidden').getAttribute('data-answer'),
+        checked: await page.locator('#sponsorship-hidden').isChecked(),
+      };
+    });
+
+    expect(result.checked).toBe(false);
+    expect(result.answer).toBe('no');
+    expect(result.executionResult.summary).toEqual({
+      total: 1,
+      success: 1,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
   test('recovers bottom-edge static combobox selection when options appear after ArrowDown', async () => {
     await startServer(`
       <html>

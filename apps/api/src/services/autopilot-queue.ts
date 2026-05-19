@@ -41,7 +41,9 @@ async function jobAlreadySubmitted(
   }
 
   const runs = await repositories.applicationRuns.listByJob(job.id);
-  return runs.some((run) => run.status === 'completed');
+  return runs.some((run) =>
+    ['failed', 'paused', 'completed'].includes(run.status)
+  );
 }
 
 function latestPdfArtifact(
