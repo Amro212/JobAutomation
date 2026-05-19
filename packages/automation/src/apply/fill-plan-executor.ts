@@ -62,6 +62,15 @@ export type ExecuteApplicationFillPlanResult = {
 const STAGE_5_LOG_PREFIX = '[Stage 5][fill-plan-executor]';
 /** Playwright locator actions for human-fill must not rely on infinite default timeouts on slow/heavy ATS pages. */
 const LOCATOR_ACTION_TIMEOUT_MS = 20_000;
+const DEFAULT_VIEWPORT_COMFORT = {
+  top: 72,
+  bottom: 220,
+  sides: 16,
+} as const;
+const COMBOBOX_VIEWPORT_COMFORT = {
+  ...DEFAULT_VIEWPORT_COMFORT,
+  bottom: 260,
+} as const;
 const DEFAULT_PACING: Required<InteractionPacingProfile> = {
   preFieldDelayMs: [10, 30],
   postFieldDelayMs: [10, 30],
@@ -141,6 +150,7 @@ function createHumanActionEngine(input: {
         page: input.page,
         locator,
         preClickDelayMs: pacing.preFieldDelayMs,
+        comfort: DEFAULT_VIEWPORT_COMFORT,
       });
       if (clickedInViewport) {
         metrics.pointerActions += 1;
@@ -148,7 +158,11 @@ function createHumanActionEngine(input: {
         return;
       }
 
-      await locator.scrollIntoViewIfNeeded({ timeout: LOCATOR_ACTION_TIMEOUT_MS }).catch(() => undefined);
+      await ensureLocatorComfortablyInView({
+        page: input.page,
+        locator,
+        comfort: DEFAULT_VIEWPORT_COMFORT,
+      });
       await waitWithRange(input.page, pacing.preFieldDelayMs);
       await clickLocatorCenterWithoutScroll({ page: input.page, locator });
       metrics.pointerActions += 1;
@@ -163,9 +177,14 @@ function createHumanActionEngine(input: {
         page: input.page,
         locator,
         preClickDelayMs: pacing.preFieldDelayMs,
+        comfort: DEFAULT_VIEWPORT_COMFORT,
       });
       if (!clickedInViewport && !options?.skipScroll) {
-        await locator.scrollIntoViewIfNeeded({ timeout: LOCATOR_ACTION_TIMEOUT_MS }).catch(() => undefined);
+        await ensureLocatorComfortablyInView({
+          page: input.page,
+          locator,
+          comfort: DEFAULT_VIEWPORT_COMFORT,
+        });
         await waitWithRange(input.page, pacing.preFieldDelayMs);
         await clickLocatorCenterWithoutScroll({ page: input.page, locator });
       } else if (!clickedInViewport) {
@@ -470,30 +489,32 @@ async function clickLocatorCenterIfVisible(input: {
   page: Page;
   locator: Locator;
   preClickDelayMs: [number, number];
+  comfort?: {
+    top: number;
+    bottom: number;
+    sides: number;
+  };
 }): Promise<boolean> {
   const box = await input.locator.boundingBox();
   if (!box || box.width <= 0 || box.height <= 0) {
     return false;
   }
 
-  const viewport = input.page.viewportSize();
-  const viewportSize =
-    viewport ??
-    (await input.page
-      .evaluate(() => ({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      }))
-      .catch(() => null));
+  const viewportSize = await resolveViewportSize(input.page);
   if (!viewportSize) {
     return false;
   }
 
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
-  const clickCenterVisible =
-    x >= 0 && x <= viewportSize.width && y >= 0 && y <= viewportSize.height;
-  if (!clickCenterVisible) {
+  if (
+    !isPointInViewportComfortZone({
+      x,
+      y,
+      viewportSize,
+      comfort: input.comfort ?? DEFAULT_VIEWPORT_COMFORT,
+    })
+  ) {
     return false;
   }
 
@@ -501,6 +522,79 @@ async function clickLocatorCenterIfVisible(input: {
   await input.page.mouse.move(x, y);
   await input.page.mouse.click(x, y);
   return true;
+}
+
+async function resolveViewportSize(page: Page): Promise<{ width: number; height: number } | null> {
+  const viewport = page.viewportSize();
+  if (viewport) {
+    return viewport;
+  }
+
+  return page
+    .evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }))
+    .catch(() => null);
+}
+
+function isPointInViewportComfortZone(input: {
+  x: number;
+  y: number;
+  viewportSize: { width: number; height: number };
+  comfort: { top: number; bottom: number; sides: number };
+}): boolean {
+  const minX = input.comfort.sides;
+  const maxX = input.viewportSize.width - input.comfort.sides;
+  const minY = input.comfort.top;
+  const maxY = input.viewportSize.height - input.comfort.bottom;
+  return input.x >= minX && input.x <= maxX && input.y >= minY && input.y <= maxY;
+}
+
+async function ensureLocatorComfortablyInView(input: {
+  page: Page;
+  locator: Locator;
+  comfort?: { top: number; bottom: number; sides: number };
+}): Promise<void> {
+  const comfort = input.comfort ?? DEFAULT_VIEWPORT_COMFORT;
+  const viewportSize = await resolveViewportSize(input.page);
+  if (!viewportSize) {
+    await input.locator
+      .scrollIntoViewIfNeeded({ timeout: LOCATOR_ACTION_TIMEOUT_MS })
+      .catch(() => undefined);
+    return;
+  }
+
+  const box = await input.locator.boundingBox();
+  if (!box || box.width <= 0 || box.height <= 0) {
+    await input.locator
+      .scrollIntoViewIfNeeded({ timeout: LOCATOR_ACTION_TIMEOUT_MS })
+      .catch(() => undefined);
+    return;
+  }
+
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  if (
+    isPointInViewportComfortZone({
+      x: centerX,
+      y: centerY,
+      viewportSize,
+      comfort,
+    })
+  ) {
+    return;
+  }
+
+  await input.locator
+    .evaluate((element) => {
+      if (element instanceof HTMLElement) {
+        element.scrollIntoView({ block: 'center', inline: 'nearest' });
+      }
+    })
+    .catch(() => undefined);
+
+  await input.page.waitForTimeout(40);
 }
 
 async function visibleOptionByText(input: {
@@ -791,10 +885,15 @@ async function executeCombobox(input: {
     value,
   });
   const optionMode = input.field.optionMode ?? (input.field.options.length > 0 ? 'static' : 'dynamic_search');
+  await ensureLocatorComfortablyInView({
+    page: input.page,
+    locator: input.locator,
+    comfort: COMBOBOX_VIEWPORT_COMFORT,
+  });
 
   if (optionMode === 'static' && input.field.options.length > 0) {
     await input.actionEngine.click(input.locator);
-    const option = await waitForComboboxOption({
+    let option = await waitForComboboxOption({
       page: input.page,
       root: input.root,
       labels: candidateLabels,
@@ -804,7 +903,31 @@ async function executeCombobox(input: {
       pollMs: 50,
     });
 
+    if (!option) {
+      await input.page.keyboard.press('Escape').catch(() => undefined);
+      await ensureLocatorComfortablyInView({
+        page: input.page,
+        locator: input.locator,
+        comfort: COMBOBOX_VIEWPORT_COMFORT,
+      });
+      await input.actionEngine.click(input.locator);
+      await input.actionEngine.press('ArrowDown');
+      option = await waitForComboboxOption({
+        page: input.page,
+        root: input.root,
+        labels: candidateLabels,
+        optionRoots,
+        allowFirstVisibleFallback: false,
+        timeoutMs: 1_500,
+        pollMs: 60,
+      });
+    }
+
     if (option) {
+      await ensureLocatorComfortablyInView({
+        page: input.page,
+        locator: option,
+      });
       await input.actionEngine.click(option);
       await input.page.keyboard.press('Escape').catch(() => undefined);
       await input.locator.evaluate((element) => {
@@ -836,6 +959,10 @@ async function executeCombobox(input: {
     throw new Error(`No visible combobox option appeared for "${value}".`);
   }
 
+  await ensureLocatorComfortablyInView({
+    page: input.page,
+    locator: option,
+  });
   await input.actionEngine.click(option);
   await input.page.waitForTimeout(150);
   await input.page.keyboard.press('Escape').catch(() => undefined);

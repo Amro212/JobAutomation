@@ -1148,6 +1148,192 @@ describe('application fill plan executor', () => {
     });
   });
 
+  test('recovers bottom-edge static combobox selection when options appear after ArrowDown', async () => {
+    await startServer(`
+      <html>
+        <body style="margin: 0;">
+          <div style="height: 1100px;"></div>
+          <section id="application">
+            <label for="edge_combo">Non-compete acknowledgement</label>
+            <input
+              id="edge_combo"
+              name="edge_combo"
+              role="combobox"
+              aria-controls="edge-options"
+              aria-expanded="false"
+              autocomplete="off"
+            />
+            <div id="edge-options" role="listbox" hidden>
+              <button type="button" role="option">Yes</button>
+              <button type="button" role="option">No</button>
+            </div>
+            <script>
+              const combo = document.getElementById('edge_combo');
+              const listbox = document.getElementById('edge-options');
+              let unlocked = false;
+              function hideOptions() {
+                listbox.hidden = true;
+                combo.setAttribute('aria-expanded', 'false');
+              }
+              function showOptions() {
+                if (!unlocked) return;
+                listbox.hidden = false;
+                combo.setAttribute('aria-expanded', 'true');
+              }
+              combo.addEventListener('focus', showOptions);
+              combo.addEventListener('input', showOptions);
+              combo.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                  hideOptions();
+                  return;
+                }
+                if (event.key === 'ArrowDown') {
+                  unlocked = true;
+                  showOptions();
+                }
+              });
+              combo.addEventListener('blur', hideOptions);
+              for (const option of listbox.querySelectorAll('[role="option"]')) {
+                option.addEventListener('mousedown', () => {
+                  combo.value = option.textContent.trim();
+                  combo.dataset.selected = option.textContent.trim();
+                });
+                option.addEventListener('click', hideOptions);
+              }
+            </script>
+          </section>
+          <div style="height: 1000px;"></div>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+      await page.evaluate(() => {
+        const combo = document.getElementById('edge_combo');
+        if (!combo) return;
+        const rect = combo.getBoundingClientRect();
+        window.scrollBy(0, rect.top - (window.innerHeight - 18));
+      });
+      const initialScrollY = await page.evaluate(() => window.scrollY);
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        fields: [
+          {
+            id: 'edge_combo',
+            label: 'Non-compete acknowledgement',
+            type: 'combobox',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#edge_combo'],
+            options: [
+              { value: 'Yes', label: 'Yes' },
+              { value: 'No', label: 'No' },
+            ],
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: 'edge_combo',
+            action: 'fill',
+            value: 'Yes',
+            confidence: 1,
+            skipReason: '',
+          },
+        ],
+      });
+
+      return {
+        executionResult,
+        selected: await page.locator('#edge_combo').getAttribute('data-selected'),
+        finalScrollY: await page.evaluate(() => window.scrollY),
+        initialScrollY,
+      };
+    });
+
+    expect(result.selected).toBe('Yes');
+    expect(result.finalScrollY).toBeGreaterThan(result.initialScrollY);
+    expect(result.executionResult.summary).toEqual({
+      total: 1,
+      success: 1,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
+  test('scrolls text field away from bottom edge before typing', async () => {
+    await startServer(`
+      <html>
+        <body style="margin: 0;">
+          <div style="height: 1000px;"></div>
+          <section id="application">
+            <label for="edge_text">Why this role?</label>
+            <input id="edge_text" name="edge_text" type="text" />
+          </section>
+          <div style="height: 1000px;"></div>
+        </body>
+      </html>
+    `);
+
+    const result = await withPage(async (page) => {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+      await page.evaluate(() => {
+        const input = document.getElementById('edge_text');
+        if (!input) return;
+        const rect = input.getBoundingClientRect();
+        window.scrollBy(0, rect.top - (window.innerHeight - 14));
+      });
+      const initialScrollY = await page.evaluate(() => window.scrollY);
+
+      const executionResult = await executeApplicationFillPlan({
+        page,
+        boardEntry: boardEntry(),
+        fields: [
+          {
+            id: 'edge_text',
+            label: 'Why this role?',
+            type: 'text',
+            required: true,
+            visible: true,
+            enabled: true,
+            selectorCandidates: ['#edge_text'],
+            options: [],
+          },
+        ],
+        fillPlan: [
+          {
+            fieldId: 'edge_text',
+            action: 'fill',
+            value: 'I love complex migration work.',
+            confidence: 1,
+            skipReason: '',
+          },
+        ],
+      });
+
+      return {
+        executionResult,
+        value: await page.locator('#edge_text').inputValue(),
+        finalScrollY: await page.evaluate(() => window.scrollY),
+        initialScrollY,
+      };
+    });
+
+    expect(result.value).toBe('I love complex migration work.');
+    expect(result.finalScrollY).toBeGreaterThan(result.initialScrollY);
+    expect(result.executionResult.summary).toEqual({
+      total: 1,
+      success: 1,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+
   test('does not auto-scroll before clicking a radio option that is already on screen', async () => {
     await startServer(`
       <html>
