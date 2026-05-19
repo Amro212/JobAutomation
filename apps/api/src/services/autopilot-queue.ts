@@ -16,6 +16,7 @@ import type {
 import { runStructuredDiscovery } from '@jobautomation/discovery';
 
 import { generateJobArtifactsForJob } from './generate-job-artifacts';
+import { defaultJobListFiltersFromApplicant } from './jobs-tab-filters';
 import { recomputeJobPrefilterMatches } from './job-prefilter-recompute';
 
 export type QueueAutopilotRunInput = {
@@ -225,7 +226,8 @@ export class AutopilotQueueService {
         currentStep: 'prefilter_completed'
       });
 
-      const jobs = await this.input.repositories.jobs.listByDiscoveryRun(discoveryRunId);
+      const jobsTabFilters = defaultJobListFiltersFromApplicant(profile);
+      const { jobs } = await this.input.repositories.jobs.list(jobsTabFilters);
       const discoveredJobCount = jobs.length;
       let eligibleJobCount = 0;
       let skippedJobCount = 0;
@@ -249,7 +251,12 @@ export class AutopilotQueueService {
           this.input.repositories,
           job
         );
-        if (!supported || job.prefilterPass !== true || alreadySubmitted) {
+        const skipReason = !supported
+          ? 'unsupported_site'
+          : alreadySubmitted
+            ? 'already_submitted'
+            : null;
+        if (skipReason) {
           skippedJobCount += 1;
           await this.updateCounts(run.id, {
             discoveredJobCount,

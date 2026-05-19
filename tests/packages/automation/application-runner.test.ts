@@ -373,4 +373,119 @@ describe('application runner', () => {
       }
     });
   });
+
+  test('closes a paused headed browser when manual review is not requested', async () => {
+    const job = baseJob();
+    const applicantProfile = baseApplicant();
+    const sessionClose = vi.fn().mockResolvedValue(undefined);
+    const siteFlowRun = vi.fn().mockResolvedValue({
+      id: 'run-autopilot',
+      jobId: job.id,
+      siteKey: 'greenhouse',
+      status: 'paused',
+      currentStep: 'fill_plan_required_fields_missing',
+      stopReason: 'manual_review_required',
+      prefilterReasons: [],
+      reviewUrl: 'https://job-boards.greenhouse.io/example/jobs/1/application',
+      resumeArtifactId: null,
+      coverLetterArtifactId: null,
+      createdAt: new Date('2026-03-13T10:10:00.000Z'),
+      startedAt: new Date('2026-03-13T10:10:05.000Z'),
+      completedAt: new Date('2026-03-13T10:11:00.000Z'),
+      updatedAt: new Date('2026-03-13T10:11:00.000Z')
+    });
+
+    await runApplication({
+      jobId: job.id,
+      leaveBrowserOpenOnPause: false,
+      jobsRepository: {
+        findById: vi.fn().mockResolvedValue(job)
+      },
+      applicantProfileRepository: {
+        get: vi.fn().mockResolvedValue(applicantProfile)
+      },
+      applicationRunsRepository: {
+        create: vi.fn().mockImplementation(async (input) => ({
+          id: 'run-autopilot',
+          jobId: input.jobId,
+          siteKey: input.siteKey,
+          status: input.status,
+          currentStep: input.currentStep,
+          stopReason: input.stopReason ?? null,
+          prefilterReasons: input.prefilterReasons ?? [],
+          reviewUrl: null,
+          resumeArtifactId: null,
+          coverLetterArtifactId: null,
+          createdAt: new Date('2026-03-13T10:10:00.000Z'),
+          startedAt: null,
+          completedAt: null,
+          updatedAt: new Date('2026-03-13T10:10:00.000Z')
+        })),
+        update: vi.fn().mockImplementation(async (_id, patch) => ({
+          id: 'run-autopilot',
+          jobId: job.id,
+          siteKey: 'greenhouse',
+          status: patch.status ?? 'running',
+          currentStep: patch.currentStep ?? 'starting',
+          stopReason: patch.stopReason ?? null,
+          prefilterReasons: patch.prefilterReasons ?? [],
+          reviewUrl: patch.reviewUrl ?? null,
+          resumeArtifactId: patch.resumeArtifactId ?? null,
+          coverLetterArtifactId: patch.coverLetterArtifactId ?? null,
+          createdAt: new Date('2026-03-13T10:10:00.000Z'),
+          startedAt: patch.startedAt ?? new Date('2026-03-13T10:10:05.000Z'),
+          completedAt: patch.completedAt ?? null,
+          updatedAt: new Date('2026-03-13T10:10:45.000Z')
+        }))
+      },
+      artifactsRepository: {
+        listByJobAndKind: vi.fn().mockResolvedValue([]),
+        findById: vi.fn()
+      },
+      logEventsRepository: {
+        create: vi.fn().mockResolvedValue(undefined)
+      },
+      siteFlows: [
+        {
+          siteKey: 'greenhouse',
+          supports: vi.fn().mockReturnValue(true),
+          run: siteFlowRun
+        }
+      ],
+      createBrowser: vi.fn().mockResolvedValue({
+        browser: null,
+        context: null,
+        identity: {
+          profileKind: 'apply',
+          board: 'greenhouse',
+          userDataDir: 'C:/profiles/apply/greenhouse',
+          os: 'windows',
+          locale: 'en-CA',
+          enableCache: true,
+          humanize: true,
+          firefoxUserPrefs: {},
+          headless: false
+        },
+        persistent: true,
+        close: vi.fn().mockResolvedValue(undefined)
+      }),
+      createSession: vi.fn().mockResolvedValue({
+        browser: {},
+        context: {
+          tracing: {
+            stop: vi.fn().mockResolvedValue(undefined)
+          }
+        },
+        page: {
+          url: vi
+            .fn()
+            .mockReturnValue('https://job-boards.greenhouse.io/example/jobs/1/application')
+        },
+        finalizeTrace: vi.fn().mockResolvedValue('C:/tmp/trace.zip'),
+        close: sessionClose
+      })
+    });
+
+    expect(sessionClose).toHaveBeenCalledTimes(1);
+  });
 });
