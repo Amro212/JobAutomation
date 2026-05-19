@@ -3,8 +3,10 @@ import type { Locator, Page } from 'playwright';
 
 import type { ApplicationBoardEntryResult } from './board-entry';
 import {
+  hasCompanionTelPhoneField,
   hasRequiredMarker,
   isFieldRequired,
+  isIntlTelInputCountrySearchField,
   normalizeFieldText,
   uniqueRequiredSources,
   type FieldOptionMode,
@@ -1194,6 +1196,10 @@ async function collectComboboxOptions(input: {
 }
 
 function isCountryComboboxSkippable(field: ScrapedApplicationField): boolean {
+  if (isIntlTelInputCountrySearchField(field)) {
+    return true;
+  }
+
   const fingerprint = `${field.id} ${field.label}`.toLowerCase();
 
   // Explicit phone + country/code combination in field id/label
@@ -1225,6 +1231,14 @@ function isCountryComboboxSkippable(field: ScrapedApplicationField): boolean {
   }
 
   return false;
+}
+
+function filterIntlTelInputAuxiliaryFields(fields: ScrapedApplicationField[]): ScrapedApplicationField[] {
+  if (!hasCompanionTelPhoneField(fields)) {
+    return fields;
+  }
+
+  return fields.filter((field) => !isIntlTelInputCountrySearchField(field));
 }
 
 /** Prefer scraping options for required comboboxes before optional ones (expensive optional widgets shouldn't burn the wall clock). */
@@ -1393,10 +1407,12 @@ async function scrapeApplicationFieldsUnsafe(input: {
     rootElement
   });
 
+  const filteredFields = filterIntlTelInputAuxiliaryFields(result.fields);
+
   const fields = await enrichComboboxFields({
     page: input.page,
     boardEntry: input.boardEntry,
-    fields: result.fields
+    fields: filteredFields
   });
 
   if (fields.length === 0) {

@@ -6,7 +6,11 @@ import {
   validateRequiredFillPlan,
   type ApplicationFillPlanMissingRequiredField,
 } from './fill-plan-validator';
-import { isFieldRequired } from './field-contract';
+import {
+  hasCompanionTelPhoneField,
+  isFieldRequired,
+  isIntlTelInputCountrySearchField,
+} from './field-contract';
 
 export type RequiredFieldExecutionGuardResult = {
   ok: boolean;
@@ -29,8 +33,25 @@ export function validateRequiredFieldExecution(input: {
     input.executionResult.results.map((result) => [result.fieldId, result])
   );
 
+  const companionTelPhoneField = hasCompanionTelPhoneField(input.fields)
+    ? input.fields.find(
+        (candidate) =>
+          candidate.type === 'tel' && /phone/i.test(`${candidate.id} ${candidate.label}`)
+      )
+    : undefined;
+  const companionTelPhoneResult = companionTelPhoneField
+    ? executionResultByFieldId.get(companionTelPhoneField.id)
+    : undefined;
+
   for (const field of input.fields) {
     if (!isFieldRequired(field)) {
+      continue;
+    }
+
+    if (
+      isIntlTelInputCountrySearchField(field) &&
+      companionTelPhoneResult?.status === 'success'
+    ) {
       continue;
     }
 

@@ -83,6 +83,47 @@ describe('required field execution guard', () => {
     ]);
   });
 
+  test('ignores intl-tel-input country search failure when companion phone tel succeeded', () => {
+    const result = validateRequiredFieldExecution({
+      fields: [
+        {
+          ...requiredTextField('iti-0__search-input', 'Phone*'),
+          type: 'combobox',
+          selectorCandidates: ['#iti-0__search-input', '[aria-label="Search"]'],
+        },
+        {
+          ...requiredTextField('phone', 'Phone*'),
+          type: 'tel',
+        },
+      ],
+      fillPlan: [
+        fillEntry('iti-0__search-input', 'Canada+1'),
+        fillEntry('phone', '+19054621004'),
+      ],
+      executionResult: executionResult([
+        {
+          fieldId: 'iti-0__search-input',
+          label: 'Phone*',
+          action: 'fill',
+          status: 'failed',
+          message: '#iti-0__search-input: not visible',
+        },
+        {
+          fieldId: 'phone',
+          label: 'Phone*',
+          action: 'fill',
+          status: 'success',
+          message: 'Filled field.',
+        },
+      ]),
+    });
+
+    expect(result).toEqual<RequiredFieldExecutionGuardResult>({
+      ok: true,
+      missingRequiredFields: [],
+    });
+  });
+
   test('ignores optional skipped and failed fields', () => {
     const result = validateRequiredFieldExecution({
       fields: [optionalTextField('middle_name', 'Middle Name')],

@@ -252,6 +252,50 @@ describe('application field scraper', () => {
     );
   });
 
+  test('drops intl-tel-input country search when a companion tel phone field exists', async () => {
+    await startServer({
+      '/greenhouse-intl-tel': `
+        <html>
+          <body>
+            <section id="application">
+              <label for="phone">Phone*</label>
+              <div class="iti">
+                <div class="iti__selected-flag" aria-label="Canada: +1"></div>
+                <input
+                  id="iti-0__search-input"
+                  role="combobox"
+                  aria-label="Search"
+                  aria-autocomplete="list"
+                  aria-controls="iti-0__country-listbox"
+                />
+                <ul id="iti-0__country-listbox" role="listbox" hidden>
+                  <li id="iti-0__item-ca" role="option">Canada+1</li>
+                </ul>
+                <input id="phone" type="tel" name="phone" aria-label="Phone" required />
+              </div>
+            </section>
+          </body>
+        </html>
+      `
+    });
+
+    const fields = await withPage(async (page) => {
+      await page.goto(`${baseUrl}/greenhouse-intl-tel`, { waitUntil: 'domcontentloaded' });
+      const boardEntry = await reachApplicationForm({ page, board: 'greenhouse' });
+      return scrapeApplicationFields({ page, boardEntry });
+    });
+
+    expect(fields).toEqual([
+      expect.objectContaining({
+        id: 'phone',
+        label: 'Phone*',
+        type: 'tel',
+        required: true
+      })
+    ]);
+    expect(fields.some((field) => field.id === 'iti-0__search-input')).toBe(false);
+  });
+
   test('ignores generic helper controls and prefers outer prompt labels for file widgets', async () => {
     await startServer({
       '/greenhouse-quality': `

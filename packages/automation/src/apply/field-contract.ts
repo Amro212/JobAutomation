@@ -22,6 +22,13 @@ export type FieldLikeForArtifacts = {
   label: string;
 };
 
+export type FieldLikeForPhoneAuxiliary = {
+  id: string;
+  label: string;
+  type: string;
+  selectorCandidates: string[];
+};
+
 export function normalizeFieldText(value: string | null | undefined): string {
   return (value ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -37,6 +44,32 @@ export function uniqueRequiredSources(values: FieldRequiredSource[]): FieldRequi
 
 export function isFieldRequired(field: FieldLikeForRequirement): boolean {
   return field.required || (field.requiredSources?.length ?? 0) > 0 || hasRequiredMarker(field.label);
+}
+
+/** Hidden intl-tel-input country search; the visible #phone tel input owns the requirement. */
+export function isIntlTelInputCountrySearchField(field: FieldLikeForPhoneAuxiliary): boolean {
+  const id = field.id.toLowerCase();
+  if (/^iti-\d+__search-input$/.test(id)) {
+    return true;
+  }
+
+  const selectorFingerprint = field.selectorCandidates.join(' ').toLowerCase();
+  if (selectorFingerprint.includes('iti-') && selectorFingerprint.includes('__search-input')) {
+    return true;
+  }
+
+  return (
+    field.type === 'combobox' &&
+    /phone/i.test(field.label) &&
+    selectorFingerprint.includes('aria-label="search"')
+  );
+}
+
+export function hasCompanionTelPhoneField(fields: FieldLikeForPhoneAuxiliary[]): boolean {
+  return fields.some(
+    (candidate) =>
+      candidate.type === 'tel' && /phone/i.test(`${candidate.id} ${candidate.label}`)
+  );
 }
 
 export function uploadArtifactKindForField(
