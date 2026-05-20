@@ -57,7 +57,7 @@ async function clearAndType(page: Page, locator: Locator, value: string): Promis
   await locator.click();
   await page.keyboard.press('Control+A').catch(() => undefined);
   await page.keyboard.press('Backspace').catch(() => undefined);
-  await page.keyboard.type(value, { delay: 35 });
+  await page.keyboard.type(value, { delay: 20 });
 }
 
 export async function submitGreenhouseApplicationAndEnterVerificationCode(input: {
@@ -90,7 +90,7 @@ export async function submitGreenhouseApplicationAndEnterVerificationCode(input:
   await emitDebugLog(input.debugLog, 'greenhouse_submit_clicked', {
     source: submitButton.source
   });
-  await input.page.waitForTimeout(1_000);
+  await input.page.waitForTimeout(500);
 
   const challengeVisible = await input.page
     .getByText(VERIFICATION_PROMPT_PATTERN)

@@ -17,6 +17,7 @@ import {
 import type { SupportedApplicationBoard } from '../apply/board-entry';
 
 const CAMOUFOX_INSTALL_COMMAND = 'corepack pnpm browser:install';
+const GREENHOUSE_CURSOR_HUMANIZE_MAX_SECONDS = 0.35;
 
 type CamoufoxLauncher = (options: CamoufoxLaunchOptions) => Promise<Browser>;
 type CamoufoxOptionsFactory = (
@@ -303,6 +304,15 @@ function defaultFirefoxUserPrefs(input: {
   };
 }
 
+function defaultHumanize(input: {
+  profileKind: BrowserProfileKind;
+  board?: SupportedApplicationBoard;
+}): boolean | number {
+  return input.profileKind === 'apply' && input.board === 'greenhouse'
+    ? GREENHOUSE_CURSOR_HUMANIZE_MAX_SECONDS
+    : true;
+}
+
 export function buildBrowserIdentityConfig(
   input: BuildBrowserIdentityConfigInput
 ): BrowserIdentityConfig {
@@ -330,7 +340,7 @@ export function buildBrowserIdentityConfig(
     ...(input.fonts ? { fonts: input.fonts } : {}),
     ...(input.webglConfig ? { webglConfig: input.webglConfig } : {}),
     enableCache,
-    humanize: input.humanize ?? true,
+    humanize: input.humanize ?? defaultHumanize({ profileKind: input.profileKind, board }),
     blockWebrtc: input.blockWebrtc ?? true,
     geoip: input.geoip ?? true, // Auto-syncs locale, timezone, and coords to current IP
     customFontsOnly: input.customFontsOnly ?? (input.fonts && input.fonts.length > 0 ? true : false),

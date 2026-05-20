@@ -128,6 +128,7 @@ async function waitWithRange(
 
 function createHumanActionEngine(input: {
   page: Page;
+  board: SupportedApplicationBoard;
   pacing?: InteractionPacingProfile;
 }): HumanActionEngine {
   const pacing = resolvePacingProfile(input.pacing);
@@ -215,6 +216,14 @@ function createHumanActionEngine(input: {
         if (!cleared) {
           throw new Error('Field did not clear before typing.');
         }
+      }
+
+      if (input.board === 'greenhouse') {
+        const keyDelay = randomBetween(pacing.typingDelayMs);
+        await input.page.keyboard.type(value, { delay: keyDelay });
+        metrics.typingDurationMs += Array.from(value).length * keyDelay;
+        await waitWithRange(input.page, pacing.postFieldDelayMs);
+        return;
       }
 
       for (const [index, character] of Array.from(value).entries()) {
@@ -1563,6 +1572,7 @@ export async function executeApplicationFillPlan(input: {
   const results: ApplicationFillExecutionResult[] = [];
   const actionEngine = createHumanActionEngine({
     page: input.page,
+    board: input.boardEntry.board,
     ...(input.pacing !== undefined ? { pacing: input.pacing } : {}),
   });
 

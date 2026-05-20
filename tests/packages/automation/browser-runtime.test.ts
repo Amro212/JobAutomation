@@ -89,7 +89,7 @@ describe('Camoufox browser runtime', () => {
     expect(launchOptionsFactory).toHaveBeenCalledWith(
       expect.objectContaining({
         os: 'windows',
-        humanize: true,
+        humanize: 0.35,
         enable_cache: true,
         headless: false,
         locale: identityLocale(),
@@ -108,7 +108,8 @@ describe('Camoufox browser runtime', () => {
       persistent: true,
       identity: expect.objectContaining({
         board: 'greenhouse',
-        profileKind: 'apply'
+        profileKind: 'apply',
+        humanize: 0.35
       }),
       context: persistentContext
     });

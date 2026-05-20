@@ -1,4 +1,4 @@
-import type { SupportedApplicationSite } from '../contracts';
+import type { InteractionPacingProfile, SupportedApplicationSite } from '../contracts';
 import { reachApplicationForm } from '../board-entry';
 import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
@@ -21,16 +21,34 @@ import {
 
 const GREENHOUSE_VERIFICATION_TIMEOUT_MS = 3 * 60_000;
 
+const GREENHOUSE_PACING: InteractionPacingProfile = {
+  typingDelayMs: [5, 10],
+  preFieldDelayMs: [0, 5],
+  postFieldDelayMs: [3, 8],
+  sectionReadDelayMs: [8, 15],
+  preApplyReadDelayMs: [15, 30],
+};
+
+function resolveGreenhousePacing(
+  pacing?: InteractionPacingProfile
+): InteractionPacingProfile {
+  return {
+    ...(pacing ?? {}),
+    ...GREENHOUSE_PACING,
+  };
+}
+
 export const greenhouseApplicationSite: SupportedApplicationSite = {
   siteKey: 'greenhouse',
   supports(job) {
     return job.sourceKind === 'greenhouse';
   },
   async run(context) {
+    const greenhousePacing = resolveGreenhousePacing(context.session.pacing);
     const preEntryWarmup = await warmApplicationPageBeforeEntry({
       page: context.session.page,
       board: 'greenhouse',
-      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
+      pacing: greenhousePacing,
     });
     const boardEntry = await reachApplicationForm({
       page: context.session.page,
@@ -40,7 +58,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       page: context.session.page,
       board: 'greenhouse',
       boardEntry,
-      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
+      pacing: greenhousePacing,
     });
     const preFillChallenge = await detectApplicationChallenge({
       page: context.session.page,
@@ -143,7 +161,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       artifacts: context.artifacts,
       fields: scrapedFields,
       fillPlan: fillPlanResult.fillPlan,
-      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
+      pacing: greenhousePacing,
     });
     const postFillChallenge = await detectApplicationChallenge({
       page: context.session.page,

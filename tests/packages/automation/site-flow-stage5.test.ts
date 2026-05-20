@@ -235,19 +235,30 @@ describe('stage 5 site flow integration', () => {
         siteKey,
         finalUrl: boardEntry.finalUrl,
       });
+      const expectedPacing =
+        siteKey === 'greenhouse'
+          ? {
+              ...context.session.pacing,
+              typingDelayMs: [5, 10],
+              preFieldDelayMs: [0, 5],
+              postFieldDelayMs: [3, 8],
+              sectionReadDelayMs: [8, 15],
+              preApplyReadDelayMs: [15, 30],
+            }
+          : context.session.pacing;
 
       await site.run(context);
 
       expect(warmApplicationPageBeforeEntry).toHaveBeenCalledWith({
         page: context.session.page,
         board: siteKey,
-        pacing: context.session.pacing,
+        pacing: expectedPacing,
       });
       expect(warmApplicationFormBeforeFill).toHaveBeenCalledWith({
         page: context.session.page,
         board: siteKey,
         boardEntry,
-        pacing: context.session.pacing,
+        pacing: expectedPacing,
       });
       expect(executeApplicationFillPlan).toHaveBeenCalledWith({
         page: context.session.page,
@@ -255,7 +266,7 @@ describe('stage 5 site flow integration', () => {
         artifacts: context.artifacts,
         fields: scrapedFields,
         fillPlan,
-        pacing: context.session.pacing,
+        pacing: expectedPacing,
       });
       expect(submitApplicationAndConfirm).toHaveBeenCalledTimes(1);
       expect(context.completeRun).toHaveBeenCalledWith({

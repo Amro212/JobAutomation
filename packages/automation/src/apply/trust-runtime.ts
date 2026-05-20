@@ -23,9 +23,9 @@ const DEFAULT_READ_DELAYS: Record<
   }
 > = {
   greenhouse: {
-    initial: [1200, 1800],
-    section: [350, 700],
-    header: [450, 900]
+    initial: [700, 1100],
+    section: [200, 400],
+    header: [250, 500]
   },
   ashby: {
     initial: [900, 1400],
