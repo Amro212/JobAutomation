@@ -8,7 +8,14 @@ import type {
 } from './contracts';
 
 function isBlankPage(page: { url: () => string }): boolean {
-  return page.url() === 'about:blank';
+  const url = page.url();
+  return (
+    url === '' ||
+    url === 'about:blank' ||
+    url === 'about:newtab' ||
+    url === 'about:home' ||
+    url.startsWith('chrome://browser/content/blanktab')
+  );
 }
 
 export async function createApplicationSession(input: {

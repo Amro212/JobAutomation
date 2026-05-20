@@ -71,12 +71,16 @@ describe('application session manager', () => {
       url: vi.fn().mockReturnValue('about:blank'),
       close: vi.fn().mockResolvedValue(undefined)
     };
+    const extraNewTabPage = {
+      url: vi.fn().mockReturnValue('about:newtab'),
+      close: vi.fn().mockResolvedValue(undefined)
+    };
     const reviewPage = {
       url: vi.fn().mockReturnValue('https://jobs.ashbyhq.com/example/job/application'),
       close: vi.fn().mockResolvedValue(undefined)
     };
     const context = {
-      pages: vi.fn().mockReturnValue([primaryBlankPage, extraBlankPage, reviewPage]),
+      pages: vi.fn().mockReturnValue([primaryBlankPage, extraBlankPage, extraNewTabPage, reviewPage]),
       tracing: {
         start: vi.fn().mockResolvedValue(undefined),
         stop: vi.fn().mockResolvedValue(undefined)
@@ -117,6 +121,7 @@ describe('application session manager', () => {
       waitUntil: 'domcontentloaded'
     });
     expect(extraBlankPage.close).toHaveBeenCalledTimes(1);
+    expect(extraNewTabPage.close).toHaveBeenCalledTimes(1);
     expect(reviewPage.close).not.toHaveBeenCalled();
     expect(context.newPage).not.toHaveBeenCalled();
   });
