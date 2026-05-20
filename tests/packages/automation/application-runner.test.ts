@@ -80,6 +80,7 @@ describe('application runner', () => {
   afterEach(() => {
     delete process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_ALLOWLIST;
     delete process.env.JOBAUTOMATION_AUTHORIZED_DOMAIN_STRICT;
+    delete process.env.JOBAUTOMATION_APPLICATION_AUTO_CLOSE_BROWSER;
   });
 
   test('skips application runs when target URL is outside the authorized domain allowlist', async () => {
@@ -374,7 +375,9 @@ describe('application runner', () => {
     });
   });
 
-  test('closes a paused headed browser when manual review is not requested', async () => {
+  test('closes a paused headed browser when auto-close is explicitly enabled', async () => {
+    process.env.JOBAUTOMATION_APPLICATION_AUTO_CLOSE_BROWSER = '1';
+
     const job = baseJob();
     const applicantProfile = baseApplicant();
     const sessionClose = vi.fn().mockResolvedValue(undefined);
@@ -397,7 +400,6 @@ describe('application runner', () => {
 
     await runApplication({
       jobId: job.id,
-      leaveBrowserOpenOnPause: false,
       jobsRepository: {
         findById: vi.fn().mockResolvedValue(job)
       },

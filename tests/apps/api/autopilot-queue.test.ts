@@ -388,6 +388,12 @@ describe('autopilot queue service', () => {
     });
     expect(childRuns).toHaveLength(2);
     expect(callCount).toBe(2);
+    expect(runApplicationStub.mock.calls[0]?.[0]).not.toHaveProperty(
+      'leaveBrowserOpenOnPause'
+    );
+    expect(runApplicationStub.mock.calls[1]?.[0]).not.toHaveProperty(
+      'leaveBrowserOpenOnPause'
+    );
   });
 
   test('skips jobs with prior failed, paused, or completed application runs', async () => {

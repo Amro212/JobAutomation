@@ -94,9 +94,8 @@ export type RunApplicationInput = {
   siteFlows: SupportedApplicationSite[];
   openRouter?: OpenRouterConfig | null;
   artifactsRootDir?: string;
-  // Autopilot sets this to false so headed browsers don't accumulate when
-  // applications pause for manual review. Manual single-run mode keeps the
-  // default (true) so the user can finish in the same window.
+  // Defaults to leaving headed paused runs open so manual review can continue
+  // in the same browser window. Set false only for explicit close-on-pause runs.
   leaveBrowserOpenOnPause?: boolean;
   createBrowser?: () => Promise<ApplicationSessionRuntime>;
   createSession?: typeof createApplicationSession;

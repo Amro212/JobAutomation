@@ -324,7 +324,6 @@ export class AutopilotQueueService {
             artifactsRepository: this.input.repositories.artifacts,
             logEventsRepository: this.input.repositories.logEvents,
             siteFlows: applicationSites(),
-            leaveBrowserOpenOnPause: false,
             openRouter: this.input.config.OPENROUTER_API_KEY
               ? {
                   apiKey: this.input.config.OPENROUTER_API_KEY,
