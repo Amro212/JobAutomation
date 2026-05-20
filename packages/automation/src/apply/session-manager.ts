@@ -1,12 +1,15 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { resolveRuntimeTimezone } from '../playwright/browser';
 import type {
   ApplicationSession,
   ApplicationSessionOptions,
   ApplicationSessionRuntime
 } from './contracts';
+
+function isBlankPage(page: { url: () => string }): boolean {
+  return page.url() === 'about:blank';
+}
 
 export async function createApplicationSession(input: {
   runtime: ApplicationSessionRuntime;
@@ -26,10 +29,19 @@ export async function createApplicationSession(input: {
     snapshots: true
   });
 
+  async function closeSurplusBlankPages(activePage = page): Promise<void> {
+    await Promise.all(
+      context
+        .pages()
+        .filter((candidate) => candidate !== activePage && isBlankPage(candidate))
+        .map((candidate) => candidate.close().catch(() => undefined))
+    );
+  }
+
   const pages = context.pages();
-  const page = pages.length > 0 && pages[0].url() === 'about:blank' 
-    ? pages[0] 
-    : await context.newPage();
+  const reusableBlankPage = pages.find(isBlankPage);
+  const page = reusableBlankPage ?? await context.newPage();
+  await closeSurplusBlankPages(page);
   if (input.startUrl) {
     await page.goto(input.startUrl, {
       waitUntil: 'domcontentloaded'
@@ -45,6 +57,7 @@ export async function createApplicationSession(input: {
     page,
     identity: input.identity,
     ...(input.pacing ? { pacing: input.pacing } : {}),
+    closeSurplusBlankPages,
     async finalizeTrace() {
       await mkdir(traceDir, { recursive: true });
       await context.tracing.stop({

@@ -1,7 +1,11 @@
 import {
+  autopilotConfigInputSchema,
+  autopilotConfigSchema,
   applicationRunRecordSchema,
   autopilotRunRecordSchema,
   discoveryRunRecordSchema,
+  type AutopilotConfig,
+  type AutopilotConfigInput,
   jobRecordSchema
 } from '@jobautomation/core';
 import type { FastifyPluginAsync } from 'fastify';
@@ -11,6 +15,24 @@ function tailoringReady(profile: {
   reusableContext: string;
 } | null): boolean {
   return Boolean(profile?.baseResumeTex.trim() && profile.reusableContext.trim());
+}
+
+function resolveAutopilotConfig(
+  defaults: AutopilotConfig,
+  overrideInput: AutopilotConfigInput
+): AutopilotConfig {
+  const mergedJobFilters = overrideInput.jobFilters
+    ? {
+        ...defaults.jobFilters,
+        ...overrideInput.jobFilters
+      }
+    : defaults.jobFilters;
+
+  return autopilotConfigSchema.parse({
+    ...defaults,
+    ...overrideInput,
+    jobFilters: mergedJobFilters
+  });
 }
 
 export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
@@ -69,7 +91,7 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
-  app.post('/autopilot-runs', async (_request, reply) => {
+  app.post('/autopilot-runs', async (request, reply) => {
     const profile = await app.repositories.applicantProfile.get();
     if (!tailoringReady(profile)) {
       return reply.code(409).send({
@@ -78,22 +100,52 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const sources = await app.repositories.discoverySources.listEnabled();
-    if (sources.length === 0) {
+    const settings = await app.repositories.autopilotSettings.getOrCreateDefault();
+    const config = resolveAutopilotConfig(
+      settings.config,
+      autopilotConfigInputSchema.parse(request.body ?? {})
+    );
+
+    const enabledSources = await app.repositories.discoverySources.listEnabled();
+    if (enabledSources.length === 0) {
       return reply.code(409).send({
         message: 'Enable at least one discovery source before launching autopilot.'
+      });
+    }
+
+    const selectedSources =
+      config.discoverySourceIds.length === 0
+        ? enabledSources
+        : enabledSources.filter((source) => config.discoverySourceIds.includes(source.id));
+
+    if (
+      config.discoverySourceIds.length > 0 &&
+      selectedSources.length !== config.discoverySourceIds.length
+    ) {
+      return reply.code(409).send({
+        message:
+          'One or more selected discovery sources are not enabled. Update your selections and try again.'
+      });
+    }
+
+    if (selectedSources.length === 0) {
+      return reply.code(409).send({
+        message:
+          'Select at least one enabled discovery source before launching autopilot.'
       });
     }
 
     const run = await app.repositories.autopilotRuns.create({
       triggerKind: 'manual',
       status: 'pending',
-      currentStep: 'queued'
+      currentStep: 'queued',
+      config
     });
 
     app.autopilotQueue.enqueueRun({
       run,
-      sources
+      sources: selectedSources,
+      config
     });
 
     return {

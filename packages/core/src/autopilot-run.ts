@@ -4,6 +4,7 @@ import {
   autopilotRunStatusSchema,
   autopilotRunTriggerKindSchema
 } from './status';
+import { autopilotConfigSchema } from './autopilot-config';
 
 export const autopilotRunRecordSchema = z.object({
   id: z.string().min(1),
@@ -17,6 +18,7 @@ export const autopilotRunRecordSchema = z.object({
   submittedCount: z.number().int().nonnegative(),
   blockedCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),
+  config: autopilotConfigSchema,
   errorMessage: z.string().nullable().default(null),
   createdAt: z.date(),
   startedAt: z.date().nullable().default(null),

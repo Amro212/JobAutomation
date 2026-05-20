@@ -4,6 +4,7 @@ import { registerApplicantProfileRoutes } from './routes/applicant-profile';
 import { registerArtifactsRoutes } from './routes/artifacts';
 import { registerApplicationRunRoutes } from './routes/application-runs.ts';
 import { registerAutopilotRunRoutes } from './routes/autopilot-runs';
+import { registerAutopilotSettingsRoutes } from './routes/autopilot-settings';
 import { registerDiscoveryRunRoutes } from './routes/discovery-runs';
 import { registerDiscoveryScheduleRoutes } from './routes/discovery-schedules';
 import { registerDiscoverySourceRoutes } from './routes/discovery-sources';
@@ -31,6 +32,7 @@ export function buildApp(): FastifyInstance {
   app.register(registerDiscoveryRunRoutes);
   app.register(registerApplicationRunRoutes);
   app.register(registerAutopilotRunRoutes);
+  app.register(registerAutopilotSettingsRoutes);
   app.register(registerDiscoveryScheduleRoutes);
   app.register(registerApplicantProfileRoutes);
   app.register(registerArtifactsRoutes);

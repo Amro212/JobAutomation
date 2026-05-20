@@ -92,6 +92,13 @@
       "when": 1778100000000,
       "tag": "0012_autopilot_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1779300800000,
+      "tag": "0013_autopilot_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { desc, eq } from 'drizzle-orm';
 
 import {
+  autopilotConfigSchema,
   autopilotRunRecordSchema,
   type AutopilotRunRecord,
   type AutopilotRunStatus,
@@ -23,6 +24,7 @@ export type CreateAutopilotRunInput = {
   submittedCount?: number;
   blockedCount?: number;
   failedCount?: number;
+  config?: AutopilotRunRecord['config'];
   errorMessage?: string | null;
   createdAt?: Date;
   startedAt?: Date | null;
@@ -43,6 +45,7 @@ export type UpdateAutopilotRunInput = Partial<
     | 'submittedCount'
     | 'blockedCount'
     | 'failedCount'
+    | 'config'
     | 'errorMessage'
     | 'startedAt'
     | 'completedAt'
@@ -56,6 +59,9 @@ function mapAutopilotRun(
   return autopilotRunRecordSchema.parse({
     ...record,
     discoveryRunId: record.discoveryRunId ?? null,
+    config: autopilotConfigSchema.parse(
+      JSON.parse(record.configJson ?? '{}') as unknown
+    ),
     errorMessage: record.errorMessage ?? null,
     startedAt: record.startedAt ?? null,
     completedAt: record.completedAt ?? null
@@ -96,6 +102,7 @@ export class AutopilotRunsRepository {
       submittedCount: input.submittedCount ?? 0,
       blockedCount: input.blockedCount ?? 0,
       failedCount: input.failedCount ?? 0,
+      configJson: JSON.stringify(input.config ?? autopilotConfigSchema.parse({})),
       errorMessage: input.errorMessage ?? null,
       createdAt,
       startedAt: input.startedAt ?? null,
@@ -135,6 +142,7 @@ export class AutopilotRunsRepository {
         submittedCount: record.submittedCount,
         blockedCount: record.blockedCount,
         failedCount: record.failedCount,
+        configJson: JSON.stringify(record.config),
         errorMessage: record.errorMessage,
         startedAt: record.startedAt,
         completedAt: record.completedAt,

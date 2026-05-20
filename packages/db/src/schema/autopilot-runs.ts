@@ -21,6 +21,7 @@ export const autopilotRunsTable = sqliteTable(
     submittedCount: integer('submitted_count').notNull().default(0),
     blockedCount: integer('blocked_count').notNull().default(0),
     failedCount: integer('failed_count').notNull().default(0),
+    configJson: text('config_json'),
     errorMessage: text('error_message'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     startedAt: integer('started_at', { mode: 'timestamp_ms' }),

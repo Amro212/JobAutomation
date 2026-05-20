@@ -111,7 +111,12 @@ describe('autopilot run routes', () => {
 
     const createResponse = await app.inject({
       method: 'POST',
-      url: '/autopilot-runs'
+      url: '/autopilot-runs',
+      payload: {
+        applySiteKeys: ['greenhouse'],
+        maxJobsPerRun: 3,
+        artifactMode: 'resume'
+      }
     });
 
     expect(createResponse.statusCode).toBe(200);
@@ -125,6 +130,11 @@ describe('autopilot run routes', () => {
       submittedCount: 0,
       blockedCount: 0,
       failedCount: 0
+    });
+    expect(createResponse.json().run.config).toMatchObject({
+      applySiteKeys: ['greenhouse'],
+      maxJobsPerRun: 3,
+      artifactMode: 'resume'
     });
 
     const runId = createResponse.json().run.id as string;
@@ -152,10 +162,31 @@ describe('autopilot run routes', () => {
     expect(detailResponse.json()).toEqual({
       run: expect.objectContaining({
         id: runId,
-        status: 'pending'
+        status: 'pending',
+        config: expect.objectContaining({
+          applySiteKeys: ['greenhouse'],
+          maxJobsPerRun: 3,
+          artifactMode: 'resume'
+        })
       }),
       discoveryRun: null,
       applications: []
+    });
+  });
+
+  test('rejects launch when selected discovery source IDs are not enabled', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/autopilot-runs',
+      payload: {
+        discoverySourceIds: ['missing-source-id']
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      message:
+        'One or more selected discovery sources are not enabled. Update your selections and try again.'
     });
   });
 });

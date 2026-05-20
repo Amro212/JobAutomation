@@ -9,7 +9,12 @@ import {
   runPlaywrightDiscovery
 } from '@jobautomation/automation';
 import type { AppEnv } from '@jobautomation/config';
-import type { DiscoverySourceRecord, JobRecord } from '@jobautomation/core';
+import type {
+  AutopilotConfig,
+  DiscoverySourceRecord,
+  JobListFilters,
+  JobRecord
+} from '@jobautomation/core';
 import type {
   ApiRepositories
 } from '../plugins/db';
@@ -22,14 +27,70 @@ import { recomputeJobPrefilterMatches } from './job-prefilter-recompute';
 export type QueueAutopilotRunInput = {
   run: Awaited<ReturnType<ApiRepositories['autopilotRuns']['create']>>;
   sources: DiscoverySourceRecord[];
+  config: AutopilotConfig;
 };
 
-function applicationSites() {
-  return [
-    greenhouseApplicationSite,
-    leverApplicationSite,
-    ashbyApplicationSite
-  ];
+function allApplicationSites() {
+  return [greenhouseApplicationSite, leverApplicationSite, ashbyApplicationSite];
+}
+
+function applicationSitesForConfig(config: AutopilotConfig) {
+  return allApplicationSites().filter((site) =>
+    config.applySiteKeys.includes(site.siteKey)
+  );
+}
+
+function discoverySourcesForConfig(
+  sources: DiscoverySourceRecord[],
+  config: AutopilotConfig
+): DiscoverySourceRecord[] {
+  if (config.discoverySourceIds.length === 0) {
+    return sources;
+  }
+
+  const selectedIds = new Set(config.discoverySourceIds);
+  return sources.filter((source) => selectedIds.has(source.id));
+}
+
+function jobsFiltersForConfig(
+  defaultFilters: JobListFilters,
+  config: AutopilotConfig
+): JobListFilters {
+  const merged = {
+    ...defaultFilters,
+    ...config.jobFilters
+  };
+
+  if (defaultFilters.matchProfile === 'me') {
+    merged.matchProfile = 'me';
+  } else if (config.matchProfile) {
+    merged.matchProfile = config.matchProfile;
+  }
+
+  if (defaultFilters.locationCountries && defaultFilters.locationCountries.length > 0) {
+    merged.locationCountries = defaultFilters.locationCountries;
+  }
+
+  return merged;
+}
+
+function shouldSkipDiscovery(
+  latestCompletedAt: Date | null,
+  config: AutopilotConfig
+): boolean {
+  if (config.forceFreshDiscovery) {
+    return false;
+  }
+  if (!latestCompletedAt) {
+    return false;
+  }
+  if (config.discoveryCacheHours <= 0) {
+    return false;
+  }
+
+  const cacheTtlMs = config.discoveryCacheHours * 60 * 60 * 1000;
+  const cutoff = new Date(Date.now() - cacheTtlMs);
+  return latestCompletedAt > cutoff;
 }
 
 async function jobAlreadySubmitted(
@@ -156,15 +217,15 @@ export class AutopilotQueueService {
 
     try {
       let discoveryRunId: string;
+      const selectedSources = discoverySourcesForConfig(input.sources, input.config);
+      const activeApplicationSites = applicationSitesForConfig(input.config);
       const latestDiscoveryRun = await this.input.repositories.discoveryRuns.findLatestCompleted();
-      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const reuseDiscovery = shouldSkipDiscovery(
+        latestDiscoveryRun?.completedAt ?? null,
+        input.config
+      );
 
-      const shouldSkipDiscovery =
-        latestDiscoveryRun &&
-        latestDiscoveryRun.completedAt &&
-        latestDiscoveryRun.completedAt > threeHoursAgo;
-
-      if (shouldSkipDiscovery) {
+      if (reuseDiscovery && latestDiscoveryRun) {
         discoveryRunId = latestDiscoveryRun.id;
         await this.input.repositories.autopilotRuns.update(run.id, {
           discoveryRunId,
@@ -173,10 +234,12 @@ export class AutopilotQueueService {
       } else {
         const discoveryRun = await this.input.repositories.discoveryRuns.create({
           sourceKind:
-            input.sources.length === 1 ? input.sources[0]!.sourceKind : 'structured',
-          runKind: input.sources.length === 1 ? 'single-source' : 'structured',
+            selectedSources.length === 1
+              ? selectedSources[0]!.sourceKind
+              : 'structured',
+          runKind: selectedSources.length === 1 ? 'single-source' : 'structured',
           triggerKind: 'manual',
-          discoverySourceId: input.sources.length === 1 ? input.sources[0]!.id : null,
+          discoverySourceId: selectedSources.length === 1 ? selectedSources[0]!.id : null,
           status: 'pending'
         });
 
@@ -186,10 +249,13 @@ export class AutopilotQueueService {
           discoveryRunId: discoveryRun.id
         });
 
-        if (input.sources.length === 1 && input.sources[0]?.sourceKind === 'playwright') {
+        if (
+          selectedSources.length === 1 &&
+          selectedSources[0]?.sourceKind === 'playwright'
+        ) {
           await this.runPlaywrightDiscoveryImpl({
             run: discoveryRun,
-            source: input.sources[0],
+            source: selectedSources[0],
             jobsRepository: this.input.repositories.jobs,
             runsRepository: this.input.repositories.discoveryRuns,
             logEventsRepository: this.input.repositories.logEvents,
@@ -202,7 +268,7 @@ export class AutopilotQueueService {
         } else {
           await this.runStructuredDiscoveryImpl({
             run: discoveryRun,
-            sources: input.sources,
+            sources: selectedSources,
             sourcesRepository: this.input.repositories.discoverySources,
             jobsRepository: this.input.repositories.jobs,
             runsRepository: this.input.repositories.discoveryRuns,
@@ -229,9 +295,16 @@ export class AutopilotQueueService {
         currentStep: 'prefilter_completed'
       });
 
-      const jobsTabFilters = defaultJobListFiltersFromApplicant(profile);
+      const jobsTabFilters = jobsFiltersForConfig(
+        defaultJobListFiltersFromApplicant(profile),
+        input.config
+      );
       const { jobs } = await this.input.repositories.jobs.list(jobsTabFilters);
-      const discoveredJobCount = jobs.length;
+      const selectedJobs =
+        input.config.maxJobsPerRun === null
+          ? jobs
+          : jobs.slice(0, input.config.maxJobsPerRun);
+      const discoveredJobCount = selectedJobs.length;
       let eligibleJobCount = 0;
       let skippedJobCount = 0;
       let submittedCount = 0;
@@ -243,12 +316,12 @@ export class AutopilotQueueService {
         discoveredJobCount
       });
 
-      for (const job of jobs) {
+      for (const job of selectedJobs) {
         if (signal.aborted) {
           break;
         }
 
-        const matchedSite = applicationSites().find((site) => site.supports(job));
+        const matchedSite = activeApplicationSites.find((site) => site.supports(job));
         const supported = Boolean(matchedSite);
         const alreadySubmitted = await jobAlreadySubmitted(
           this.input.repositories,
@@ -282,7 +355,7 @@ export class AutopilotQueueService {
 
           const generated = await this.generateArtifactsImpl({
             jobId: job.id,
-            mode: 'both',
+            mode: input.config.artifactMode,
             repositories: {
               applicantProfile: this.input.repositories.applicantProfile,
               artifacts: this.input.repositories.artifacts,
@@ -324,7 +397,8 @@ export class AutopilotQueueService {
             applicationRunsRepository: this.input.repositories.applicationRuns,
             artifactsRepository: this.input.repositories.artifacts,
             logEventsRepository: this.input.repositories.logEvents,
-            siteFlows: applicationSites(),
+            siteFlows: activeApplicationSites,
+            leaveBrowserOpenOnPause: false,
             openRouter: this.input.config.OPENROUTER_API_KEY
               ? {
                   apiKey: this.input.config.OPENROUTER_API_KEY,

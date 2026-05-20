@@ -7,6 +7,7 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { readEnv } from '../../../packages/config/src/env';
+import { autopilotConfigSchema } from '../../../packages/core/src/autopilot-config';
 import {
   ApplicantProfileRepository,
   ApplicationRunsRepository,
@@ -25,6 +26,7 @@ const migrationsFolder = fileURLToPath(
 );
 const createdPaths: string[] = [];
 const trackedClients: Array<{ close: () => Promise<void> | void }> = [];
+const defaultAutopilotConfig = autopilotConfigSchema.parse({});
 
 function createTestDatabasePath(): string {
   const path = fileURLToPath(
@@ -202,7 +204,8 @@ describe('autopilot queue service', () => {
 
     queue.enqueueRun({
       run: autopilotRun,
-      sources: [source]
+      sources: [source],
+      config: defaultAutopilotConfig
     });
     await queue.onIdle();
 
@@ -370,7 +373,8 @@ describe('autopilot queue service', () => {
 
     queue.enqueueRun({
       run: autopilotRun,
-      sources: [source]
+      sources: [source],
+      config: defaultAutopilotConfig
     });
     await queue.onIdle();
 
@@ -388,11 +392,13 @@ describe('autopilot queue service', () => {
     });
     expect(childRuns).toHaveLength(2);
     expect(callCount).toBe(2);
-    expect(runApplicationStub.mock.calls[0]?.[0]).not.toHaveProperty(
-      'leaveBrowserOpenOnPause'
+    expect(runApplicationStub.mock.calls[0]?.[0]).toHaveProperty(
+      'leaveBrowserOpenOnPause',
+      false
     );
-    expect(runApplicationStub.mock.calls[1]?.[0]).not.toHaveProperty(
-      'leaveBrowserOpenOnPause'
+    expect(runApplicationStub.mock.calls[1]?.[0]).toHaveProperty(
+      'leaveBrowserOpenOnPause',
+      false
     );
   });
 
@@ -556,7 +562,8 @@ describe('autopilot queue service', () => {
 
     queue.enqueueRun({
       run: autopilotRun,
-      sources: [source]
+      sources: [source],
+      config: defaultAutopilotConfig
     });
     await queue.onIdle();
 
@@ -670,11 +677,29 @@ describe('autopilot queue service', () => {
         updatedAt: new Date('2026-05-08T10:00:00.000Z')
       });
 
+      await jobsRepository.upsert({
+        sourceKind: 'greenhouse',
+        sourceId: 'job-commercial-director',
+        sourceUrl: 'https://boards.greenhouse.io/example/jobs/commercial-director',
+        companyName: 'Capco',
+        title: 'Commercial Director - Canada',
+        location: 'Toronto, Canada',
+        remoteType: 'hybrid',
+        employmentType: 'full-time',
+        compensationText: null,
+        descriptionText: 'Lead enterprise sales and commercial account strategy.',
+        rawPayload: null,
+        discoveryRunId: run.id,
+        status: 'discovered',
+        discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-08T10:00:00.000Z')
+      });
+
       await repositories.discoveryRuns.markFinished({
         id: run.id,
         status: 'completed',
-        jobCount: 2,
-        newJobCount: 2,
+        jobCount: 3,
+        newJobCount: 3,
         updatedJobCount: 0
       });
     });
@@ -734,7 +759,11 @@ describe('autopilot queue service', () => {
 
     queue.enqueueRun({
       run: autopilotRun,
-      sources: [source]
+      sources: [source],
+      config: autopilotConfigSchema.parse({
+        ...defaultAutopilotConfig,
+        matchProfile: 'all'
+      })
     });
     await queue.onIdle();
 
@@ -743,6 +772,10 @@ describe('autopilot queue service', () => {
     );
     const caJob = await repositories.jobs.findBySource('greenhouse', 'job-ca');
     const xaiJob = await repositories.jobs.findBySource('greenhouse', 'job-xai');
+    const commercialDirectorJob = await repositories.jobs.findBySource(
+      'greenhouse',
+      'job-commercial-director'
+    );
 
     expect(childRuns).toHaveLength(1);
     expect(childRuns[0]?.jobId).toBe(caJob?.id);
@@ -751,5 +784,164 @@ describe('autopilot queue service', () => {
       jobId: caJob?.id
     });
     expect(xaiJob?.status).toBe('discovered');
+    expect(commercialDirectorJob?.status).toBe('discovered');
+  });
+
+  test('respects config overrides for fresh discovery, job cap, artifact mode, and site filters', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}'
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const previousDiscoveryRun = await repositories.discoveryRuns.create({
+      sourceKind: 'playwright',
+      runKind: 'single-source',
+      triggerKind: 'manual',
+      discoverySourceId: source.id,
+      status: 'running'
+    });
+    await repositories.discoveryRuns.markFinished({
+      id: previousDiscoveryRun.id,
+      status: 'completed',
+      jobCount: 0,
+      newJobCount: 0,
+      updatedJobCount: 0
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run, jobsRepository }) => {
+      for (const suffix of ['one', 'two']) {
+        await jobsRepository.upsert({
+          sourceKind: 'lever',
+          sourceId: `job-${suffix}`,
+          sourceUrl: `https://jobs.lever.co/acme/${suffix}`,
+          companyName: 'Acme Corp',
+          title: 'Platform Engineer',
+          location: 'Remote',
+          remoteType: 'remote',
+          employmentType: 'full-time',
+          compensationText: null,
+          descriptionText: 'Build TypeScript systems.',
+          rawPayload: null,
+          discoveryRunId: run.id,
+          status: 'discovered',
+          discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+          updatedAt: new Date('2026-05-08T10:00:00.000Z')
+        });
+      }
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 2,
+        newJobCount: 2,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi.fn(async ({ jobId }: { jobId: string }) => ({
+      job: (await repositories.jobs.findById(jobId))!,
+      profile: (await repositories.applicantProfile.get())!,
+      artifacts: [
+        await repositories.artifacts.create({
+          jobId,
+          discoveryRunId: null,
+          kind: 'resume-variant',
+          format: 'pdf',
+          fileName: 'resume.pdf',
+          storagePath: `/tmp/${jobId}-resume.pdf`,
+          createdAt: new Date('2026-05-08T10:01:00.000Z')
+        })
+      ]
+    }));
+
+    const runApplicationStub = vi.fn(async ({ runId, applicationRunsRepository }) => {
+      const run = await applicationRunsRepository.findById!(runId!);
+      if (!run) {
+        throw new Error('Expected application run to exist.');
+      }
+
+      const updated = await applicationRunsRepository.update(run.id, {
+        status: 'completed',
+        currentStep: 'submitted',
+        completedAt: new Date('2026-05-08T10:05:00.000Z')
+      });
+      if (!updated) {
+        throw new Error('Expected application run update to succeed.');
+      }
+
+      return updated;
+    });
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: autopilotConfigSchema.parse({
+        discoverySourceIds: [source.id],
+        applySiteKeys: ['lever'],
+        maxJobsPerRun: 1,
+        forceFreshDiscovery: true,
+        artifactMode: 'resume'
+      })
+    });
+    await queue.onIdle();
+
+    const childRuns = await repositories.applicationRuns.listByAutopilotRun(autopilotRun.id);
+
+    expect(runPlaywrightDiscoveryStub).toHaveBeenCalledTimes(1);
+    expect(generateArtifactsStub).toHaveBeenCalledTimes(1);
+    expect(generateArtifactsStub.mock.calls[0]?.[0]).toMatchObject({
+      mode: 'resume'
+    });
+    expect(runApplicationStub).toHaveBeenCalledTimes(1);
+    expect(runApplicationStub.mock.calls[0]?.[0].siteFlows).toHaveLength(1);
+    expect(runApplicationStub.mock.calls[0]?.[0].siteFlows[0]?.siteKey).toBe('lever');
+    expect(childRuns).toHaveLength(1);
   });
 });

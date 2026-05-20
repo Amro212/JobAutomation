@@ -21,6 +21,7 @@ import type {
 import { ApplicationLinkExpiredError } from './board-entry';
 import { completeApplicationRun } from './complete-application-run';
 import { pauseApplicationRun } from './pause-application-run';
+import { assessPostCompletionStatus } from './post-completion-safeguard';
 import { createApplicationSession } from './session-manager';
 import { stopBeforeSubmit } from './stop-before-submit';
 import { createApplicationBrowserRuntime } from '../playwright/browser';
@@ -341,7 +342,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
   let leaveBrowserOpenForManualReview = false;
 
   try {
-    const result = await siteFlow.run({
+    let result = await siteFlow.run({
       applicantProfile,
       artifacts,
       job,
@@ -528,6 +529,43 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
       }
     });
 
+    if (result.status === 'completed') {
+      const assessment = await assessPostCompletionStatus({
+        page: session.page,
+        board: siteFlow.siteKey
+      });
+      await logRunEvent(input.logEventsRepository, {
+        applicationRunId: runningRun.id,
+        jobId: job.id,
+        level: assessment.ok ? 'info' : 'warn',
+        message: assessment.ok
+          ? 'Post-completion safeguard passed.'
+          : assessment.message,
+        details: {
+          applicationRunId: runningRun.id,
+          siteKey: siteFlow.siteKey,
+          step: 'post_completion_safeguard',
+          pageUrl: session.page.url(),
+          assessment
+        }
+      });
+
+      if (!assessment.ok) {
+        const guardedRun = await input.applicationRunsRepository.update(runningRun.id, {
+          status: assessment.status,
+          currentStep: 'post_completion_safeguard',
+          stopReason: assessment.stopReason,
+          reviewUrl: session.page.url(),
+          completedAt: new Date(),
+          updatedAt: new Date()
+        });
+        if (!guardedRun) {
+          throw new Error(`Application run ${runningRun.id} was not found for post-completion safeguard update.`);
+        }
+        result = guardedRun;
+      }
+    }
+
     const headedApply = session.identity.headless === false;
     const forceCloseBrowser =
       process.env.JOBAUTOMATION_APPLICATION_AUTO_CLOSE_BROWSER === '1' ||
@@ -584,6 +622,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     }
 
     if (leaveBrowserOpenForManualReview) {
+      await session.closeSurplusBlankPages();
       await logRunEvent(input.logEventsRepository, {
         applicationRunId: runningRun.id,
         jobId: job.id,

@@ -51,6 +51,7 @@ export type ApplicationSession = {
   identity: BrowserIdentityConfig;
   pacing?: InteractionPacingProfile;
   close: () => Promise<void>;
+  closeSurplusBlankPages: () => Promise<void>;
   finalizeTrace: () => Promise<string>;
 };
 

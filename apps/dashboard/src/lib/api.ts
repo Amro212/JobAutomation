@@ -1,4 +1,6 @@
 import type {
+  AutopilotConfigInput,
+  AutopilotSettingsRecord,
   ApplicantProfile,
   ApplicationRunRecord,
   AutopilotRunRecord,
@@ -282,9 +284,41 @@ export async function getAutopilotRun(runId: string): Promise<AutopilotRunDetail
   return (await response.json()) as AutopilotRunDetail;
 }
 
-export async function createAutopilotRun(): Promise<{ run: AutopilotRunRecord }> {
+export async function getAutopilotSettings(): Promise<AutopilotSettingsRecord> {
+  const response = await fetchFromApi<{ settings: AutopilotSettingsRecord }>(
+    '/autopilot-settings'
+  );
+  return response.settings;
+}
+
+export async function updateAutopilotSettings(
+  payload: AutopilotConfigInput
+): Promise<AutopilotSettingsRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-settings`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { settings: AutopilotSettingsRecord }).settings;
+}
+
+export async function createAutopilotRun(
+  payload: AutopilotConfigInput = {}
+): Promise<{ run: AutopilotRunRecord }> {
   const response = await fetch(`${getApiBaseUrl()}/autopilot-runs`, {
     method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
     cache: 'no-store'
   });
 

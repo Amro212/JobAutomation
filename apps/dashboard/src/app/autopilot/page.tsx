@@ -2,6 +2,8 @@ import { revalidatePath } from 'next/cache';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { saveAutopilotSettingsAction, launchAutopilotAction } from './actions';
+import { AutopilotSettingsCard } from '@/components/autopilot/autopilot-settings-card';
 import { AutopilotAutoRefresh } from '@/components/autopilot-auto-refresh';
 import { SubmitButton } from '@/components/submit-button';
 import { Badge } from '@/components/ui/badge';
@@ -16,8 +18,8 @@ import {
 } from '@/components/ui/table';
 import {
   cancelAutopilotRun,
-  createAutopilotRun,
   getApplicantProfile,
+  getAutopilotSettings,
   getAutopilotRun,
   getAutopilotRuns,
   getDiscoverySources
@@ -62,26 +64,6 @@ export default async function AutopilotPage({
 }) {
   const resolvedSearchParams = await searchParams;
 
-  async function launchAutopilotAction(): Promise<void> {
-    'use server';
-
-    let result: Awaited<ReturnType<typeof createAutopilotRun>>;
-    try {
-      result = await createAutopilotRun();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to launch autopilot.';
-      redirect(`/autopilot?error=${encodeURIComponent(message)}`);
-    }
-
-    revalidatePath('/autopilot');
-    revalidatePath('/applications');
-    revalidatePath('/submitted');
-    redirect(
-      `/autopilot?runId=${result.run.id}&message=${encodeURIComponent('Autopilot launched — discovery and applications will run automatically.')}`
-    );
-  }
-
   async function cancelAutopilotAction(): Promise<void> {
     'use server';
 
@@ -109,13 +91,20 @@ export default async function AutopilotPage({
     );
   }
 
-  const [profileState, sources, runs] = await Promise.all([
+  const [profileState, sources, runs, autopilotSettings] = await Promise.all([
     getApplicantProfile(),
     getDiscoverySources(),
-    getAutopilotRuns()
+    getAutopilotRuns(),
+    getAutopilotSettings()
   ]);
 
   const enabledSources = sources.filter((source) => source.enabled);
+  const selectedSources =
+    autopilotSettings.config.discoverySourceIds.length === 0
+      ? enabledSources
+      : enabledSources.filter((source) =>
+          autopilotSettings.config.discoverySourceIds.includes(source.id)
+        );
   const selectedRunId =
     selectedRunIdFromSearchParams(resolvedSearchParams.runId) ?? runs[0]?.run.id;
   const selectedRun = selectedRunId ? await getAutopilotRun(selectedRunId) : null;
@@ -165,11 +154,9 @@ export default async function AutopilotPage({
                 </SubmitButton>
               </form>
             ) : null}
-            <form action={launchAutopilotAction}>
-              <SubmitButton disabled={hasActiveRun} pendingText="Launching...">
-                Launch autopilot
-              </SubmitButton>
-            </form>
+            <Button variant="outline" asChild>
+              <Link href="#autopilot-settings">Edit launch settings</Link>
+            </Button>
           </div>
         </div>
         <div className="mt-6 grid gap-3 md:grid-cols-3">
@@ -199,10 +186,22 @@ export default async function AutopilotPage({
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               Enabled sources
             </p>
-            <p className="mt-1 font-medium text-foreground">{enabledSources.length}</p>
+            <p className="mt-1 font-medium text-foreground">
+              {selectedSources.length} / {enabledSources.length}
+            </p>
           </div>
         </div>
       </section>
+
+      <div id="autopilot-settings">
+        <AutopilotSettingsCard
+          enabledSources={enabledSources}
+          settings={autopilotSettings}
+          hasActiveRun={hasActiveRun}
+          saveAction={saveAutopilotSettingsAction}
+          launchAction={launchAutopilotAction}
+        />
+      </div>
 
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="border-b px-6 py-4">
