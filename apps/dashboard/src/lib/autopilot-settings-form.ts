@@ -1,9 +1,33 @@
-import type { AutopilotConfigInput } from '@jobautomation/core';
+import type {
+  AutopilotApplySiteKey,
+  AutopilotConfigInput,
+  DiscoverySourceRecord
+} from '@jobautomation/core';
 
 function trimValues(values: FormDataEntryValue[]): string[] {
   return values
     .map((value) => String(value).trim())
     .filter((value) => value.length > 0);
+}
+
+function isApplySiteSourceKind(
+  value: DiscoverySourceRecord['sourceKind']
+): value is AutopilotApplySiteKey {
+  return value === 'greenhouse' || value === 'lever' || value === 'ashby';
+}
+
+export function sourceIdsForApplySites(
+  sources: DiscoverySourceRecord[],
+  siteKeys: AutopilotApplySiteKey[]
+): string[] {
+  const selectedSites = new Set(siteKeys);
+  return sources
+    .filter(
+      (source) =>
+        isApplySiteSourceKind(source.sourceKind) &&
+        selectedSites.has(source.sourceKind)
+    )
+    .map((source) => source.id);
 }
 
 export function parseAutopilotSettingsFormData(

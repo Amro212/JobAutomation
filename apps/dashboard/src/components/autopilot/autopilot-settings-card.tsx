@@ -13,6 +13,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { sourceIdsForApplySites } from '@/lib/autopilot-settings-form';
 import { cn } from '@/lib/utils';
 
 type SiteKey = 'greenhouse' | 'lever' | 'ashby';
@@ -180,11 +181,17 @@ export function AutopilotSettingsCard({
   }
 
   function toggleSite(siteKey: SiteKey): void {
-    setSelectedSiteKeys((current) =>
-      current.includes(siteKey)
-        ? current.filter((key) => key !== siteKey)
-        : [...current, siteKey]
+    setApplySites(
+      selectedSiteKeys.includes(siteKey)
+        ? selectedSiteKeys.filter((key) => key !== siteKey)
+        : [...selectedSiteKeys, siteKey]
     );
+  }
+
+  function setApplySites(siteKeys: SiteKey[]): void {
+    setSelectedSiteKeys(siteKeys);
+    setSourceScope('custom');
+    setSelectedSourceIds(sourceIdsForApplySites(enabledSources, siteKeys));
   }
 
   return (
@@ -432,7 +439,7 @@ export function AutopilotSettingsCard({
                 size="sm"
                 className="cursor-pointer"
                 onClick={() =>
-                  setSelectedSiteKeys(siteKeys.map((site) => site.value))
+                  setApplySites(siteKeys.map((site) => site.value))
                 }
               >
                 Select all
@@ -442,7 +449,7 @@ export function AutopilotSettingsCard({
                 variant="ghost"
                 size="sm"
                 className="cursor-pointer"
-                onClick={() => setSelectedSiteKeys([])}
+                onClick={() => setApplySites([])}
               >
                 Clear
               </Button>
