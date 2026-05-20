@@ -17,6 +17,7 @@ export const registerDiscoveryExecutionPlugin = fp(async (app) => {
     artifactsRepository: app.repositories.artifacts,
     artifactsRootDir: join(dirname(app.config.JOB_AUTOMATION_DB_PATH), 'artifacts'),
     jobsRepository: app.repositories.jobs,
+    sourcesRepository: app.repositories.discoverySources,
     runsRepository: app.repositories.discoveryRuns,
     logEventsRepository: app.repositories.logEvents,
     greenhouseBaseUrl: app.config.GREENHOUSE_API_BASE_URL,

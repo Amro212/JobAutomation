@@ -1,4 +1,5 @@
 import { leverJobsResponseSchema, type LeverJob } from './lever-types';
+import { InvalidDiscoverySourceError, isInvalidDiscoverySourceStatus } from '../../errors';
 
 export type FetchLeverJobsInput = {
   companyHandle: string;
@@ -12,9 +13,11 @@ export async function fetchLeverJobs(input: FetchLeverJobsInput): Promise<LeverJ
   const response = await fetchImpl(requestUrl);
 
   if (!response.ok) {
-    throw new Error(
-      `Lever request failed for company ${input.companyHandle} with status ${response.status}.`
-    );
+    const message = `Lever request failed for company ${input.companyHandle} with status ${response.status}.`;
+    if (isInvalidDiscoverySourceStatus(response.status)) {
+      throw new InvalidDiscoverySourceError(message, response.status);
+    }
+    throw new Error(message);
   }
 
   return leverJobsResponseSchema.parse(await response.json());

@@ -12,7 +12,7 @@ import {
 } from '@jobautomation/core';
 
 import type { JobAutomationDatabase } from '../client';
-import { discoverySourcesTable } from '../schema';
+import { discoveryRunsTable, discoverySourcesTable } from '../schema';
 
 function mapDiscoverySource(record: typeof discoverySourcesTable.$inferSelect): DiscoverySourceRecord {
   return discoverySourceRecordSchema.parse(record);
@@ -116,5 +116,18 @@ export class DiscoverySourcesRepository {
       .where(eq(discoverySourcesTable.id, id));
 
     return discoverySourceRecordSchema.parse(record);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    await this.db
+      .update(discoveryRunsTable)
+      .set({ discoverySourceId: null })
+      .where(eq(discoveryRunsTable.discoverySourceId, id));
+
+    const result = await this.db
+      .delete(discoverySourcesTable)
+      .where(eq(discoverySourcesTable.id, id));
+
+    return result.rowsAffected > 0;
   }
 }

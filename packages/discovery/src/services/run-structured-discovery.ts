@@ -1,10 +1,12 @@
 import type { DiscoveryRunRecord, DiscoverySourceRecord, LogLevel } from '@jobautomation/core';
 import type {
   DiscoveryRunsRepository,
+  DiscoverySourcesRepository,
   JobsRepository,
   LogEventsRepository
 } from '@jobautomation/db';
 
+import { isInvalidDiscoverySourceError } from '../errors';
 import { ingestJobsIntoRun } from './ingest-jobs';
 import { loadDiscoverySourceJobs } from './run-discovery-source';
 import { upsertDiscoveryRun } from './upsert-discovery-run';
@@ -12,6 +14,7 @@ import { upsertDiscoveryRun } from './upsert-discovery-run';
 export type RunStructuredDiscoveryInput = {
   run: DiscoveryRunRecord;
   sources: DiscoverySourceRecord[];
+  sourcesRepository: DiscoverySourcesRepository;
   jobsRepository: JobsRepository;
   runsRepository: DiscoveryRunsRepository;
   logEventsRepository: LogEventsRepository;
@@ -55,6 +58,7 @@ export async function runStructuredDiscovery(
   let newJobCount = 0;
   let updatedJobCount = 0;
   const failures: string[] = [];
+  let removedSourceCount = 0;
   let successfulSourceCount = 0;
 
   for (const source of input.sources) {
@@ -121,6 +125,24 @@ export async function runStructuredDiscovery(
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown discovery source error.';
+      if (isInvalidDiscoverySourceError(error)) {
+        await input.sourcesRepository.delete(source.id);
+        removedSourceCount += 1;
+        await logRunEvent(
+          input.logEventsRepository,
+          input.run.id,
+          'warn',
+          `Removed invalid ${source.sourceKind} source ${source.label}.`,
+          {
+            ...details,
+            errorMessage: message,
+            statusCode: error.statusCode,
+            removedDiscoverySource: true
+          }
+        );
+        continue;
+      }
+
       failures.push(`${source.label}: ${message}`);
       await logRunEvent(
         input.logEventsRepository,
@@ -161,7 +183,8 @@ export async function runStructuredDiscovery(
       jobCount,
       newJobCount,
       updatedJobCount,
-      failureCount: failures.length
+      failureCount: failures.length,
+      removedSourceCount
     }
   );
 

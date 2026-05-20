@@ -203,6 +203,7 @@ export class AutopilotQueueService {
           await this.runStructuredDiscoveryImpl({
             run: discoveryRun,
             sources: input.sources,
+            sourcesRepository: this.input.repositories.discoverySources,
             jobsRepository: this.input.repositories.jobs,
             runsRepository: this.input.repositories.discoveryRuns,
             logEventsRepository: this.input.repositories.logEvents,

@@ -58,6 +58,7 @@ describe('runStructuredDiscovery', () => {
     await migrate(db, { migrationsFolder });
 
     const runsRepository = new DiscoveryRunsRepository(db);
+    const sourcesRepository = new DiscoverySourcesRepository(db);
     const jobsRepository = new JobsRepository(db);
     const logEventsRepository = new LogEventsRepository(db);
 
@@ -68,29 +69,24 @@ describe('runStructuredDiscovery', () => {
       status: 'pending'
     });
 
-    const greenhouseSource = {
-      id: 'source-greenhouse',
-      sourceKind: 'greenhouse' as const,
+    const greenhouseSource = await sourcesRepository.upsert({
+      sourceKind: 'greenhouse',
       sourceKey: 'acme',
       label: 'Acme Corp',
-      enabled: true,
-      createdAt: new Date('2026-03-14T00:00:00.000Z'),
-      updatedAt: new Date('2026-03-14T00:00:00.000Z')
-    };
+      enabled: true
+    });
 
-    const leverSource = {
-      id: 'source-lever',
-      sourceKind: 'lever' as const,
+    const leverSource = await sourcesRepository.upsert({
+      sourceKind: 'lever',
       sourceKey: 'broken',
       label: 'Broken Lever',
-      enabled: true,
-      createdAt: new Date('2026-03-14T00:00:00.000Z'),
-      updatedAt: new Date('2026-03-14T00:00:00.000Z')
-    };
+      enabled: true
+    });
 
     const finalRun = await runStructuredDiscovery({
       run,
       sources: [greenhouseSource, leverSource],
+      sourcesRepository,
       jobsRepository,
       runsRepository,
       logEventsRepository,
@@ -130,6 +126,69 @@ describe('runStructuredDiscovery', () => {
       'Failed lever source Broken Lever.',
       'Completed discovery run with source failures.'
     ]);
+  });
+
+  test('removes invalid structured sources when their feed is gone', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const runsRepository = new DiscoveryRunsRepository(db);
+    const sourcesRepository = new DiscoverySourcesRepository(db);
+    const jobsRepository = new JobsRepository(db);
+    const logEventsRepository = new LogEventsRepository(db);
+
+    const run = await runsRepository.create({
+      sourceKind: 'structured',
+      runKind: 'structured',
+      triggerKind: 'manual',
+      status: 'pending'
+    });
+
+    const source = await sourcesRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceKey: 'gone-company',
+      label: 'Gone Company',
+      enabled: true
+    });
+    const historicalRun = await runsRepository.create({
+      sourceKind: 'greenhouse',
+      runKind: 'single-source',
+      triggerKind: 'manual',
+      discoverySourceId: source.id,
+      status: 'completed'
+    });
+
+    const finalRun = await runStructuredDiscovery({
+      run,
+      sources: [source],
+      sourcesRepository,
+      jobsRepository,
+      runsRepository,
+      logEventsRepository,
+      greenhouseBaseUrl: 'https://boards-api.greenhouse.io/v1/boards',
+      leverBaseUrl: 'https://api.lever.co/v0/postings',
+      ashbyBaseUrl: 'https://api.ashbyhq.com/posting-api/job-board',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ message: 'not found' }), {
+          status: 404,
+          headers: {
+            'content-type': 'application/json'
+          }
+        })
+    });
+
+    const remainingSource = await sourcesRepository.findById(source.id);
+    const storedHistoricalRun = await runsRepository.findById(historicalRun.id);
+    const logs = await logEventsRepository.listByDiscoveryRun(run.id);
+
+    expect(finalRun.status).toBe('completed');
+    expect(remainingSource).toBeNull();
+    expect(storedHistoricalRun?.discoverySourceId).toBeNull();
+    expect(logs.map((entry) => entry.message)).toContain(
+      'Removed invalid greenhouse source Gone Company.'
+    );
   });
 
   test('creates a pending retry run and logs the request', async () => {
