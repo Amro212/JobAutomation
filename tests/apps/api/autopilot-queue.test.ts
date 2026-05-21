@@ -542,15 +542,15 @@ describe('autopilot queue service', () => {
     });
     expect(childRuns).toHaveLength(2);
     expect(callCount).toBe(2);
-    expect(runApplicationStub.mock.calls[0]?.[0]).not.toHaveProperty(
-      'leaveBrowserOpenOnPause'
-    );
-    expect(runApplicationStub.mock.calls[1]?.[0]).not.toHaveProperty(
-      'leaveBrowserOpenOnPause'
-    );
+    expect(runApplicationStub.mock.calls[0]?.[0]).toMatchObject({
+      leaveBrowserOpenOnPause: false
+    });
+    expect(runApplicationStub.mock.calls[1]?.[0]).toMatchObject({
+      leaveBrowserOpenOnPause: false
+    });
   });
 
-  test('skips jobs with prior failed, paused, or completed application runs', async () => {
+  test('excludes completed applications from the pool and retries failed or paused ones', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);
     trackedClients.push(db.$client);
@@ -720,19 +720,23 @@ describe('autopilot queue service', () => {
       autopilotRun.id
     );
 
+    const failedJob = await repositories.jobs.findBySource('greenhouse', 'job-failed');
+    const pausedJob = await repositories.jobs.findBySource('greenhouse', 'job-paused');
+    const freshJob = await repositories.jobs.findBySource('greenhouse', 'job-fresh');
+
     expect(runPlaywrightDiscoveryStub).not.toHaveBeenCalled();
-    expect(generateArtifactsStub).toHaveBeenCalledTimes(1);
-    expect(runApplicationStub).toHaveBeenCalledTimes(1);
-    expect(runApplicationStub.mock.calls[0]?.[0]).toMatchObject({
-      jobId: (await repositories.jobs.findBySource('greenhouse', 'job-fresh'))?.id
-    });
-    expect(childRuns).toHaveLength(1);
+    expect(generateArtifactsStub).toHaveBeenCalledTimes(3);
+    expect(runApplicationStub).toHaveBeenCalledTimes(3);
+    expect(runApplicationStub.mock.calls.map((call) => call[0]?.jobId)).toEqual(
+      expect.arrayContaining([failedJob?.id, pausedJob?.id, freshJob?.id])
+    );
+    expect(childRuns).toHaveLength(3);
     expect(storedRun).toMatchObject({
       status: 'completed',
-      discoveredJobCount: 4,
-      eligibleJobCount: 1,
-      skippedJobCount: 3,
-      submittedCount: 1,
+      discoveredJobCount: 3,
+      eligibleJobCount: 3,
+      skippedJobCount: 0,
+      submittedCount: 3,
       blockedCount: 0,
       failedCount: 0
     });

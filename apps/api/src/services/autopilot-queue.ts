@@ -12,7 +12,6 @@ import type { AppEnv } from '@jobautomation/config';
 import type {
   AutopilotConfig,
   DiscoverySourceRecord,
-  JobListFilters,
   JobRecord
 } from '@jobautomation/core';
 import type {
@@ -23,7 +22,7 @@ import type { OpenRouterConfig } from '@jobautomation/llm';
 
 import { generateJobArtifactsForJob } from './generate-job-artifacts';
 import { reviewJobMatchWithLlm } from './job-match-llm-review';
-import { defaultJobListFiltersFromApplicant } from './jobs-tab-filters';
+import { autopilotJobPoolFilters } from './jobs-tab-filters';
 import { recomputeJobPrefilterMatches } from './job-prefilter-recompute';
 
 export type QueueAutopilotRunInput = {
@@ -54,28 +53,6 @@ function discoverySourcesForConfig(
   return sources.filter((source) => selectedIds.has(source.id));
 }
 
-function jobsFiltersForConfig(
-  defaultFilters: JobListFilters,
-  config: AutopilotConfig
-): JobListFilters {
-  const merged = {
-    ...defaultFilters,
-    ...config.jobFilters
-  };
-
-  if (defaultFilters.matchProfile === 'me') {
-    merged.matchProfile = 'me';
-  } else if (config.matchProfile) {
-    merged.matchProfile = config.matchProfile;
-  }
-
-  if (defaultFilters.locationCountries && defaultFilters.locationCountries.length > 0) {
-    merged.locationCountries = defaultFilters.locationCountries;
-  }
-
-  return merged;
-}
-
 function shouldSkipDiscovery(
   latestCompletedAt: Date | null,
   config: AutopilotConfig
@@ -95,18 +72,12 @@ function shouldSkipDiscovery(
   return latestCompletedAt > cutoff;
 }
 
-async function jobAlreadySubmitted(
+async function jobHasCompletedApplication(
   repositories: ApiRepositories,
-  job: JobRecord
+  jobId: string
 ): Promise<boolean> {
-  if (job.status === 'applied') {
-    return true;
-  }
-
-  const runs = await repositories.applicationRuns.listByJob(job.id);
-  return runs.some((run) =>
-    ['failed', 'paused', 'completed'].includes(run.status)
-  );
+  const runs = await repositories.applicationRuns.listByJob(jobId);
+  return runs.some((run) => run.status === 'completed');
 }
 
 function latestPdfArtifact(
@@ -315,15 +286,18 @@ export class AutopilotQueueService {
         currentStep: 'prefilter_completed'
       });
 
-      const jobsTabFilters = jobsFiltersForConfig(
-        defaultJobListFiltersFromApplicant(profile),
-        input.config
-      );
+      const jobsTabFilters = autopilotJobPoolFilters(profile, input.config);
       const { jobs } = await this.input.repositories.jobs.list(jobsTabFilters);
+      const poolJobs: JobRecord[] = [];
+      for (const job of jobs) {
+        if (!(await jobHasCompletedApplication(this.input.repositories, job.id))) {
+          poolJobs.push(job);
+        }
+      }
       const selectedJobs =
         input.config.maxJobsPerRun === null
-          ? jobs
-          : jobs.slice(0, input.config.maxJobsPerRun);
+          ? poolJobs
+          : poolJobs.slice(0, input.config.maxJobsPerRun);
       const discoveredJobCount = selectedJobs.length;
       let eligibleJobCount = 0;
       let skippedJobCount = 0;
@@ -343,16 +317,7 @@ export class AutopilotQueueService {
 
         const matchedSite = activeApplicationSites.find((site) => site.supports(job));
         const supported = Boolean(matchedSite);
-        const alreadySubmitted = await jobAlreadySubmitted(
-          this.input.repositories,
-          job
-        );
-        const skipReason = !supported
-          ? 'unsupported_site'
-          : alreadySubmitted
-            ? 'already_submitted'
-            : null;
-        if (skipReason) {
+        if (!supported) {
           skippedJobCount += 1;
           await this.updateCounts(run.id, {
             discoveredJobCount,
@@ -450,6 +415,9 @@ export class AutopilotQueueService {
             artifactsRepository: this.input.repositories.artifacts,
             logEventsRepository: this.input.repositories.logEvents,
             siteFlows: activeApplicationSites,
+            // Batch autopilot must close headed browsers on pause so the next job
+            // can reuse the same persistent profile without spawning empty windows.
+            leaveBrowserOpenOnPause: false,
             openRouter: openRouterConfigForModel(
               this.input.config,
               this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
