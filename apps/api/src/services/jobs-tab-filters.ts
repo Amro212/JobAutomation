@@ -2,6 +2,7 @@ import {
   prefilterContextFromApplicant,
   prefilterMatchesMeaningful,
   type ApplicantProfile,
+  type AutopilotConfig,
   type JobListFilters
 } from '@jobautomation/core';
 
@@ -18,4 +19,32 @@ export function defaultJobListFiltersFromApplicant(
       ? { locationCountries: preferredCountries }
       : {})
   };
+}
+
+/**
+ * Apply batch job pool: Jobs tab "My matches" filters plus discovered-only rows
+ * (the actionable queue — excludes jobs already marked applied in the list).
+ */
+export function autopilotJobPoolFilters(
+  profile: ApplicantProfile | null,
+  config: AutopilotConfig
+): JobListFilters {
+  const tabDefaults = defaultJobListFiltersFromApplicant(profile);
+  const merged: JobListFilters = {
+    ...tabDefaults,
+    ...config.jobFilters,
+    status: config.jobFilters.status ?? 'discovered'
+  };
+
+  if (tabDefaults.matchProfile === 'me') {
+    merged.matchProfile = 'me';
+  } else if (config.matchProfile) {
+    merged.matchProfile = config.matchProfile;
+  }
+
+  if (tabDefaults.locationCountries && tabDefaults.locationCountries.length > 0) {
+    merged.locationCountries = tabDefaults.locationCountries;
+  }
+
+  return merged;
 }

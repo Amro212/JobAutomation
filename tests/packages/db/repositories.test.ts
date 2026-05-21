@@ -197,7 +197,7 @@ describe('repositories', () => {
     await repository.upsert({
       ...base,
       sourceId: 'job-c',
-      title: 'Developer Tooling Specialist',
+      title: 'Developer Tooling Engineer',
       descriptionText:
         'Build TypeScript, Node.js, and Playwright automation for developer workflows.'
     });
@@ -207,7 +207,12 @@ describe('repositories', () => {
         seniority: 'mid',
         target_titles: ['software engineer'],
         positive_keywords: ['typescript', 'react', 'node.js', 'playwright', 'automation'],
-        negative_keywords: []
+        negative_keywords: [],
+        allowed_role_families: ['engineering'],
+        must_have_keywords: [],
+        nice_to_have_keywords: [],
+        negative_role_terms: [],
+        max_required_years: null
       },
       preferredCountries: []
     };
@@ -221,7 +226,7 @@ describe('repositories', () => {
     expect(me.total).toBe(2);
     expect(me.jobs.map((job) => job.title)).toEqual([
       'Software Engineer',
-      'Developer Tooling Specialist'
+      'Developer Tooling Engineer'
     ]);
     expect(me.jobs[0]?.prefilterScore).toBeGreaterThan(me.jobs[1]?.prefilterScore ?? 0);
   });

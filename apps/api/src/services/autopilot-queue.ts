@@ -12,16 +12,17 @@ import type { AppEnv } from '@jobautomation/config';
 import type {
   AutopilotConfig,
   DiscoverySourceRecord,
-  JobListFilters,
   JobRecord
 } from '@jobautomation/core';
 import type {
   ApiRepositories
 } from '../plugins/db';
 import { runStructuredDiscovery } from '@jobautomation/discovery';
+import type { OpenRouterConfig } from '@jobautomation/llm';
 
 import { generateJobArtifactsForJob } from './generate-job-artifacts';
-import { defaultJobListFiltersFromApplicant } from './jobs-tab-filters';
+import { reviewJobMatchWithLlm } from './job-match-llm-review';
+import { autopilotJobPoolFilters } from './jobs-tab-filters';
 import { recomputeJobPrefilterMatches } from './job-prefilter-recompute';
 
 export type QueueAutopilotRunInput = {
@@ -52,28 +53,6 @@ function discoverySourcesForConfig(
   return sources.filter((source) => selectedIds.has(source.id));
 }
 
-function jobsFiltersForConfig(
-  defaultFilters: JobListFilters,
-  config: AutopilotConfig
-): JobListFilters {
-  const merged = {
-    ...defaultFilters,
-    ...config.jobFilters
-  };
-
-  if (defaultFilters.matchProfile === 'me') {
-    merged.matchProfile = 'me';
-  } else if (config.matchProfile) {
-    merged.matchProfile = config.matchProfile;
-  }
-
-  if (defaultFilters.locationCountries && defaultFilters.locationCountries.length > 0) {
-    merged.locationCountries = defaultFilters.locationCountries;
-  }
-
-  return merged;
-}
-
 function shouldSkipDiscovery(
   latestCompletedAt: Date | null,
   config: AutopilotConfig
@@ -93,18 +72,12 @@ function shouldSkipDiscovery(
   return latestCompletedAt > cutoff;
 }
 
-async function jobAlreadySubmitted(
+async function jobHasCompletedApplication(
   repositories: ApiRepositories,
-  job: JobRecord
+  jobId: string
 ): Promise<boolean> {
-  if (job.status === 'applied') {
-    return true;
-  }
-
-  const runs = await repositories.applicationRuns.listByJob(job.id);
-  return runs.some((run) =>
-    ['failed', 'paused', 'completed'].includes(run.status)
-  );
+  const runs = await repositories.applicationRuns.listByJob(jobId);
+  return runs.some((run) => run.status === 'completed');
 }
 
 function latestPdfArtifact(
@@ -138,12 +111,28 @@ function finalAutopilotStatus(input: {
   return 'failed';
 }
 
+function openRouterConfigForModel(
+  config: AppEnv,
+  model: string | undefined
+): OpenRouterConfig | null {
+  if (!config.OPENROUTER_API_KEY || !model) {
+    return null;
+  }
+
+  return {
+    apiKey: config.OPENROUTER_API_KEY,
+    baseUrl: config.OPENROUTER_API_BASE_URL,
+    model
+  };
+}
+
 export class AutopilotQueueService {
   private readonly queue: PQueue;
   private readonly runStructuredDiscoveryImpl: typeof runStructuredDiscovery;
   private readonly runPlaywrightDiscoveryImpl: typeof runPlaywrightDiscovery;
   private readonly generateArtifactsImpl: typeof generateJobArtifactsForJob;
   private readonly runApplicationImpl: typeof runApplication;
+  private readonly reviewJobMatchImpl: typeof reviewJobMatchWithLlm;
   private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(
@@ -154,6 +143,7 @@ export class AutopilotQueueService {
       runPlaywrightDiscoveryImpl?: typeof runPlaywrightDiscovery;
       generateArtifactsImpl?: typeof generateJobArtifactsForJob;
       runApplicationImpl?: typeof runApplication;
+      reviewJobMatchImpl?: typeof reviewJobMatchWithLlm;
     }
   ) {
     this.queue = new PQueue({ concurrency: 1 });
@@ -164,6 +154,7 @@ export class AutopilotQueueService {
     this.generateArtifactsImpl =
       input.generateArtifactsImpl ?? generateJobArtifactsForJob;
     this.runApplicationImpl = input.runApplicationImpl ?? runApplication;
+    this.reviewJobMatchImpl = input.reviewJobMatchImpl ?? reviewJobMatchWithLlm;
   }
 
   enqueueRun(input: QueueAutopilotRunInput): void {
@@ -295,15 +286,18 @@ export class AutopilotQueueService {
         currentStep: 'prefilter_completed'
       });
 
-      const jobsTabFilters = jobsFiltersForConfig(
-        defaultJobListFiltersFromApplicant(profile),
-        input.config
-      );
+      const jobsTabFilters = autopilotJobPoolFilters(profile, input.config);
       const { jobs } = await this.input.repositories.jobs.list(jobsTabFilters);
+      const poolJobs: JobRecord[] = [];
+      for (const job of jobs) {
+        if (!(await jobHasCompletedApplication(this.input.repositories, job.id))) {
+          poolJobs.push(job);
+        }
+      }
       const selectedJobs =
         input.config.maxJobsPerRun === null
-          ? jobs
-          : jobs.slice(0, input.config.maxJobsPerRun);
+          ? poolJobs
+          : poolJobs.slice(0, input.config.maxJobsPerRun);
       const discoveredJobCount = selectedJobs.length;
       let eligibleJobCount = 0;
       let skippedJobCount = 0;
@@ -323,16 +317,39 @@ export class AutopilotQueueService {
 
         const matchedSite = activeApplicationSites.find((site) => site.supports(job));
         const supported = Boolean(matchedSite);
-        const alreadySubmitted = await jobAlreadySubmitted(
-          this.input.repositories,
-          job
-        );
-        const skipReason = !supported
-          ? 'unsupported_site'
-          : alreadySubmitted
-            ? 'already_submitted'
-            : null;
-        if (skipReason) {
+        if (!supported) {
+          skippedJobCount += 1;
+          await this.updateCounts(run.id, {
+            discoveredJobCount,
+            eligibleJobCount,
+            skippedJobCount,
+            submittedCount,
+            blockedCount,
+            failedCount
+          });
+          continue;
+        }
+
+        const matchReview = await this.reviewJobMatchImpl({
+          job,
+          applicantProfile: profile,
+          openRouter: openRouterConfigForModel(
+            this.input.config,
+            this.input.config.OPENROUTER_JOB_SUMMARY_MODEL ??
+              this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL
+          )
+        });
+
+        if (matchReview.reviewed) {
+          await this.input.repositories.jobs.updatePrefilterResult(job.id, {
+            pass: matchReview.pass,
+            score: matchReview.score,
+            reasons: matchReview.reasons,
+            audit: matchReview.audit
+          });
+        }
+
+        if (!matchReview.pass) {
           skippedJobCount += 1;
           await this.updateCounts(run.id, {
             discoveredJobCount,
@@ -398,15 +415,14 @@ export class AutopilotQueueService {
             artifactsRepository: this.input.repositories.artifacts,
             logEventsRepository: this.input.repositories.logEvents,
             siteFlows: activeApplicationSites,
-            openRouter: this.input.config.OPENROUTER_API_KEY
-              ? {
-                  apiKey: this.input.config.OPENROUTER_API_KEY,
-                  baseUrl: this.input.config.OPENROUTER_API_BASE_URL,
-                  model:
-                    this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
-                    this.input.config.OPENROUTER_JOB_SUMMARY_MODEL!
-                }
-              : null,
+            // Batch autopilot must close headed browsers on pause so the next job
+            // can reuse the same persistent profile without spawning empty windows.
+            leaveBrowserOpenOnPause: false,
+            openRouter: openRouterConfigForModel(
+              this.input.config,
+              this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
+                this.input.config.OPENROUTER_JOB_SUMMARY_MODEL
+            ),
             artifactsRootDir: join(
               dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
               'artifacts'

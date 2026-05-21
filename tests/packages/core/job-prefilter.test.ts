@@ -22,7 +22,12 @@ function profile(p: Partial<JobKeywordProfile> & Pick<JobKeywordProfile, 'senior
     target_titles: p.target_titles ?? [],
     positive_keywords: p.positive_keywords ?? [],
     negative_keywords: p.negative_keywords ?? [],
-    seniority: p.seniority
+    seniority: p.seniority,
+    allowed_role_families: p.allowed_role_families ?? ['engineering'],
+    must_have_keywords: p.must_have_keywords ?? [],
+    nice_to_have_keywords: p.nice_to_have_keywords ?? [],
+    negative_role_terms: p.negative_role_terms ?? [],
+    max_required_years: p.max_required_years ?? null
   };
 }
 
@@ -58,14 +63,14 @@ describe('prefilterJob', () => {
       }
     );
     expect(r.pass).toBe(false);
-    expect(r.reasons).toEqual(['low_match_score']);
+    expect(r.reasons).toContain('role_family_mismatch');
   });
 
   test('keeps strong description matches even when the title is not an exact target title', () => {
     const r = prefilterJob(
       {
         ...baseJob,
-        title: 'Developer Tooling Specialist',
+        title: 'Developer Tooling Engineer',
         descriptionText:
           'Build TypeScript, Node.js, and Playwright automation for a job application platform.'
       },
@@ -102,7 +107,7 @@ describe('prefilterJob', () => {
     );
 
     expect(r.pass).toBe(false);
-    expect(r.reasons).toEqual(['low_match_score']);
+    expect(r.reasons).toContain('role_family_mismatch');
     expect(r.score).toBeLessThan(45);
   });
 
@@ -180,7 +185,7 @@ describe('prefilterJob', () => {
 
   test('passes title when a positive keyword matches', () => {
     const r = prefilterJob(
-      { ...baseJob, title: 'Staff Designer — TypeScript design systems' },
+      { ...baseJob, title: 'TypeScript Developer' },
       {
         jobKeywordProfile: profile({
           seniority: 'senior',
@@ -204,10 +209,10 @@ describe('prefilterJob', () => {
     };
     expect(
       prefilterJob({ ...baseJob, title: 'Workplace Manager' }, ctx).reasons
-    ).toEqual(['low_match_score']);
+    ).toContain('role_family_mismatch');
     expect(
       prefilterJob({ ...baseJob, title: 'Social Marketing Manager' }, ctx).reasons
-    ).toEqual(['low_match_score']);
+    ).toContain('role_family_mismatch');
     expect(prefilterJob({ ...baseJob, title: 'C Developer' }, ctx).pass).toBe(true);
   });
 
@@ -317,6 +322,95 @@ describe('prefilterJob', () => {
       }
     );
     expect(r.reasons).not.toContain('experience_min_years');
+  });
+
+  test.each([
+    ['Revenue Operations Analyst', 'Own CRM data quality, GTM reporting, revenue operations automation, SQL, and AI workflows.'],
+    ['Office Coordinator', 'Coordinate a software company office while supporting automation, product, and engineering teams.'],
+    ['People Operations Coordinator', 'Support people operations systems, onboarding workflows, analytics, and internal tools.'],
+    ['Compliance Officer - North America', 'Use automation systems and dashboards to manage compliance programs.'],
+    ['Chief Operating Officer - Canada', 'Translate strategy into execution for a software consulting business.']
+  ])('rejects wrong role family "%s" despite technical text', (title, descriptionText) => {
+    const r = prefilterJob(
+      { ...baseJob, title, descriptionText },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer', 'software developer', 'automation engineer'],
+          positive_keywords: ['typescript', 'python', 'automation', 'ai workflows', 'sql']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(false);
+    expect(r.reasons).toContain('role_family_mismatch');
+  });
+
+  test('rejects new-grad engineering roles with hard over-level year requirements', () => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Software Engineer - Full Stack',
+        descriptionText: 'Build React and Node.js systems. Requirements: 5+ years of software engineering experience.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer'],
+          positive_keywords: ['react', 'node.js', 'typescript']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(false);
+    expect(r.reasons).toContain('experience_min_years');
+  });
+
+  test('allows a strong new-grad engineering role with entry-level evidence', () => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Associate Software Engineer',
+        descriptionText:
+          'Entry-level role for new graduates building TypeScript, React, and Node.js product features.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer', 'frontend developer', 'backend developer'],
+          positive_keywords: ['typescript', 'react', 'node.js']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(true);
+    expect(r.score).toBeGreaterThanOrEqual(60);
+    expect(r.signals).toContain('role_family_fit');
+  });
+
+  test('flags a 3+ years new-grad engineering role as borderline instead of hard rejecting', () => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Software Engineer I',
+        descriptionText:
+          'Build TypeScript backend services and APIs. Preferred: 3+ years of professional software engineering experience.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer', 'backend developer'],
+          positive_keywords: ['typescript', 'api', 'backend']
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(true);
+    expect(r.signals).toContain('llm_review_recommended');
   });
 });
 

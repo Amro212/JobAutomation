@@ -4,6 +4,7 @@ import { and, count, desc, eq, isNull, like, or, sql } from 'drizzle-orm';
 
 import {
   buildLocationLikePatterns,
+  JOB_MATCHER_VERSION,
   jobListItemSchema,
   jobRecordSchema,
   prefilterJob,
@@ -115,14 +116,27 @@ export class JobsRepository {
   }
 
   /** Jobs with no cached pre-filter result yet (e.g. new row or invalidated). */
-  async prefilterCacheStats(): Promise<{ jobCount: number; nullPrefilterCount: number }> {
+  async prefilterCacheStats(): Promise<{
+    jobCount: number;
+    nullPrefilterCount: number;
+    stalePrefilterCount: number;
+  }> {
     const [{ total: jobCount }] = await this.db.select({ total: count() }).from(jobsTable);
     const [{ total: nullPrefilterCount }] = await this.db
       .select({ total: count() })
       .from(jobsTable)
       .where(isNull(jobsTable.prefilterPass));
+    const [{ total: stalePrefilterCount }] = await this.db
+      .select({ total: count() })
+      .from(jobsTable)
+      .where(
+        or(
+          isNull(jobsTable.prefilterSignalsJson),
+          sql`${jobsTable.prefilterSignalsJson} not like ${`%"matcherVersion":"${JOB_MATCHER_VERSION}"%`}`
+        )
+      );
 
-    return { jobCount, nullPrefilterCount };
+    return { jobCount, nullPrefilterCount, stalePrefilterCount };
   }
 
   async recomputePrefilterForAllJobs(ctx: PrefilterContext): Promise<number> {
@@ -157,7 +171,7 @@ export class JobsRepository {
               prefilterPass: result.pass ? 1 : 0,
               prefilterScore: result.score,
               prefilterReasonsJson: JSON.stringify(result.reasons),
-              prefilterSignalsJson: JSON.stringify(result.signals)
+              prefilterSignalsJson: JSON.stringify(result.audit)
             })
             .where(eq(jobsTable.id, row.id));
           evaluated += 1;
@@ -168,6 +182,29 @@ export class JobsRepository {
     }
 
     return evaluated;
+  }
+
+  async updatePrefilterResult(
+    id: string,
+    input: {
+      pass: boolean;
+      score: number;
+      reasons: string[];
+      audit: unknown;
+    }
+  ): Promise<JobRecord | null> {
+    await this.db
+      .update(jobsTable)
+      .set({
+        prefilterPass: input.pass ? 1 : 0,
+        prefilterScore: input.score,
+        prefilterReasonsJson: JSON.stringify(input.reasons),
+        prefilterSignalsJson: JSON.stringify(input.audit),
+        updatedAt: new Date()
+      })
+      .where(eq(jobsTable.id, id));
+
+    return this.findById(id);
   }
 
   async list(

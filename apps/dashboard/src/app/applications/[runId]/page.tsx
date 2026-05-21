@@ -20,6 +20,21 @@ type ParsedLogDetails = Record<string, unknown> & {
   event?: string;
 };
 
+type MatchAudit = {
+  decision?: string;
+  score?: number;
+  reasons?: string[];
+  signals?: string[];
+  roleFamily?: { name?: string; matched?: boolean };
+  evidence?: { matchedKeywords?: string[]; missingMustHaveKeywords?: string[] };
+  seniority?: {
+    profile?: string | null;
+    minYearsRequired?: number | null;
+    softExperienceCap?: boolean;
+  };
+  llm?: { reviewed?: boolean; pass?: boolean | null; rationale?: string | null };
+};
+
 function statusVariant(status: string) {
   switch (status) {
     case 'completed':
@@ -120,6 +135,32 @@ function parseLogDetails(detailsJson: string | null): ParsedLogDetails | null {
   }
 }
 
+function parseMatchAudit(raw: string | null): MatchAudit | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return { signals: parsed.filter((value): value is string => typeof value === 'string') };
+    }
+    return parsed && typeof parsed === 'object' ? (parsed as MatchAudit) : null;
+  } catch {
+    return null;
+  }
+}
+
+function matchDecision(
+  prefilterPass: boolean | null,
+  audit: MatchAudit | null
+): 'pass' | 'reject' | 'unknown' {
+  if (prefilterPass != null) {
+    return prefilterPass ? 'pass' : 'reject';
+  }
+
+  return audit?.decision === 'pass' || audit?.decision === 'reject'
+    ? audit.decision
+    : 'unknown';
+}
+
 function failedAutomationErrorMessage(detail: Awaited<ReturnType<typeof getApplicationRun>>): string | null {
   if (!detail || detail.run.status !== 'failed') {
     return null;
@@ -175,6 +216,8 @@ export default async function ApplicationRunDetailPage({
   const detail = await getApplicationRun(runId);
   const blockedLabels = blockedFieldLabels(detail);
   const automationFailureMessage = failedAutomationErrorMessage(detail);
+  const matchAudit = parseMatchAudit(detail?.job.prefilterSignalsJson ?? null);
+  const decision = matchDecision(detail?.job.prefilterPass ?? null, matchAudit);
 
   if (!detail) {
     return (
@@ -268,6 +311,27 @@ export default async function ApplicationRunDetailPage({
           <p className="mt-2 text-sm text-muted-foreground">
             Prefilter reasons: {detail.run.prefilterReasons.join(', ')}
           </p>
+        ) : null}
+        {matchAudit ? (
+          <div className="mt-3 rounded-md border border-amber-200 bg-white/60 px-3 py-2 text-sm text-muted-foreground">
+            <p>
+              Match: {decision}
+              {detail.job.prefilterScore != null || matchAudit.score != null
+                ? `, score ${detail.job.prefilterScore ?? matchAudit.score}`
+                : ''}
+              {matchAudit.roleFamily?.name ? `, role ${matchAudit.roleFamily.name}` : ''}
+              {matchAudit.seniority?.profile ? `, seniority ${matchAudit.seniority.profile}` : ''}
+            </p>
+            {matchAudit.evidence?.matchedKeywords?.length ? (
+              <p className="mt-1">Matched: {matchAudit.evidence.matchedKeywords.join(', ')}</p>
+            ) : null}
+            {matchAudit.llm?.reviewed ? (
+              <p className="mt-1">
+                LLM {matchAudit.llm.pass ? 'passed' : 'vetoed'}
+                {matchAudit.llm.rationale ? `: ${matchAudit.llm.rationale}` : ''}
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {blockedLabels.length > 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">

@@ -16,6 +16,72 @@ import {
   updateJobReview,
 } from '@/lib/api';
 
+type MatchAudit = {
+  decision?: string;
+  score?: number;
+  reasons?: string[];
+  signals?: string[];
+  roleFamily?: { name?: string; matched?: boolean };
+  evidence?: {
+    matchedKeywords?: string[];
+    matchedSkills?: string[];
+    missingMustHaveKeywords?: string[];
+  };
+  seniority?: {
+    profile?: string | null;
+    earlyCareerSignal?: boolean;
+    minYearsRequired?: number | null;
+    softExperienceCap?: boolean;
+  };
+  llm?: {
+    reviewed?: boolean;
+    pass?: boolean | null;
+    rationale?: string | null;
+    reasonCodes?: string[];
+  };
+};
+
+function parseMatchAudit(raw: string | null): MatchAudit | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return { signals: parsed.filter((value): value is string => typeof value === 'string') };
+    }
+    if (parsed && typeof parsed === 'object') {
+      return parsed as MatchAudit;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function parseStringArray(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function matchDecision(
+  prefilterPass: boolean | null,
+  audit: MatchAudit | null
+): 'pass' | 'reject' | 'unknown' {
+  if (prefilterPass != null) {
+    return prefilterPass ? 'pass' : 'reject';
+  }
+
+  return audit?.decision === 'pass' || audit?.decision === 'reject'
+    ? audit.decision
+    : 'unknown';
+}
+
 function buildJobDetailHref(
   jobId: string,
   values: Record<string, string>
@@ -58,6 +124,11 @@ export default async function JobDetailPage({
   }
 
   const artifacts = await getJobArtifacts(jobId);
+  const matchAudit = parseMatchAudit(job.prefilterSignalsJson);
+  const prefilterReasons = parseStringArray(job.prefilterReasonsJson);
+  const auditReasons = matchAudit?.reasons ?? [];
+  const displayReasons = prefilterReasons.length > 0 ? prefilterReasons : auditReasons;
+  const decision = matchDecision(job.prefilterPass, matchAudit);
 
   async function saveReviewAction(formData: FormData): Promise<void> {
     'use server';
@@ -256,6 +327,63 @@ export default async function JobDetailPage({
             <dd className="mt-1 text-sm capitalize">{job.remoteType}</dd>
           </div>
         </dl>
+        {job.prefilterPass != null || matchAudit ? (
+          <div className="mt-6 rounded-lg border bg-muted/30 p-4">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Match Audit
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge
+                variant={
+                  decision === 'pass'
+                    ? 'success'
+                    : decision === 'reject'
+                      ? 'secondary'
+                      : 'outline'
+                }
+              >
+                {decision}
+              </Badge>
+              {job.prefilterScore != null || matchAudit?.score != null ? (
+                <Badge variant="outline">score {job.prefilterScore ?? matchAudit?.score}</Badge>
+              ) : null}
+              {matchAudit?.roleFamily?.name ? (
+                <Badge variant="outline">role {matchAudit.roleFamily.name}</Badge>
+              ) : null}
+              {matchAudit?.seniority?.profile ? (
+                <Badge variant="outline">seniority {matchAudit.seniority.profile}</Badge>
+              ) : null}
+              {matchAudit?.seniority?.minYearsRequired != null ? (
+                <Badge variant="outline">{matchAudit.seniority.minYearsRequired}+ years</Badge>
+              ) : null}
+              {matchAudit?.llm?.reviewed ? (
+                <Badge variant={matchAudit.llm.pass ? 'outline' : 'destructive'}>
+                  LLM {matchAudit.llm.pass ? 'passed' : 'vetoed'}
+                </Badge>
+              ) : null}
+            </div>
+            {displayReasons.length > 0 ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Reasons: {displayReasons.join(', ')}
+              </p>
+            ) : null}
+            {matchAudit?.evidence?.matchedKeywords?.length ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Matched keywords: {matchAudit.evidence.matchedKeywords.join(', ')}
+              </p>
+            ) : null}
+            {matchAudit?.evidence?.missingMustHaveKeywords?.length ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Missing must-have: {matchAudit.evidence.missingMustHaveKeywords.join(', ')}
+              </p>
+            ) : null}
+            {matchAudit?.llm?.rationale ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                LLM rationale: {matchAudit.llm.rationale}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="mt-6 whitespace-pre-wrap rounded-lg bg-muted/50 p-4 text-sm leading-6 text-muted-foreground">
           {job.descriptionText ||
             'No description text was captured for this job.'}

@@ -57,6 +57,7 @@ export function JobsTable({
               Location
             </TableHead>
             <TableHead className="w-[85px]">Remote</TableHead>
+            <TableHead className="w-[90px]">Match</TableHead>
             <TableHead className="w-[110px]">Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -77,6 +78,13 @@ export function JobsTable({
                 {job.location || 'Unspecified'}
               </TableCell>
               <TableCell className="capitalize">{job.remoteType}</TableCell>
+              <TableCell>
+                {job.prefilterScore != null ? (
+                  <Badge variant="outline">{job.prefilterScore}</Badge>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
+              </TableCell>
               <TableCell>
                 <Badge variant={statusVariant(job.status)} className="capitalize">
                   {job.status}
