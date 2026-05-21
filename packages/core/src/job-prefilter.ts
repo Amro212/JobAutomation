@@ -5,32 +5,44 @@ import type { JobKeywordProfile, JobKeywordSeniority } from './job-keyword-profi
 import type { JobRecord } from './job';
 import { getCountrySearchTokens } from './location-country-filter';
 
+export const JOB_MATCHER_VERSION = 'hybrid-v2';
+
 export const prefilterReasonSchema = z.enum([
   'title_negative',
   'title_no_match',
+  'role_family_mismatch',
   'location',
   'experience_min_years',
   'seniority_title_mismatch',
+  'llm_veto',
   'low_match_score'
 ]);
 
 export type PrefilterReason = z.infer<typeof prefilterReasonSchema>;
 
 export type MatchSignal =
+  | 'role_family_fit'
   | 'target_title'
   | 'profile_title_overlap'
   | 'profile_term_overlap'
   | 'experience_fit'
+  | 'years_soft_cap'
+  | 'seniority_fit'
   | 'location_fit'
   | 'description_evidence'
+  | 'llm_review_recommended'
   | 'low_match_score';
 
 export type DeterministicMatchProfile = {
   targetTitles: string[];
   positiveKeywords: string[];
   negativeKeywords: string[];
+  mustHaveKeywords: string[];
+  niceToHaveKeywords: string[];
+  negativeRoleTerms: string[];
   seniority: JobKeywordSeniority | null;
   experienceYears: number | null;
+  maxRequiredYears: number | null;
   skills: string[];
   titleTerms: string[];
 };
@@ -70,6 +82,37 @@ export type PrefilterResult = {
   reasons: PrefilterReason[];
   score: number;
   signals: MatchSignal[];
+  audit: PrefilterAudit;
+};
+
+export type PrefilterAudit = {
+  matcherVersion: typeof JOB_MATCHER_VERSION;
+  decision: 'pass' | 'reject';
+  score: number;
+  reasons: PrefilterReason[];
+  signals: MatchSignal[];
+  roleFamily: {
+    name: 'engineering' | 'wrong_role' | 'unknown';
+    matched: boolean;
+  };
+  evidence: {
+    matchedTitleTerms: string[];
+    matchedKeywords: string[];
+    matchedSkills: string[];
+    missingMustHaveKeywords: string[];
+  };
+  seniority: {
+    profile: JobKeywordSeniority | null;
+    earlyCareerSignal: boolean;
+    minYearsRequired: number | null;
+    softExperienceCap: boolean;
+  };
+  llm: {
+    reviewed: boolean;
+    pass: boolean | null;
+    rationale: string | null;
+    reasonCodes: string[];
+  };
 };
 
 /**
@@ -87,9 +130,17 @@ const EXPERIENCE_TOLERANCE_YEARS = 1;
 const MAX_PROFILE_TERMS = 80;
 
 const OVER_LEVEL_TITLE_REGEX =
-  /\b(?:senior|sr\.?|staff|principal|lead|manager|architect)\b/i;
+  /\b(?:senior|sr\.?|staff|principal|lead|manager|architect|director|head|chief|vp)\b/i;
 const EARLY_CAREER_REGEX =
-  /\b(?:new\s+grad(?:uate)?|graduate|intern(?:ship)?|entry[-\s]?level|campus|university|0\s*(?:-|to)\s*2\s+years?|1\+?\s+years?)\b/i;
+  /\b(?:new\s+grad(?:uate)?|graduate|intern(?:ship)?|entry[-\s]?level|early\s+career|campus|university|associate|software\s+engineer\s+i\b|developer\s+i\b|0\s*(?:-|to)\s*2\s+years?|1\+?\s+years?)\b/i;
+
+const ENGINEERING_TITLE_REGEX =
+  /\b(?:(?:software|frontend|front[-\s]?end|backend|back[-\s]?end|full[-\s]?stack|platform|infrastructure|automation|devops|cloud|site reliability|sre|embedded|mobile|android|ios|web|application|api|ai|machine learning|ml)\s+(?:engineer|developer)|(?:engineer|developer)\s*(?:i|1)\b|software\s+(?:engineer|developer)|developer\s+tooling\s+engineer|developer\s+intern|sdet|qa\s+automation|test\s+automation|software\s+engineer\s+in\s+test|quality\s+engineer)\b/i;
+const GENERIC_ENGINEERING_TITLE_REGEX = /\b(?:software|engineer|developer|devops|sdet)\b/i;
+const WRONG_ROLE_TITLE_REGEX =
+  /\b(?:revenue\s+operations|revops|go[-\s]?to[-\s]?market|gtm|sales\s+operations|people\s+operations|people\s+success|office\s+(?:coordinator|manager|administrator)|operations\s+coordinator|program\s+operations|compliance\s+officer|chief\s+operating\s+officer|coo|account\s+executive|customer\s+support|technical\s+support|support\s+specialist|recruiter|human\s+resources|marketing|sales|finance|treasury|accounts?\s+payable)\b/i;
+const GENERIC_WRONG_ROLE_REGEX =
+  /\b(?:coordinator|officer|analyst|consultant|administrator|specialist|scientist|designer)\b/i;
 
 const STOP_WORDS = new Set([
   'a',
@@ -215,28 +266,49 @@ function buildDeterministicMatchProfile(
     ...(keywordProfile?.positive_keywords ?? [])
   ].join('\n');
   const positiveKeywords = uniqueSorted(keywordProfile?.positive_keywords ?? []);
+  const mustHaveKeywords = uniqueSorted(keywordProfile?.must_have_keywords ?? []);
+  const niceToHaveKeywords = uniqueSorted(keywordProfile?.nice_to_have_keywords ?? []);
   const targetTitles = uniqueSorted(keywordProfile?.target_titles ?? []);
-  const profileTerms = uniqueSorted([...extractProfileTerms(profileText), ...positiveKeywords]);
+  const profileTerms = uniqueSorted([
+    ...extractProfileTerms(profileText),
+    ...positiveKeywords,
+    ...mustHaveKeywords,
+    ...niceToHaveKeywords
+  ]);
 
   return {
     targetTitles,
-    positiveKeywords,
-    negativeKeywords: uniqueSorted(keywordProfile?.negative_keywords ?? []),
+    positiveKeywords: uniqueSorted([...positiveKeywords, ...mustHaveKeywords, ...niceToHaveKeywords]),
+    negativeKeywords: uniqueSorted([
+      ...(keywordProfile?.negative_keywords ?? []),
+      ...(keywordProfile?.negative_role_terms ?? [])
+    ]),
+    mustHaveKeywords,
+    niceToHaveKeywords,
+    negativeRoleTerms: uniqueSorted(keywordProfile?.negative_role_terms ?? []),
     seniority: keywordProfile?.seniority ?? null,
     experienceYears: maxImpliedMinYears(profileText) || null,
+    maxRequiredYears: keywordProfile?.max_required_years ?? null,
     skills: profileTerms,
     titleTerms: extractTitleTerms(targetTitles)
   };
 }
 
 function normalizeMatchProfile(ctx: PrefilterContext): DeterministicMatchProfile {
-  return (
+  const profile =
     ctx.matchProfile ??
     buildDeterministicMatchProfile(ctx.jobKeywordProfile, [
       ...(ctx.jobKeywordProfile?.target_titles ?? []),
       ...(ctx.jobKeywordProfile?.positive_keywords ?? [])
-    ].join('\n'))
-  );
+    ].join('\n'));
+
+  return {
+    ...profile,
+    mustHaveKeywords: profile.mustHaveKeywords ?? [],
+    niceToHaveKeywords: profile.niceToHaveKeywords ?? [],
+    negativeRoleTerms: profile.negativeRoleTerms ?? [],
+    maxRequiredYears: profile.maxRequiredYears ?? null
+  };
 }
 
 function hasPositiveMatchCriteria(profile: DeterministicMatchProfile): boolean {
@@ -339,16 +411,67 @@ function passesLocationFilter(
 }
 
 function passesExperienceFilter(descriptionText: string, profile: DeterministicMatchProfile): PrefilterReason | null {
-  if (profile.experienceYears == null) {
+  const implied = maxImpliedMinYears(descriptionText);
+
+  if (implied === 0) {
     return null;
   }
 
-  const implied = maxImpliedMinYears(descriptionText);
-  if (implied > profile.experienceYears + EXPERIENCE_TOLERANCE_YEARS) {
+  if (profile.maxRequiredYears != null && implied > profile.maxRequiredYears) {
+    return 'experience_min_years';
+  }
+
+  if (
+    (profile.seniority === 'new_grad' || profile.seniority === 'junior') &&
+    implied >= 4 &&
+    !EARLY_CAREER_REGEX.test(descriptionText)
+  ) {
+    return 'experience_min_years';
+  }
+
+  if (profile.experienceYears != null && implied > profile.experienceYears + EXPERIENCE_TOLERANCE_YEARS) {
     return 'experience_min_years';
   }
 
   return null;
+}
+
+function hasSoftExperienceCap(descriptionText: string, profile: DeterministicMatchProfile): boolean {
+  if (profile.seniority !== 'new_grad' && profile.seniority !== 'junior') {
+    return false;
+  }
+
+  const implied = maxImpliedMinYears(descriptionText);
+  return implied === 3 && !EARLY_CAREER_REGEX.test(descriptionText);
+}
+
+function passesRoleFamilyFilter(
+  title: string,
+  profile: DeterministicMatchProfile
+): { pass: boolean; explicitFit: boolean } {
+  const titleNorm = normalizeComparable(title);
+
+  if (WRONG_ROLE_TITLE_REGEX.test(titleNorm)) {
+    return { pass: false, explicitFit: false };
+  }
+
+  const explicitFit =
+    ENGINEERING_TITLE_REGEX.test(titleNorm) ||
+    profile.targetTitles.some((target) => titleContainsPhrase(titleNorm, target));
+
+  if (explicitFit) {
+    return { pass: true, explicitFit: true };
+  }
+
+  if (GENERIC_WRONG_ROLE_REGEX.test(titleNorm)) {
+    return { pass: false, explicitFit: false };
+  }
+
+  if (hasPositiveMatchCriteria(profile)) {
+    return { pass: GENERIC_ENGINEERING_TITLE_REGEX.test(titleNorm), explicitFit: false };
+  }
+
+  return { pass: true, explicitFit: false };
 }
 
 function passesSeniorityTitleFilter(
@@ -377,10 +500,26 @@ function scoreJobMatch(
   job: PrefilterJobInput,
   ctx: PrefilterContext,
   locationPass: boolean,
-  experiencePass: boolean
-): { score: number; signals: MatchSignal[] } {
+  experiencePass: boolean,
+  roleFamilyFit: boolean,
+  softExperienceCap: boolean
+): {
+  score: number;
+  signals: MatchSignal[];
+  matchedTitleTerms: string[];
+  matchedKeywords: string[];
+  matchedSkills: string[];
+  missingMustHaveKeywords: string[];
+} {
   if (!prefilterMatchesMeaningful(ctx)) {
-    return { score: 0, signals: [] };
+    return {
+      score: 0,
+      signals: [],
+      matchedTitleTerms: [],
+      matchedKeywords: [],
+      matchedSkills: [],
+      missingMustHaveKeywords: []
+    };
   }
 
   const profile = normalizeMatchProfile(ctx);
@@ -390,6 +529,12 @@ function scoreJobMatch(
   const fullSearchText = normalizeSearchText(fullText);
   const titleOverlap = profile.skills.filter((term) => containsProfileTerm(titleText, term));
   const profileTermOverlap = profile.skills.filter((term) => containsProfileTerm(fullSearchText, term));
+  const matchedKeywords = profile.positiveKeywords.filter((term) =>
+    containsProfileTerm(fullSearchText, term)
+  );
+  const missingMustHaveKeywords = profile.mustHaveKeywords.filter(
+    (term) => !containsProfileTerm(fullSearchText, term)
+  );
   const targetTitleMatch = profile.targetTitles.some((title) => titleContainsPhrase(titleNorm, title));
   const keywordTitleMatch = profile.positiveKeywords.some((keyword) =>
     titleContainsPhrase(titleNorm, keyword)
@@ -397,6 +542,11 @@ function scoreJobMatch(
 
   let score = 0;
   const signals: MatchSignal[] = [];
+
+  if (roleFamilyFit) {
+    score += 20;
+    signals.push('role_family_fit');
+  }
 
   if (targetTitleMatch) {
     score += 30;
@@ -422,6 +572,16 @@ function scoreJobMatch(
     signals.push('experience_fit');
   }
 
+  if (profile.seniority === 'new_grad' || profile.seniority === 'junior') {
+    signals.push('seniority_fit');
+  }
+
+  if (softExperienceCap) {
+    score -= 15;
+    signals.push('years_soft_cap');
+    signals.push('llm_review_recommended');
+  }
+
   if (locationPass) {
     score += 10;
     signals.push('location_fit');
@@ -434,7 +594,11 @@ function scoreJobMatch(
 
   return {
     score: Math.max(0, Math.min(100, score)),
-    signals: uniqueSorted(signals) as MatchSignal[]
+    signals: uniqueSorted(signals) as MatchSignal[],
+    matchedTitleTerms: titleOverlap,
+    matchedKeywords,
+    matchedSkills: profileTermOverlap,
+    missingMustHaveKeywords
   };
 }
 
@@ -447,6 +611,11 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
     reasons.push(titleReason);
   }
 
+  const roleFamily = passesRoleFamilyFilter(job.title, profile);
+  if (!roleFamily.pass) {
+    reasons.push('role_family_mismatch');
+  }
+
   const locationPass = passesLocationFilter(job.location, job.remoteType, ctx.preferredCountries);
   if (!locationPass) {
     reasons.push('location');
@@ -457,13 +626,23 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
   if (expReason) {
     reasons.push(expReason);
   }
+  const softExperienceCap = hasSoftExperienceCap(job.descriptionText, profile);
 
   const seniorityReason = passesSeniorityTitleFilter(job.title, job.descriptionText, profile);
   if (seniorityReason) {
     reasons.push(seniorityReason);
   }
 
-  const scored = scoreJobMatch(job, ctx, locationPass, experiencePass);
+  const minYearsRequired = maxImpliedMinYears(job.descriptionText) || null;
+  const earlyCareerSignal = EARLY_CAREER_REGEX.test(`${job.title}\n${job.descriptionText}`);
+  const scored = scoreJobMatch(
+    job,
+    ctx,
+    locationPass,
+    experiencePass,
+    roleFamily.explicitFit,
+    softExperienceCap
+  );
   if (
     reasons.length === 0 &&
     hasPositiveMatchCriteria(profile) &&
@@ -477,7 +656,36 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
     pass: reasons.length === 0,
     reasons,
     score: scored.score,
-    signals: uniqueSorted(scored.signals) as MatchSignal[]
+    signals: uniqueSorted(scored.signals) as MatchSignal[],
+    audit: {
+      matcherVersion: JOB_MATCHER_VERSION,
+      decision: reasons.length === 0 ? 'pass' : 'reject',
+      score: scored.score,
+      reasons,
+      signals: uniqueSorted(scored.signals) as MatchSignal[],
+      roleFamily: {
+        name: roleFamily.explicitFit ? 'engineering' : roleFamily.pass ? 'unknown' : 'wrong_role',
+        matched: roleFamily.explicitFit
+      },
+      evidence: {
+        matchedTitleTerms: scored.matchedTitleTerms,
+        matchedKeywords: scored.matchedKeywords,
+        matchedSkills: scored.matchedSkills,
+        missingMustHaveKeywords: scored.missingMustHaveKeywords
+      },
+      seniority: {
+        profile: profile.seniority,
+        earlyCareerSignal,
+        minYearsRequired,
+        softExperienceCap
+      },
+      llm: {
+        reviewed: false,
+        pass: null,
+        rationale: null,
+        reasonCodes: []
+      }
+    }
   };
 }
 

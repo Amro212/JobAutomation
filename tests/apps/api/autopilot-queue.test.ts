@@ -236,6 +236,156 @@ describe('autopilot queue service', () => {
     expect(skippedJob?.status).toBe('discovered');
   });
 
+  test('skips a deterministic pass when hybrid LLM review vetoes the match', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'New grad TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Projects} TypeScript automation',
+      jobKeywordProfile: {
+        seniority: 'new_grad',
+        target_titles: ['software engineer'],
+        positive_keywords: ['typescript', 'automation'],
+        negative_keywords: []
+      }
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run, jobsRepository }) => {
+      await jobsRepository.upsert({
+        sourceKind: 'greenhouse',
+        sourceId: 'job-borderline',
+        sourceUrl: 'https://boards.greenhouse.io/example/jobs/borderline',
+        companyName: 'Acme Corp',
+        title: 'Software Engineer I',
+        location: 'Remote',
+        remoteType: 'remote',
+        employmentType: 'full-time',
+        compensationText: null,
+        descriptionText: 'Build TypeScript automation. Preferred: 3+ years of professional experience.',
+        rawPayload: null,
+        discoveryRunId: run.id,
+        status: 'discovered',
+        discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-08T10:00:00.000Z')
+      });
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 1,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi.fn();
+    const runApplicationStub = vi.fn();
+    const reviewJobMatchStub = vi.fn(async () => ({
+      reviewed: true,
+      pass: false,
+      score: 35,
+      reasons: ['llm_veto'],
+      audit: {
+        matcherVersion: 'hybrid-v2',
+        decision: 'reject',
+        score: 35,
+        reasons: ['llm_veto'],
+        signals: ['llm_review_recommended'],
+        roleFamily: { name: 'engineering', matched: true },
+        evidence: {
+          matchedTitleTerms: ['software engineer'],
+          matchedKeywords: ['typescript', 'automation'],
+          matchedSkills: ['typescript', 'automation'],
+          missingMustHaveKeywords: []
+        },
+        seniority: {
+          profile: 'new_grad',
+          earlyCareerSignal: false,
+          minYearsRequired: 3,
+          softExperienceCap: true
+        },
+        llm: {
+          reviewed: true,
+          pass: false,
+          rationale: '3+ years makes this a weak new-grad autopilot match.',
+          reasonCodes: ['over_level_years']
+        }
+      }
+    }));
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath,
+        OPENROUTER_API_KEY: 'test-key'
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never,
+      reviewJobMatchImpl: reviewJobMatchStub as never
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+    await queue.onIdle();
+
+    const storedRun = await repositories.autopilotRuns.findById(autopilotRun.id);
+    const job = await repositories.jobs.findBySource('greenhouse', 'job-borderline');
+    const childRuns = await repositories.applicationRuns.listByAutopilotRun(autopilotRun.id);
+
+    expect(reviewJobMatchStub).toHaveBeenCalledTimes(1);
+    expect(generateArtifactsStub).not.toHaveBeenCalled();
+    expect(runApplicationStub).not.toHaveBeenCalled();
+    expect(childRuns).toHaveLength(0);
+    expect(job?.prefilterPass).toBe(false);
+    expect(job?.prefilterReasonsJson).toContain('llm_veto');
+    expect(storedRun).toMatchObject({
+      status: 'completed',
+      discoveredJobCount: 1,
+      eligibleJobCount: 0,
+      skippedJobCount: 1,
+      submittedCount: 0
+    });
+  });
+
   test('marks the batch partial and continues after a blocked application', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);

@@ -19,8 +19,10 @@ import type {
   ApiRepositories
 } from '../plugins/db';
 import { runStructuredDiscovery } from '@jobautomation/discovery';
+import type { OpenRouterConfig } from '@jobautomation/llm';
 
 import { generateJobArtifactsForJob } from './generate-job-artifacts';
+import { reviewJobMatchWithLlm } from './job-match-llm-review';
 import { defaultJobListFiltersFromApplicant } from './jobs-tab-filters';
 import { recomputeJobPrefilterMatches } from './job-prefilter-recompute';
 
@@ -138,12 +140,28 @@ function finalAutopilotStatus(input: {
   return 'failed';
 }
 
+function openRouterConfigForModel(
+  config: AppEnv,
+  model: string | undefined
+): OpenRouterConfig | null {
+  if (!config.OPENROUTER_API_KEY || !model) {
+    return null;
+  }
+
+  return {
+    apiKey: config.OPENROUTER_API_KEY,
+    baseUrl: config.OPENROUTER_API_BASE_URL,
+    model
+  };
+}
+
 export class AutopilotQueueService {
   private readonly queue: PQueue;
   private readonly runStructuredDiscoveryImpl: typeof runStructuredDiscovery;
   private readonly runPlaywrightDiscoveryImpl: typeof runPlaywrightDiscovery;
   private readonly generateArtifactsImpl: typeof generateJobArtifactsForJob;
   private readonly runApplicationImpl: typeof runApplication;
+  private readonly reviewJobMatchImpl: typeof reviewJobMatchWithLlm;
   private readonly abortControllers = new Map<string, AbortController>();
 
   constructor(
@@ -154,6 +172,7 @@ export class AutopilotQueueService {
       runPlaywrightDiscoveryImpl?: typeof runPlaywrightDiscovery;
       generateArtifactsImpl?: typeof generateJobArtifactsForJob;
       runApplicationImpl?: typeof runApplication;
+      reviewJobMatchImpl?: typeof reviewJobMatchWithLlm;
     }
   ) {
     this.queue = new PQueue({ concurrency: 1 });
@@ -164,6 +183,7 @@ export class AutopilotQueueService {
     this.generateArtifactsImpl =
       input.generateArtifactsImpl ?? generateJobArtifactsForJob;
     this.runApplicationImpl = input.runApplicationImpl ?? runApplication;
+    this.reviewJobMatchImpl = input.reviewJobMatchImpl ?? reviewJobMatchWithLlm;
   }
 
   enqueueRun(input: QueueAutopilotRunInput): void {
@@ -345,6 +365,38 @@ export class AutopilotQueueService {
           continue;
         }
 
+        const matchReview = await this.reviewJobMatchImpl({
+          job,
+          applicantProfile: profile,
+          openRouter: openRouterConfigForModel(
+            this.input.config,
+            this.input.config.OPENROUTER_JOB_SUMMARY_MODEL ??
+              this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL
+          )
+        });
+
+        if (matchReview.reviewed) {
+          await this.input.repositories.jobs.updatePrefilterResult(job.id, {
+            pass: matchReview.pass,
+            score: matchReview.score,
+            reasons: matchReview.reasons,
+            audit: matchReview.audit
+          });
+        }
+
+        if (!matchReview.pass) {
+          skippedJobCount += 1;
+          await this.updateCounts(run.id, {
+            discoveredJobCount,
+            eligibleJobCount,
+            skippedJobCount,
+            submittedCount,
+            blockedCount,
+            failedCount
+          });
+          continue;
+        }
+
         eligibleJobCount += 1;
 
         let createdRunId: string | null = null;
@@ -398,15 +450,11 @@ export class AutopilotQueueService {
             artifactsRepository: this.input.repositories.artifacts,
             logEventsRepository: this.input.repositories.logEvents,
             siteFlows: activeApplicationSites,
-            openRouter: this.input.config.OPENROUTER_API_KEY
-              ? {
-                  apiKey: this.input.config.OPENROUTER_API_KEY,
-                  baseUrl: this.input.config.OPENROUTER_API_BASE_URL,
-                  model:
-                    this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
-                    this.input.config.OPENROUTER_JOB_SUMMARY_MODEL!
-                }
-              : null,
+            openRouter: openRouterConfigForModel(
+              this.input.config,
+              this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
+                this.input.config.OPENROUTER_JOB_SUMMARY_MODEL
+            ),
             artifactsRootDir: join(
               dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
               'artifacts'

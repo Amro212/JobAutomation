@@ -67,8 +67,9 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
     const pageSize = parsed.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
 
     if (matchProfile === 'me' && meaningful) {
-      const { jobCount, nullPrefilterCount } = await app.repositories.jobs.prefilterCacheStats();
-      if (jobCount > 0 && nullPrefilterCount === jobCount) {
+      const { jobCount, nullPrefilterCount, stalePrefilterCount } =
+        await app.repositories.jobs.prefilterCacheStats();
+      if (jobCount > 0 && (nullPrefilterCount > 0 || stalePrefilterCount > 0)) {
         await recomputeJobPrefilterMatches(app.repositories.jobs, applicant);
       }
     }
