@@ -75,8 +75,40 @@ type ResumeEditDiagnostic = {
   index: number;
   match: 'direct' | 'line' | 'miss' | 'skipped';
   replacementRisk: ReturnType<typeof probeReplacementLatexRisk>;
-  skipReason?: 'replace-shorter' | 'body-shrink' | 'item-count';
+  skipReason?: 'replace-shorter' | 'body-shrink' | 'item-count' | 'generic-edit';
 };
+
+function normalizeSignalText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\\[a-zA-Z]+\*?(\[[^\]]*\])?/g, ' ')
+    .replace(/[{}\\]/g, ' ')
+    .replace(/[^a-z0-9+#./\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function addsJobRelevantSignal(input: {
+  search: string;
+  replacement: string;
+  jobKeywords: string[];
+}): boolean {
+  const searchText = normalizeSignalText(input.search);
+  const replacementText = normalizeSignalText(input.replacement);
+
+  if (searchText === replacementText) {
+    return false;
+  }
+
+  return input.jobKeywords.some((keyword) => {
+    const normalizedKeyword = normalizeSignalText(keyword);
+    return (
+      normalizedKeyword.length > 0 &&
+      replacementText.includes(normalizedKeyword) &&
+      !searchText.includes(normalizedKeyword)
+    );
+  });
+}
 
 function extractDocumentBody(tex: string): string {
   const beginIdx = tex.indexOf('\\begin{document}');
@@ -122,7 +154,8 @@ function applyOneResumeEdit(
 /** Applies LLM edits one at a time; skips any edit that would drop bullets or materially shrink content. */
 function applyTargetedResumeEdits(
   baseResumeTex: string,
-  editHints: TailoringOutput | null
+  editHints: TailoringOutput | null,
+  jobKeywords: string[]
 ): { tex: string; editDiagnostics: ResumeEditDiagnostic[] } {
   const editDiagnostics: ResumeEditDiagnostic[] = [];
 
@@ -145,6 +178,16 @@ function applyTargetedResumeEdits(
         match: 'skipped',
         replacementRisk: risk,
         skipReason: 'replace-shorter'
+      });
+      return;
+    }
+
+    if (!addsJobRelevantSignal({ search: edit.search, replacement: edit.replacement, jobKeywords })) {
+      editDiagnostics.push({
+        index,
+        match: 'skipped',
+        replacementRisk: risk,
+        skipReason: 'generic-edit'
       });
       return;
     }
@@ -247,7 +290,11 @@ export async function generateResumeVariant(
   });
   const blankAfterRender = countBlankLinesBetweenResumeItems(baseRenderedTex);
 
-  const { tex: afterEditsTex, editDiagnostics } = applyTargetedResumeEdits(baseRenderedTex, llmOutput);
+  const { tex: afterEditsTex, editDiagnostics } = applyTargetedResumeEdits(
+    baseRenderedTex,
+    llmOutput,
+    tailoringInput.jobKeywords
+  );
   let tailoredResumeTex = afterEditsTex;
   const blankAfterEdits = countBlankLinesBetweenResumeItems(tailoredResumeTex);
 

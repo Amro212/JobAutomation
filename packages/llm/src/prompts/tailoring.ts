@@ -55,7 +55,9 @@ export function buildResumeTailoringPrompt(input: TailoringPromptInput): {
     'Think like an expert editor, not a resume generator: make selective, high-value wording changes only.',
   
     'Core objective:',
-    'Improve ATS keyword alignment, technical specificity, and recruiter readability by revising existing LaTeX resume content using terminology supported by both the resume and the job posting.',
+    'Improve job-specific ATS coverage first, then technical specificity and recruiter readability.',
+    'Revise existing LaTeX resume content using terminology supported by both the resume/context and the job posting.',
+    'Do not let the cover letter compensate for weak resume alignment. The resume itself must carry the strongest truthful overlap.',
     'Do not rewrite broadly. Do not invent. Do not over-optimize.',
   
     'Strict edit constraints:',
@@ -82,7 +84,7 @@ export function buildResumeTailoringPrompt(input: TailoringPromptInput): {
     '16. Keep edits concise and high-signal.',
   
     'Output constraints:',
-    '17. Return 3-6 edits total.',
+    '17. Return 6-10 useful edits total when the resume/context support that many truthful improvements; return fewer only when support is limited.',
     '18. Return strict JSON only.',
     '19. No markdown, no prose, no explanations outside the schema.',
     '20. Ensure JSON escaping is correct and LaTeX remains valid.'
@@ -115,10 +117,12 @@ export function buildResumeTailoringPrompt(input: TailoringPromptInput): {
     '',
     '--- TASK ---',
     '1) Read the job description plus Applicant Summary and Applicant Context; list resumeKeywords (10-15) for this employer only.',
-    '2) Plan edits that are mostly Technical Skills (ordering/substantiated additions) and Projects (short phrase tweaks). Keep Experience edits minimal and never reframed.',
-    '3) Every new keyword or skill must trace to the candidate’s stated expertise: same stack, same project domain, or explicit note in Context—otherwise skip it.',
-    '4) Use SHORT search spans by default; each "search" copied EXACTLY from the resume. Each "replacement" keeps the same LaTeX structure and must be at least as long as "search".',
-    '5) Do not delete metrics, named APIs, or distinctive technical phrases to make room for buzzwords.',
+    '2) Compare those keywords against the resume. Prioritize gaps that are true for the applicant and important for ATS matching.',
+    '3) Plan edits that improve Technical Skills first, then Projects, then Experience bullets. Include job terms only where the candidate evidence supports them.',
+    '4) If a job term is unsupported, leave it out. Do not imply experience the applicant does not have.',
+    '5) Use SHORT search spans by default; each "search" copied EXACTLY from the resume. Each "replacement" keeps the same LaTeX structure and must be at least as long as "search".',
+    '6) Do not return generic wording changes. Each replacement must add at least one truthful job-relevant signal not already present in the searched text.',
+    '7) Do not delete metrics, named APIs, or distinctive technical phrases to make room for buzzwords.',
     'Return only the JSON object.'
   ].join('\n');
 
@@ -199,6 +203,7 @@ export function buildCoverLetterPrompt(input: TailoringPromptInput): {
     `Write a cover letter body for the ${input.jobTitle} position at ${input.companyName}.`,
     `The letter is addressed to "${addressee}" and dated ${dateStr}.`,
     resumeConsistencyNote,
+    'The cover letter should mirror the strongest truthful overlap already present in the resume; it must not introduce important claims that the resume does not support.',
     'Write 3-5 paragraphs (200-350 words total).',
     'The first paragraph should express genuine interest in the role and company without formulaic openers.',
     'Middle paragraphs: concrete stories from the resume/context that fit the kind of work described for the role.',
