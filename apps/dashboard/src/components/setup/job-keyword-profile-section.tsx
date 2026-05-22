@@ -4,11 +4,6 @@ import { GenerateJobKeywordProfileButton } from '@/components/setup/generate-job
 import { JobKeywordProfileEditor } from '@/components/setup/job-keyword-profile-editor';
 
 export function JobKeywordProfileSection({ profile }: { profile: ApplicantProfile | null }) {
-  const generatedAtLabel =
-    profile?.jobKeywordProfileGeneratedAt != null
-      ? new Date(profile.jobKeywordProfileGeneratedAt).toLocaleString()
-      : null;
-
   const profileJson = profile?.jobKeywordProfile ? JSON.stringify(profile.jobKeywordProfile) : '';
 
   return (
@@ -21,7 +16,7 @@ export function JobKeywordProfileSection({ profile }: { profile: ApplicantProfil
         </p>
       </div>
 
-      <GenerateJobKeywordProfileButton generatedAtLabel={generatedAtLabel} />
+      <GenerateJobKeywordProfileButton generatedAt={profile?.jobKeywordProfileGeneratedAt ?? null} />
 
       <JobKeywordProfileEditor profileJson={profileJson} hasApplicantRow={profile != null} />
     </section>

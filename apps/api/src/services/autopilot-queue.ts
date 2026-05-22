@@ -12,7 +12,7 @@ import type { AppEnv } from '@jobautomation/config';
 import type {
   AutopilotConfig,
   DiscoverySourceRecord,
-  JobRecord
+  JobListFilters
 } from '@jobautomation/core';
 import type {
   ApiRepositories
@@ -72,14 +72,6 @@ function shouldSkipDiscovery(
   return latestCompletedAt > cutoff;
 }
 
-async function jobHasCompletedApplication(
-  repositories: ApiRepositories,
-  jobId: string
-): Promise<boolean> {
-  const runs = await repositories.applicationRuns.listByJob(jobId);
-  return runs.some((run) => run.status === 'completed');
-}
-
 function latestPdfArtifact(
   artifacts: Awaited<ReturnType<typeof generateJobArtifactsForJob>>['artifacts'],
   kind: string
@@ -124,6 +116,51 @@ function openRouterConfigForModel(
     baseUrl: config.OPENROUTER_API_BASE_URL,
     model
   };
+}
+
+const AUTOPILOT_JOB_ID_PAGE_SIZE = 300;
+
+async function collectAutopilotJobIds(input: {
+  repositories: ApiRepositories;
+  filters: JobListFilters;
+  maxJobsPerRun: number | null;
+}): Promise<string[]> {
+  const selectedIds: string[] = [];
+  let page = 1;
+
+  for (;;) {
+    const { ids } = await input.repositories.jobs.listIds(input.filters, {
+      page,
+      pageSize: AUTOPILOT_JOB_ID_PAGE_SIZE
+    });
+
+    if (ids.length === 0) {
+      break;
+    }
+
+    const completedJobIds = await input.repositories.applicationRuns.completedJobIds(ids);
+    for (const id of ids) {
+      if (completedJobIds.has(id)) {
+        continue;
+      }
+
+      selectedIds.push(id);
+      if (
+        input.maxJobsPerRun !== null &&
+        selectedIds.length >= input.maxJobsPerRun
+      ) {
+        return selectedIds;
+      }
+    }
+
+    if (ids.length < AUTOPILOT_JOB_ID_PAGE_SIZE) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return selectedIds;
 }
 
 export class AutopilotQueueService {
@@ -280,25 +317,21 @@ export class AutopilotQueueService {
       });
 
       const profile = await this.input.repositories.applicantProfile.get();
-      await recomputeJobPrefilterMatches(this.input.repositories.jobs, profile);
+      await recomputeJobPrefilterMatches(this.input.repositories.jobs, profile, {
+        mode: 'stale'
+      });
 
       await this.input.repositories.autopilotRuns.update(run.id, {
         currentStep: 'prefilter_completed'
       });
 
       const jobsTabFilters = autopilotJobPoolFilters(profile, input.config);
-      const { jobs } = await this.input.repositories.jobs.list(jobsTabFilters);
-      const poolJobs: JobRecord[] = [];
-      for (const job of jobs) {
-        if (!(await jobHasCompletedApplication(this.input.repositories, job.id))) {
-          poolJobs.push(job);
-        }
-      }
-      const selectedJobs =
-        input.config.maxJobsPerRun === null
-          ? poolJobs
-          : poolJobs.slice(0, input.config.maxJobsPerRun);
-      const discoveredJobCount = selectedJobs.length;
+      const selectedJobIds = await collectAutopilotJobIds({
+        repositories: this.input.repositories,
+        filters: jobsTabFilters,
+        maxJobsPerRun: input.config.maxJobsPerRun
+      });
+      const discoveredJobCount = selectedJobIds.length;
       let eligibleJobCount = 0;
       let skippedJobCount = 0;
       let submittedCount = 0;
@@ -310,9 +343,23 @@ export class AutopilotQueueService {
         discoveredJobCount
       });
 
-      for (const job of selectedJobs) {
+      for (const jobId of selectedJobIds) {
         if (signal.aborted) {
           break;
+        }
+
+        const job = await this.input.repositories.jobs.findById(jobId);
+        if (!job) {
+          skippedJobCount += 1;
+          await this.updateCounts(run.id, {
+            discoveredJobCount,
+            eligibleJobCount,
+            skippedJobCount,
+            submittedCount,
+            blockedCount,
+            failedCount
+          });
+          continue;
         }
 
         const matchedSite = activeApplicationSites.find((site) => site.supports(job));

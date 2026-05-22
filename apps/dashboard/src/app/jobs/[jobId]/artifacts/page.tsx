@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import type { ArtifactRecord } from '@jobautomation/core';
 
+import { LocalDateTime } from '@/components/local-datetime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -336,9 +337,17 @@ export default async function JobArtifactsPage({
                       <code className="text-xs text-muted-foreground">{artifact.storagePath}</code>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {artifact.applicantProfileId
-                        ? `${artifact.applicantProfileId} @ ${String(artifact.applicantProfileUpdatedAt ?? 'n/a')}`
-                        : 'n/a'}
+                      {artifact.applicantProfileId ? (
+                        <>
+                          {artifact.applicantProfileId} @{' '}
+                          <LocalDateTime
+                            value={artifact.applicantProfileUpdatedAt}
+                            fallback="n/a"
+                          />
+                        </>
+                      ) : (
+                        'n/a'
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

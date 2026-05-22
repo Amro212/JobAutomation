@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { saveAutopilotSettingsAction, launchAutopilotAction } from './actions';
 import { AutopilotSettingsCard } from '@/components/autopilot/autopilot-settings-card';
 import { AutopilotAutoRefresh } from '@/components/autopilot-auto-refresh';
+import { LocalDateTime } from '@/components/local-datetime';
 import { SubmitButton } from '@/components/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,11 +51,6 @@ function selectedRunIdFromSearchParams(
   value: string | string[] | undefined
 ): string | undefined {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function formatDate(value: string | Date): string {
-  const date = typeof value === 'string' ? new Date(value) : value;
-  return date.toLocaleString();
 }
 
 export default async function AutopilotPage({
@@ -251,7 +247,7 @@ export default async function AutopilotPage({
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatDate(entry.run.updatedAt)}
+                    <LocalDateTime value={entry.run.updatedAt} />
                   </TableCell>
                   <TableCell>
                     <Button variant="link" size="sm" className="h-auto p-0" asChild>

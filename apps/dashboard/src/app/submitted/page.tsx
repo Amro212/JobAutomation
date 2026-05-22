@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import { LocalDateTime } from '@/components/local-datetime';
 import { buildArtifactFileUrl, getApplicationRuns } from '@/lib/api';
 
 export default async function SubmittedPage() {
@@ -63,7 +64,7 @@ export default async function SubmittedPage() {
                     <Badge variant="success">submitted</Badge>
                   </TableCell>
                   <TableCell className="align-top text-sm text-muted-foreground">
-                    {entry.run.completedAt?.toLocaleString() ?? entry.run.updatedAt.toLocaleString()}
+                    <LocalDateTime value={entry.run.completedAt ?? entry.run.updatedAt} />
                   </TableCell>
                   <TableCell className="align-top">
                     <Button variant="link" size="sm" className="h-auto p-0" asChild>

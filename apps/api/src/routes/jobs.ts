@@ -70,7 +70,9 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
       const { jobCount, nullPrefilterCount, stalePrefilterCount } =
         await app.repositories.jobs.prefilterCacheStats();
       if (jobCount > 0 && (nullPrefilterCount > 0 || stalePrefilterCount > 0)) {
-        await recomputeJobPrefilterMatches(app.repositories.jobs, applicant);
+        await recomputeJobPrefilterMatches(app.repositories.jobs, applicant, {
+          mode: 'stale'
+        });
       }
     }
 

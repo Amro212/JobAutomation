@@ -26,7 +26,9 @@ export const registerDiscoveryExecutionPlugin = fp(async (app) => {
     concurrency: app.config.DISCOVERY_QUEUE_CONCURRENCY,
     afterDiscoveryRun: async () => {
       const profile = await app.repositories.applicantProfile.get();
-      await recomputeJobPrefilterMatches(app.repositories.jobs, profile);
+      await recomputeJobPrefilterMatches(app.repositories.jobs, profile, {
+        mode: 'stale'
+      });
     }
   });
 

@@ -4,6 +4,7 @@ import type { DiscoveryRunRecord } from '@jobautomation/core';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { LocalDateTime } from '@/components/local-datetime';
 import {
   Table,
   TableBody,
@@ -12,14 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-function formatDate(value: Date | null): string {
-  if (!value) {
-    return 'In progress';
-  }
-
-  return value.toLocaleString();
-}
 
 function statusVariant(status: string) {
   switch (status) {
@@ -78,7 +71,9 @@ export function RunsTable({ runs }: { runs: DiscoveryRunRecord[] }) {
               </TableCell>
               <TableCell>{run.newJobCount}</TableCell>
               <TableCell>{run.updatedJobCount}</TableCell>
-              <TableCell className="text-muted-foreground">{formatDate(run.completedAt)}</TableCell>
+              <TableCell className="text-muted-foreground">
+                <LocalDateTime value={run.completedAt} fallback="In progress" />
+              </TableCell>
               <TableCell>
                 <Button variant="link" size="sm" className="h-auto p-0" asChild>
                   <Link href={`/runs/${run.id}`}>Open run</Link>

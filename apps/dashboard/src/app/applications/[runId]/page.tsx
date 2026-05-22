@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { LocalDateTime } from '@/components/local-datetime';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -272,7 +273,7 @@ export default async function ApplicationRunDetailPage({
               Created
             </dt>
             <dd className="mt-1 text-sm text-muted-foreground">
-              {detail.run.createdAt.toLocaleString()}
+              <LocalDateTime value={detail.run.createdAt} />
             </dd>
           </div>
           <div>
@@ -280,7 +281,7 @@ export default async function ApplicationRunDetailPage({
               Updated
             </dt>
             <dd className="mt-1 text-sm text-muted-foreground">
-              {detail.run.updatedAt.toLocaleString()}
+              <LocalDateTime value={detail.run.updatedAt} />
             </dd>
           </div>
         </dl>
@@ -469,7 +470,7 @@ export default async function ApplicationRunDetailPage({
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {log.createdAt.toLocaleString()}
+                    <LocalDateTime value={log.createdAt} />
                   </TableCell>
                 </TableRow>
               ))}

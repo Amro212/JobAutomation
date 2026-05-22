@@ -59,6 +59,13 @@ function mapJobRecord(record: typeof jobsTable.$inferSelect): JobRecord {
   return jobRecordSchema.parse(record);
 }
 
+function stalePrefilterWhereClause() {
+  return or(
+    isNull(jobsTable.prefilterSignalsJson),
+    sql`${jobsTable.prefilterSignalsJson} not like ${`%"matcherVersion":"${JOB_MATCHER_VERSION}"%`}`
+  );
+}
+
 export class JobsRepository {
   constructor(private readonly db: JobAutomationDatabase) {}
 
@@ -129,12 +136,7 @@ export class JobsRepository {
     const [{ total: stalePrefilterCount }] = await this.db
       .select({ total: count() })
       .from(jobsTable)
-      .where(
-        or(
-          isNull(jobsTable.prefilterSignalsJson),
-          sql`${jobsTable.prefilterSignalsJson} not like ${`%"matcherVersion":"${JOB_MATCHER_VERSION}"%`}`
-        )
-      );
+      .where(stalePrefilterWhereClause());
 
     return { jobCount, nullPrefilterCount, stalePrefilterCount };
   }
@@ -179,6 +181,48 @@ export class JobsRepository {
       });
 
       offset += PAGE;
+    }
+
+    return evaluated;
+  }
+
+  async recomputeStalePrefilterJobs(ctx: PrefilterContext): Promise<number> {
+    const PAGE = 300;
+    let evaluated = 0;
+
+    for (;;) {
+      const rows = await this.db
+        .select({
+          id: jobsTable.id,
+          title: jobsTable.title,
+          location: jobsTable.location,
+          remoteType: jobsTable.remoteType,
+          descriptionText: jobsTable.descriptionText
+        })
+        .from(jobsTable)
+        .where(stalePrefilterWhereClause())
+        .orderBy(jobsTable.id)
+        .limit(PAGE);
+
+      if (rows.length === 0) {
+        break;
+      }
+
+      await this.db.transaction(async (tx) => {
+        for (const row of rows) {
+          const result = prefilterJob(row, ctx);
+          await tx
+            .update(jobsTable)
+            .set({
+              prefilterPass: result.pass ? 1 : 0,
+              prefilterScore: result.score,
+              prefilterReasonsJson: JSON.stringify(result.reasons),
+              prefilterSignalsJson: JSON.stringify(result.audit)
+            })
+            .where(eq(jobsTable.id, row.id));
+          evaluated += 1;
+        }
+      });
     }
 
     return evaluated;
@@ -232,6 +276,33 @@ export class JobsRepository {
       : await ordered;
 
     return { jobs: records.map(mapJobRecord), total };
+  }
+
+  async listIds(
+    filters: JobListFilters = {},
+    pagination?: { page: number; pageSize: number }
+  ): Promise<{ ids: string[]; total: number }> {
+    const whereClause = this.buildWhereClause(filters);
+
+    const countQuery = this.db.select({ total: count() }).from(jobsTable);
+    const [{ total }] = whereClause
+      ? await countQuery.where(whereClause)
+      : await countQuery;
+
+    const baseSelect = this.db.select({ id: jobsTable.id }).from(jobsTable);
+    const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
+    const ordered =
+      filters.matchProfile === 'me'
+        ? filtered.orderBy(desc(jobsTable.prefilterScore), desc(jobsTable.updatedAt))
+        : filtered.orderBy(desc(jobsTable.updatedAt));
+
+    const records = pagination
+      ? await ordered
+          .limit(pagination.pageSize)
+          .offset((pagination.page - 1) * pagination.pageSize)
+      : await ordered;
+
+    return { ids: records.map((record) => record.id), total };
   }
 
   async distinctCompanyNames(filters: JobListFilters = {}): Promise<string[]> {

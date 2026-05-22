@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { LogEventRecord } from '@jobautomation/core';
 
+import { LocalDateTime } from '@/components/local-datetime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -214,7 +215,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
                   {renderLogDetails(log)}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {log.createdAt.toLocaleString()}
+                  <LocalDateTime value={log.createdAt} />
                 </TableCell>
               </TableRow>
             ))}

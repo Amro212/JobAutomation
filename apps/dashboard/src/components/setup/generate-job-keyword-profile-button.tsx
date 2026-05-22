@@ -1,19 +1,25 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { generateJobFilterProfileAction } from '@/app/setup/actions';
 import { Button } from '@/components/ui/button';
+import { formatLocalDateTime, type DateInput } from '@/lib/format-local-datetime';
 
 type Props = {
-  generatedAtLabel: string | null;
+  generatedAt: DateInput;
 };
 
-export function GenerateJobKeywordProfileButton({ generatedAtLabel }: Props) {
+export function GenerateJobKeywordProfileButton({ generatedAt }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generatedAtLabel, setGeneratedAtLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    setGeneratedAtLabel(generatedAt != null ? formatLocalDateTime(generatedAt) : null);
+  }, [generatedAt]);
 
   async function onGenerate() {
     setPending(true);

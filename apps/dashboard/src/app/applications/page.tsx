@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import { LocalDateTime } from '@/components/local-datetime';
 import { getApplicationRuns } from '@/lib/api';
 
 function statusVariant(status: string) {
@@ -142,10 +143,10 @@ export default async function ApplicationsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="align-top text-muted-foreground">
-                    {entry.run.createdAt.toLocaleString()}
+                    <LocalDateTime value={entry.run.createdAt} />
                   </TableCell>
                   <TableCell className="align-top text-muted-foreground">
-                    {entry.run.updatedAt.toLocaleString()}
+                    <LocalDateTime value={entry.run.updatedAt} />
                   </TableCell>
                   <TableCell className="align-top">
                     <Button variant="link" size="sm" className="h-auto p-0" asChild>

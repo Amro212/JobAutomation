@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import {
   applicationRunRecordSchema,
@@ -104,6 +104,24 @@ export class ApplicationRunsRepository {
       .orderBy(desc(applicationRunsTable.updatedAt));
 
     return records.map(mapApplicationRun);
+  }
+
+  async completedJobIds(jobIds: string[]): Promise<Set<string>> {
+    if (jobIds.length === 0) {
+      return new Set();
+    }
+
+    const records = await this.db
+      .select({ jobId: applicationRunsTable.jobId })
+      .from(applicationRunsTable)
+      .where(
+        and(
+          inArray(applicationRunsTable.jobId, jobIds),
+          eq(applicationRunsTable.status, 'completed')
+        )
+      );
+
+    return new Set(records.map((record) => record.jobId));
   }
 
   async listByAutopilotRun(autopilotRunId: string): Promise<ApplicationRunRecord[]> {

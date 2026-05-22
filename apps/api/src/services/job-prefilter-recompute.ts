@@ -7,7 +7,8 @@ import type { JobsRepository } from '@jobautomation/db';
 
 export async function recomputeJobPrefilterMatches(
   jobsRepository: JobsRepository,
-  applicantProfile: ApplicantProfile | null
+  applicantProfile: ApplicantProfile | null,
+  options: { mode?: 'all' | 'stale' } = {}
 ): Promise<{ evaluated: number }> {
   const ctx = prefilterContextFromApplicant(applicantProfile);
   if (!prefilterMatchesMeaningful(ctx)) {
@@ -15,6 +16,9 @@ export async function recomputeJobPrefilterMatches(
     return { evaluated: 0 };
   }
 
-  const evaluated = await jobsRepository.recomputePrefilterForAllJobs(ctx);
+  const evaluated =
+    options.mode === 'stale'
+      ? await jobsRepository.recomputeStalePrefilterJobs(ctx)
+      : await jobsRepository.recomputePrefilterForAllJobs(ctx);
   return { evaluated };
 }
