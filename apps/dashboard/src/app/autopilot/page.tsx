@@ -3,20 +3,12 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { saveAutopilotSettingsAction, launchAutopilotAction } from './actions';
+import { AutopilotBatchesPanel } from '@/components/autopilot/autopilot-batches-panel';
 import { AutopilotSettingsCard } from '@/components/autopilot/autopilot-settings-card';
 import { AutopilotAutoRefresh } from '@/components/autopilot-auto-refresh';
-import { LocalDateTime } from '@/components/local-datetime';
 import { SubmitButton } from '@/components/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/components/ui/table';
 import {
   cancelAutopilotRun,
   getApplicantProfile,
@@ -25,27 +17,6 @@ import {
   getAutopilotRuns,
   getDiscoverySources
 } from '@/lib/api';
-
-function statusVariant(status: string) {
-  switch (status) {
-    case 'completed':
-      return 'success' as const;
-    case 'partial':
-      return 'warning' as const;
-    case 'failed':
-      return 'destructive' as const;
-    case 'running':
-      return 'warning' as const;
-    case 'cancelled':
-      return 'outline' as const;
-    default:
-      return 'outline' as const;
-  }
-}
-
-function formatCount(label: string, count: number): string {
-  return `${count} ${label}`;
-}
 
 function selectedRunIdFromSearchParams(
   value: string | string[] | undefined
@@ -101,8 +72,7 @@ export default async function AutopilotPage({
       : enabledSources.filter((source) =>
           autopilotSettings.config.discoverySourceIds.includes(source.id)
         );
-  const selectedRunId =
-    selectedRunIdFromSearchParams(resolvedSearchParams.runId) ?? runs[0]?.run.id;
+  const selectedRunId = selectedRunIdFromSearchParams(resolvedSearchParams.runId);
   const selectedRun = selectedRunId ? await getAutopilotRun(selectedRunId) : null;
 
   const activeRunEntry = runs.find(
@@ -199,181 +169,7 @@ export default async function AutopilotPage({
         />
       </div>
 
-      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="border-b px-6 py-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Batches
-          </p>
-          <h3 className="mt-2 text-xl font-semibold text-foreground">Latest autopilot runs</h3>
-        </div>
-        {runs.length === 0 ? (
-          <div className="px-6 py-5 text-sm text-muted-foreground">
-            No autopilot batches have been launched yet.
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Status</TableHead>
-                <TableHead>Counts</TableHead>
-                <TableHead>Discovery</TableHead>
-                <TableHead>Updated</TableHead>
-                <TableHead>Inspect</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {runs.map((entry) => (
-                <TableRow key={entry.run.id}>
-                  <TableCell>
-                    <Badge variant={statusVariant(entry.run.status)}>{entry.run.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {[
-                      formatCount('eligible', entry.run.eligibleJobCount),
-                      formatCount('submitted', entry.run.submittedCount),
-                      formatCount('blocked', entry.run.blockedCount)
-                    ].join(' · ')}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {entry.discoveryRun ? (
-                      <Link
-                        href={`/runs/${entry.discoveryRun.id}`}
-                        className="hover:underline underline-offset-4"
-                      >
-                        Open discovery run
-                      </Link>
-                    ) : (
-                      'Pending'
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    <LocalDateTime value={entry.run.updatedAt} />
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                      <Link href={`/autopilot?runId=${entry.run.id}`}>Open batch</Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </section>
-
-      {selectedRun ? (
-        <section className="space-y-6 rounded-xl border bg-card p-6 shadow-sm">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-              Batch Detail
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h3 className="text-xl font-semibold text-foreground">Autopilot batch</h3>
-              <Badge variant={statusVariant(selectedRun.run.status)}>{selectedRun.run.status}</Badge>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Current step: {selectedRun.run.currentStep}
-            </p>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Discovered
-              </p>
-              <p className="mt-1 font-medium">{selectedRun.run.discoveredJobCount}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Eligible
-              </p>
-              <p className="mt-1 font-medium">{selectedRun.run.eligibleJobCount}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Skipped
-              </p>
-              <p className="mt-1 font-medium">{selectedRun.run.skippedJobCount}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Submitted
-              </p>
-              <p className="mt-1 font-medium">{selectedRun.run.submittedCount}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Blocked
-              </p>
-              <p className="mt-1 font-medium">{selectedRun.run.blockedCount}</p>
-            </div>
-            <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                Failed
-              </p>
-              <p className="mt-1 font-medium">{selectedRun.run.failedCount}</p>
-            </div>
-          </div>
-
-          {selectedRun.run.errorMessage ? (
-            <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {selectedRun.run.errorMessage}
-            </p>
-          ) : null}
-
-          <div className="overflow-hidden rounded-xl border">
-            <div className="border-b px-6 py-4">
-              <h4 className="text-lg font-semibold text-foreground">Child application runs</h4>
-            </div>
-            {selectedRun.applications.length === 0 ? (
-              <div className="px-6 py-5 text-sm text-muted-foreground">
-                No child application runs have been recorded for this batch yet.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Job</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Artifacts</TableHead>
-                    <TableHead>Inspect</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selectedRun.applications.map((entry) => (
-                    <TableRow key={entry.run.id}>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <p className="font-medium">{entry.job.title}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {entry.job.companyName} · {entry.job.location || 'Unspecified'}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusVariant(entry.run.status)}>{entry.run.status}</Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {[
-                          entry.resumeArtifact ? 'Resume' : null,
-                          entry.coverLetterArtifact ? 'Cover letter' : null
-                        ]
-                          .filter(Boolean)
-                          .join(' · ') || 'None linked'}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                          <Link href={`/applications/${entry.run.id}`}>Open run</Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
-        </section>
-      ) : null}
+      <AutopilotBatchesPanel runs={runs} selectedRun={selectedRun} />
     </section>
   );
 }
