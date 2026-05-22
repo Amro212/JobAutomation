@@ -10,6 +10,9 @@ export const DISCOVERY_SOURCES_CSV_FILENAME = 'discovery-sources-import.csv';
  */
 export const DISCOVERY_SOURCES_CSV_AI_PROMPT = `You are a job-search research assistant with access to the live web. Do thorough, deep research to find real companies and their public job boards that match my criteria below.
 
+BOARD TYPE — NON-NEGOTIABLE:
+Only include companies whose applications run on Greenhouse or Lever. Skip Workday, iCIMS, SmartRecruiters, company-hosted ATS pages, and any other non–Greenhouse/non–Lever board — even if they match my criteria otherwise.
+
 DELIVERABLE — NON-NEGOTIABLE:
 You MUST give me a DOWNLOADABLE .csv FILE I can save and upload. The file must be attached / offered for download in your UI.
 
@@ -40,22 +43,18 @@ with open("${DISCOVERY_SOURCES_CSV_FILENAME}", "w", newline="", encoding="utf-8"
   w.writerows(rows)
 
 COLUMN RULES (required — import rejects anything else):
-1. sourceKind — exactly one of: greenhouse | lever | ashby | playwright
-   - greenhouse → Greenhouse board (boards.greenhouse.io / job-boards.greenhouse.io)
-   - lever → Lever board (jobs.lever.co)
-   - ashby → Ashby board (jobs.ashbyhq.com)
-   - playwright → any other public careers/jobs page
+1. sourceKind — exactly one of: greenhouse | lever
+   - greenhouse → Greenhouse apply site (boards.greenhouse.io / job-boards.greenhouse.io)
+   - lever → Lever apply site (jobs.lever.co)
 2. label — short display name (e.g. Stripe, Wealthsimple)
 3. sourceKey — verified board id or URL:
    - greenhouse: token or https://boards.greenhouse.io/COMPANY
    - lever: handle or https://jobs.lever.co/COMPANY
-   - ashby: board name or https://jobs.ashbyhq.com/COMPANY
-   - playwright: full https URL to careers/job listings
 4. enabled — true or false (use true for rows to import)
 
 DATA QUALITY:
-- Real companies only; verify each board on the web.
-- At least 20 data rows when possible (plus the header).
+- Real companies only; verify each board on the web and that it is Greenhouse or Lever before adding a row.
+- At least 20 data rows when possible (plus the header), all greenhouse or lever.
 - If you truly cannot attach a file on this platform, say so once, then provide the file via your file tool — still do not dump CSV in chat unless there is zero file capability.
 
 MY SEARCH CRITERIA (edit before sending):
@@ -69,6 +68,7 @@ export const DISCOVERY_SOURCES_CSV_BULK_IMPORT_HELP = `Import many boards at onc
 
 export const DISCOVERY_SOURCES_CSV_AI_PROMPT_HELP = [
   `Copy into ChatGPT (enable Python/ADA), Claude, or any bot that can attach files.`,
+  `Prompt limits results to Greenhouse and Lever apply sites only.`,
   `Edit search criteria, send — bot must deliver downloadable ${DISCOVERY_SOURCES_CSV_FILENAME}.`,
   `Do not use replies that only show CSV text in chat; download the file, then Import CSV.`,
 ].join(' ');
