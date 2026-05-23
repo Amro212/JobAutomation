@@ -34,7 +34,9 @@ import {
 const STAGE_4_LOG_PREFIX = '[Stage 4][openrouter-answer-module]';
 const STAGE_4_PROMPT_VERSION = 'stage4-fill-plan-v1';
 /** Deterministic merge passes after repairs when binary consent fields are missing or mis-shaped by the LLM. */
-const MAX_SYNTHETIC_CHOICE_FALLBACK_PASSES = 6;
+const MAX_SYNTHETIC_CHOICE_FALLBACK_PASSES = 0;
+const MAX_STAGE4_REPAIR_ATTEMPTS = 3;
+const MAX_STAGE4_INVALID_JSON_RETRIES = 2;
 const MAX_SUMMARY_CHARS = 2_000;
 const MAX_CONTEXT_CHARS = 4_000;
 const MAX_RESUME_LATEX_CHARS = 20_000;
@@ -1071,14 +1073,14 @@ function buildSystemPrompt(): string {
     'Use only the applicant profile facts and the scraped field definitions provided by the user.',
     'Use best-effort grounded synthesis for open-ended motivation and narrative questions when the applicant profile, resumeLatex, and resumeContext give enough context to answer plausibly.',
     'Never invent employers, projects, years, achievements, technologies, legal status, security clearance, export-control eligibility, or demographic facts.',
-    'Required non-file fields are mandatory. Never skip them. Never return null, empty string, or unsupported for them.',
+    'Required non-file fields are mandatory. Never return null or empty string for them.',
     'For each required field, use direct applicant profile evidence first. If no direct evidence exists, infer the best possible answer from profile, resume, job, and available options, and set evidenceMode to "inferred_required".',
     'Optional fields that are uncertain or unsupported may remain unsupported with a short reason.',
     'Action rules:',
     '- text, email, tel, textarea, rich_text => action "fill" with a string value.',
     '- combobox with optionMode "static" and options => action "fill"; selectedOptionValue must exactly equal one provided option.value, selectedOptionLabel should be that option.label, and value should be the option label.',
     '- combobox with optionMode "dynamic_search" => action "fill"; searchText must contain the exact text to type, selectedOptionLabel should be the intended visible option when known, and value should equal searchText.',
-    '- select => action "select" with an exact option value when possible.',
+    '- select => action "select" with an exact option value from the provided options.',
     '- checkbox => action "check" with a boolean value.',
     '- checkbox_group => action "check" with an array of exact option values.',
     '- radio_group => action "click" with an exact option value.',
@@ -1105,9 +1107,11 @@ function buildSystemPrompt(): string {
     '- If the field asks about a country not covered by structured facts and the field is required and non-file, provide the conservative best-effort answer available.',
     'Exact option rules:',
     '- For select, radio_group, checkbox_group, and static combobox fields, choose only from the provided options array.',
+    '- For select and static combobox fields, return EXACTLY one provided option for required fields. Do not improvise, paraphrase, summarize, or return near-match text.',
+    '- Never answer generic "Yes"/"No" unless that exact token exists as one of the field options.',
     '- Treat applicantProfile as reference context for selector fields, not as selectable text. Never copy a profile value into select, radio_group, checkbox_group, or static combobox unless it exactly matches a provided option value or label.',
     '- Selector fields are strict: if profile says "Computer Engineering" but options are degree levels, use that profile fact only to choose the closest provided option such as "Bachelor\'s Degree"; do not return "Computer Engineering".',
-    '- If no available option is supported by profile/context, choose the safest provided option for required selectors; optional selectors may be skipped.',
+    '- If no exact option can be grounded, return action "skip" with a concise reason that exact option selection was not possible.',
     '- Prefer option.value for value on select/radio/checkbox_group. For static combobox, selectedOptionValue must be exact option.value and value/search text should use the chosen option label.',
     '- If a required selector field has no direct profile evidence, choose the safest available option, usually a truthful No, Prefer not to say, Choose not to disclose, LinkedIn, or closest profile-backed option.',
     '- "When are you available to join/start?" asks for a date or availability window. Use applicantProfile.workAuthorization.startDate or noticePeriod. Never answer yes/no.',
@@ -1149,10 +1153,12 @@ function buildRepairSystemPrompt(): string {
     buildSystemPrompt(),
     '',
     'Repair mode:',
-    '- You are receiving only required fields that failed validation after the first answer.',
+    '- You are receiving only required fields that failed validation after the previous answer.',
     '- Return answers only for those repair.fields.',
-    '- Do not skip any repair field unless it is a file upload and cannot be supplied by text.',
-    '- For each failed static selector field, select one exact option.value from its options.',
+    '- For each required static selector field, return EXACTLY one of the provided options (value/label) and nothing else.',
+    '- Do not output generic yes/no unless yes/no is an exact available option.',
+    '- If exact selection is impossible, return action "skip" with a concise reason.',
+    '- Do not answer fields not present in repair.fields.',
     '- For each failed dynamic combobox, provide non-empty searchText and value.',
     '- Use the validator reason to correct the specific failure.'
   ].join('\n');
@@ -1873,6 +1879,37 @@ function resolveConsentFillTextValue(
   return textValueForEnum(policy);
 }
 
+function resolveCompanyRelationshipFillTextValue(
+  field: ScrapedApplicationField,
+  supported: boolean
+): string {
+  const candidates = supported
+    ? [
+        'Yes',
+        'I currently work at Robinhood as a full-time employee or intern',
+        'I have previously worked at Robinhood as a full-time employee or intern (Hoodie Alumni)',
+        'I currently work at Robinhood in a contractor role',
+        'I have previously worked at Robinhood in a contractor role',
+        'Current employee',
+        'Former employee',
+        'Contractor'
+      ]
+    : [
+        'No',
+        'I have never worked at Robinhood',
+        'Never worked at Robinhood',
+        'Never worked',
+        'No prior employment'
+      ];
+
+  const optionAligned = selectorAlignedLabel(field, candidates);
+  if (optionAligned) {
+    return optionAligned;
+  }
+
+  return supported ? 'Yes' : 'No';
+}
+
 function createDeterministicFieldResult(input: {
   field: ScrapedApplicationField;
   answerability: PromptFieldAnswerability;
@@ -2537,7 +2574,7 @@ function normalizeEntryForField(
       field,
       answerability,
       rawEntry: entry,
-      textValue: supported ? 'Yes' : 'No',
+      textValue: resolveCompanyRelationshipFillTextValue(field, supported),
       category: supported ? 'accepted' : 'best_effort_negative_inference',
       reason: supported
         ? 'accepted: company relationship evidence is explicitly supported by resume/profile context'
@@ -2798,7 +2835,7 @@ function normalizeEntryForField(
                 }));
     }
 
-    if (entry.action === 'select') {
+    if (entry.action === 'select' || entry.action === 'click') {
       const textValue = firstEntryString(entry) ?? '';
       const optionMode = field.optionMode ?? (field.options.length > 0 ? 'static' : 'dynamic_search');
       if (optionMode === 'static' && field.options.length > 0 && textValue.length > 0) {
@@ -2812,7 +2849,10 @@ function normalizeEntryForField(
             value: option.label || option.value,
             confidence: entry.confidence,
             category: 'schema_mismatch',
-            reason: 'schema_mismatch: combobox select action normalized to exact static combobox option'
+            reason:
+              entry.action === 'click'
+                ? 'schema_mismatch: combobox click action normalized to exact static combobox option'
+                : 'schema_mismatch: combobox select action normalized to exact static combobox option'
           });
         }
 
@@ -2845,7 +2885,10 @@ function normalizeEntryForField(
             value: textValue,
             confidence: entry.confidence,
             category: 'schema_mismatch',
-            reason: 'schema_mismatch: combobox fields require action "fill"; recovered from model action "select"',
+            reason:
+              entry.action === 'click'
+                ? 'schema_mismatch: combobox fields require action "fill"; recovered from model action "click"'
+                : 'schema_mismatch: combobox fields require action "fill"; recovered from model action "select"',
             recovered: true
           })
         : createSkipResult({
@@ -3250,14 +3293,47 @@ export async function generateApplicationFillPlan(
     prompt: buildPrompt(promptPayload)
   } satisfies GenerateStructuredObjectInput;
 
+  const requestStructuredObjectWithRetries = async (inputRequest: {
+    request: GenerateStructuredObjectInput;
+    phase: 'initial' | 'repair';
+    repairAttempt?: number;
+  }): Promise<GenerateStructuredObjectResult> => {
+    for (let retryAttempt = 0; ; retryAttempt += 1) {
+      try {
+        if (provider.generateStructuredObjectWithMetadata !== undefined) {
+          return await provider.generateStructuredObjectWithMetadata(inputRequest.request);
+        }
+
+        return {
+          object: await provider.generateStructuredObject(inputRequest.request),
+          rawText: ''
+        };
+      } catch (error) {
+        const retryableInvalidJson =
+          error instanceof Error &&
+          error.message.includes('OpenRouter returned invalid JSON.') &&
+          retryAttempt < MAX_STAGE4_INVALID_JSON_RETRIES;
+
+        if (!retryableInvalidJson) {
+          throw error;
+        }
+
+        logStage4('provider_retry', {
+          promptVersion: STAGE_4_PROMPT_VERSION,
+          phase: inputRequest.phase,
+          retryAttempt: retryAttempt + 1,
+          repairAttempt: inputRequest.repairAttempt ?? null,
+          reason: 'invalid_json_response'
+        });
+      }
+    }
+  };
+
   try {
-    const response =
-      provider.generateStructuredObjectWithMetadata !== undefined
-        ? await provider.generateStructuredObjectWithMetadata(request)
-        : {
-            object: await provider.generateStructuredObject(request),
-            rawText: ''
-          };
+    const response = await requestStructuredObjectWithRetries({
+      request,
+      phase: 'initial'
+    });
 
     const parsed = applicationFillPlanResponseSchema.safeParse(response.object);
     if (!parsed.success) {
@@ -3295,18 +3371,30 @@ export async function generateApplicationFillPlan(
     let repairRawResponseLength = 0;
 
     const repairItems: ApplicationFillPlanEntry[] = [];
-    for (const invalidField of fillPlanValidation.missingRequiredFields) {
+    for (
+      let repairAttempt = 1;
+      repairAttempt <= MAX_STAGE4_REPAIR_ATTEMPTS && !fillPlanValidation.ok;
+      repairAttempt += 1
+    ) {
+      const repairFieldIds = new Set(
+        fillPlanValidation.missingRequiredFields.map((field) => field.fieldId)
+      );
       const currentRepairPromptPayload = buildRepairPromptPayload({
         promptPayload,
-        missingRequiredFields: [invalidField],
+        missingRequiredFields: fillPlanValidation.missingRequiredFields,
         originalItems: normalizedResult.fillPlan
       });
-      repairPromptPayload ??= currentRepairPromptPayload;
+      repairPromptPayload = currentRepairPromptPayload;
+
+      const rejectionReasonByField = Object.fromEntries(
+        fillPlanValidation.missingRequiredFields.map((field) => [field.fieldId, field.reason])
+      );
 
       logStage4('repair_request_prepared', {
         promptVersion: STAGE_4_PROMPT_VERSION,
-        missingRequiredFieldIds: [invalidField.fieldId],
-        reason: invalidField.reason
+        repairAttempt,
+        missingRequiredFieldIds: fillPlanValidation.missingRequiredFields.map((field) => field.fieldId),
+        rejectionReasonByField
       });
 
       const repairRequest = {
@@ -3316,18 +3404,17 @@ export async function generateApplicationFillPlan(
         prompt: JSON.stringify(currentRepairPromptPayload, null, 2)
       } satisfies GenerateStructuredObjectInput;
 
-      const repairResponse =
-        provider.generateStructuredObjectWithMetadata !== undefined
-          ? await provider.generateStructuredObjectWithMetadata(repairRequest)
-          : {
-              object: await provider.generateStructuredObject(repairRequest),
-              rawText: ''
-            };
+      const repairResponse = await requestStructuredObjectWithRetries({
+        request: repairRequest,
+        phase: 'repair',
+        repairAttempt
+      });
       repairRawResponseLength += repairResponse.rawText.length;
       const repairParsed = applicationFillPlanResponseSchema.safeParse(repairResponse.object);
       if (!repairParsed.success) {
         logStage4('repair_response_parsed', {
           promptVersion: STAGE_4_PROMPT_VERSION,
+          repairAttempt,
           rawResponseLength: repairResponse.rawText.length,
           parseStatus: 'invalid',
           issues: repairParsed.error.issues.map((issue) => ({
@@ -3342,9 +3429,12 @@ export async function generateApplicationFillPlan(
         );
       }
 
-      repairItems.push(...repairParsed.data.items);
+      const repairItemsForMissingFields = repairParsed.data.items.filter((item) =>
+        repairFieldIds.has(item.fieldId)
+      );
+      repairItems.push(...repairItemsForMissingFields);
       responseJson = {
-        items: mergeFillPlanItems(responseJson.items, repairParsed.data.items)
+        items: mergeFillPlanItems(responseJson.items, repairItemsForMissingFields)
       };
       normalizedResult = normalizeFillPlan(
         input.fields,
@@ -3355,26 +3445,23 @@ export async function generateApplicationFillPlan(
       );
 
       const currentValidation = validateRequiredFillPlan({
-        fields: input.fields.filter((field) => field.id === invalidField.fieldId),
+        fields: input.fields,
         fillPlan: normalizedResult.fillPlan,
         ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {})
       });
 
       logStage4('repair_response_parsed', {
         promptVersion: STAGE_4_PROMPT_VERSION,
+        repairAttempt,
         rawResponseLength: repairResponse.rawText.length,
         parseStatus: 'parsed',
         remainingMissingRequiredFieldIds: currentValidation.missingRequiredFields.map(
           (field) => field.fieldId
         )
       });
+      fillPlanValidation = currentValidation;
     }
     repairResponseJson = repairItems.length > 0 ? { items: repairItems } : null;
-    fillPlanValidation = validateRequiredFillPlan({
-      fields: input.fields,
-      fillPlan: normalizedResult.fillPlan,
-      ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {})
-    });
 
     for (
       let syntheticPass = 0;

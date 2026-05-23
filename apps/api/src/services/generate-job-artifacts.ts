@@ -17,6 +17,11 @@ import { createOpenRouterProvider } from '@jobautomation/llm';
 
 export type GenerateArtifactsMode = 'both' | 'resume' | 'cover-letter';
 
+export type ArtifactGenerationWarning = {
+  stage: 'resume' | 'cover_letter';
+  message: string;
+};
+
 export class JobArtifactGenerationError extends Error {
   constructor(
     message: string,
@@ -98,6 +103,7 @@ export async function generateJobArtifactsForJob(
   profile: ApplicantProfile;
   artifacts: ArtifactRecord[];
   warnings?: string[];
+  warningDetails?: ArtifactGenerationWarning[];
 }> {
   const mode = input.mode ?? 'both';
   const job = await input.repositories.jobs.findById(input.jobId);
@@ -112,6 +118,7 @@ export async function generateJobArtifactsForJob(
   const outputRoot = resolveArtifactsOutputRoot(input.config);
   const generatedArtifacts: ArtifactRecord[] = [];
   const warnings: string[] = [];
+  const warningDetails: ArtifactGenerationWarning[] = [];
 
   let resumeTexForCoverLetter: string | null = null;
   let coverLetterUsesTailoredResume = false;
@@ -138,6 +145,7 @@ export async function generateJobArtifactsForJob(
       const message =
         error instanceof Error ? error.message : 'Resume generation failed.';
       warnings.push(`Resume: ${message}`);
+      warningDetails.push({ stage: 'resume', message });
     }
   }
 
@@ -169,6 +177,7 @@ export async function generateJobArtifactsForJob(
       const message =
         error instanceof Error ? error.message : 'Cover letter generation failed.';
       warnings.push(`Cover letter: ${message}`);
+      warningDetails.push({ stage: 'cover_letter', message });
     }
   }
 
@@ -183,6 +192,11 @@ export async function generateJobArtifactsForJob(
     job,
     profile,
     artifacts: generatedArtifacts,
-    ...(warnings.length > 0 ? { warnings } : {})
+    ...(warnings.length > 0
+      ? {
+          warnings,
+          warningDetails
+        }
+      : {})
   };
 }

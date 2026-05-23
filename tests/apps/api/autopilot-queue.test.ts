@@ -236,6 +236,283 @@ describe('autopilot queue service', () => {
     expect(skippedJob?.status).toBe('discovered');
   });
 
+  test('retries artifact generation until resume pdf is available', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}'
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run, jobsRepository }) => {
+      await jobsRepository.upsert({
+        sourceKind: 'greenhouse',
+        sourceId: 'job-retry-artifact',
+        sourceUrl: 'https://boards.greenhouse.io/example/jobs/retry-artifact',
+        companyName: 'Acme Corp',
+        title: 'Platform Engineer',
+        location: 'Remote',
+        remoteType: 'remote',
+        employmentType: 'full-time',
+        compensationText: null,
+        descriptionText: 'Build TypeScript systems.',
+        rawPayload: null,
+        discoveryRunId: run.id,
+        status: 'discovered',
+        discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-08T10:00:00.000Z')
+      });
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 1,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi
+      .fn()
+      .mockImplementationOnce(async ({ jobId }: { jobId: string }) => ({
+        job: (await repositories.jobs.findById(jobId))!,
+        profile: (await repositories.applicantProfile.get())!,
+        artifacts: [
+          await repositories.artifacts.create({
+            jobId,
+            discoveryRunId: null,
+            kind: 'cover-letter',
+            format: 'pdf',
+            fileName: 'cover-letter.pdf',
+            storagePath: `/tmp/${jobId}-cover-letter.pdf`,
+            createdAt: new Date('2026-05-08T10:01:00.000Z')
+          })
+        ],
+        warnings: ['Resume: PDF compile failed']
+      }))
+      .mockImplementationOnce(async ({ jobId }: { jobId: string }) => ({
+        job: (await repositories.jobs.findById(jobId))!,
+        profile: (await repositories.applicantProfile.get())!,
+        artifacts: [
+          await repositories.artifacts.create({
+            jobId,
+            discoveryRunId: null,
+            kind: 'resume-variant',
+            format: 'pdf',
+            fileName: 'resume.pdf',
+            storagePath: `/tmp/${jobId}-resume.pdf`,
+            createdAt: new Date('2026-05-08T10:01:00.000Z')
+          })
+        ]
+      }));
+
+    const runApplicationStub = vi.fn(async ({ runId, applicationRunsRepository }) => {
+      const run = await applicationRunsRepository.findById!(runId!);
+      if (!run) {
+        throw new Error('Expected application run to exist.');
+      }
+      const updated = await applicationRunsRepository.update(run.id, {
+        status: 'completed',
+        currentStep: 'submitted',
+        completedAt: new Date('2026-05-08T10:05:00.000Z')
+      });
+      if (!updated) {
+        throw new Error('Expected application run update to succeed.');
+      }
+      return updated;
+    });
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+    await queue.onIdle();
+
+    const storedRun = await repositories.autopilotRuns.findById(autopilotRun.id);
+    const childRuns = await repositories.applicationRuns.listByAutopilotRun(autopilotRun.id);
+
+    expect(generateArtifactsStub).toHaveBeenCalledTimes(2);
+    expect(runApplicationStub).toHaveBeenCalledTimes(1);
+    expect(storedRun).toMatchObject({
+      status: 'completed',
+      submittedCount: 1,
+      failedCount: 0
+    });
+    expect(childRuns).toHaveLength(1);
+    expect(childRuns[0]?.resumeArtifactId).toBeTruthy();
+  });
+
+  test('fails application run when artifact generation exhausts retries without resume pdf', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}'
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run, jobsRepository }) => {
+      await jobsRepository.upsert({
+        sourceKind: 'greenhouse',
+        sourceId: 'job-artifact-fails',
+        sourceUrl: 'https://boards.greenhouse.io/example/jobs/artifact-fails',
+        companyName: 'Acme Corp',
+        title: 'Platform Engineer',
+        location: 'Remote',
+        remoteType: 'remote',
+        employmentType: 'full-time',
+        compensationText: null,
+        descriptionText: 'Build TypeScript systems.',
+        rawPayload: null,
+        discoveryRunId: run.id,
+        status: 'discovered',
+        discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-08T10:00:00.000Z')
+      });
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 1,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi.fn(async ({ jobId }: { jobId: string }) => ({
+      job: (await repositories.jobs.findById(jobId))!,
+      profile: (await repositories.applicantProfile.get())!,
+      artifacts: [
+        await repositories.artifacts.create({
+          jobId,
+          discoveryRunId: null,
+          kind: 'cover-letter',
+          format: 'pdf',
+          fileName: 'cover-letter.pdf',
+          storagePath: `/tmp/${jobId}-cover-letter.pdf`,
+          createdAt: new Date('2026-05-08T10:01:00.000Z')
+        })
+      ],
+      warnings: ['Resume: PDF compile failed']
+    }));
+
+    const runApplicationStub = vi.fn();
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+    await queue.onIdle();
+
+    const storedRun = await repositories.autopilotRuns.findById(autopilotRun.id);
+    const childRuns = await repositories.applicationRuns.listByAutopilotRun(autopilotRun.id);
+
+    expect(generateArtifactsStub).toHaveBeenCalledTimes(3);
+    expect(runApplicationStub).not.toHaveBeenCalled();
+    expect(storedRun).toMatchObject({
+      status: 'failed',
+      submittedCount: 0,
+      failedCount: 1
+    });
+    expect(childRuns).toHaveLength(1);
+    expect(childRuns[0]).toMatchObject({
+      status: 'failed',
+      currentStep: 'artifact_generation_failed',
+      stopReason: 'artifact_generation_failed'
+    });
+  });
+
   test('skips a deterministic pass when hybrid LLM review vetoes the match', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);

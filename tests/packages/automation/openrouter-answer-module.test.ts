@@ -464,7 +464,7 @@ describe('openrouter answer module', () => {
     ]);
   });
 
-  test('reports required fields that are still missing after one repair call', async () => {
+  test('reports required fields that are still missing after bounded repair attempts', async () => {
     const provider = createProvider({
       items: [
         {
@@ -495,13 +495,77 @@ describe('openrouter answer module', () => {
       provider
     });
 
-    expect(provider.generateStructuredObjectWithMetadata).toHaveBeenCalledTimes(2);
+    // Initial request + three bounded repair attempts.
+    expect(provider.generateStructuredObjectWithMetadata).toHaveBeenCalledTimes(4);
     expect(result.fillPlanValidation.ok).toBe(false);
     expect(result.fillPlanValidation.missingRequiredFields).toEqual([
       expect.objectContaining({
         fieldId: 'clearance',
         reason: 'missing_profile_fact: no grounded structured applicant fact is available for this field'
       })
+    ]);
+  });
+
+  test('retries malformed json provider failures before succeeding', async () => {
+    const provider: ApplicationAnswerProvider & {
+      generateStructuredObjectWithMetadata: ReturnType<typeof vi.fn>;
+    } = {
+      generateStructuredObject: vi.fn(),
+      generateStructuredObjectWithMetadata: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('OpenRouter returned invalid JSON.'))
+        .mockResolvedValueOnce({
+          object: {
+            items: [
+              {
+                fieldId: 'shirt_size',
+                action: 'select',
+                value: 'm',
+                selectedOptionValue: 'm',
+                selectedOptionLabel: 'Medium',
+                searchText: null,
+                evidenceMode: 'inferred_required',
+                evidenceRefs: [],
+                confidence: 1,
+                skipReason: ''
+              }
+            ]
+          },
+          rawText: '{"items":[]}'
+        })
+    };
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'shirt_size',
+          label: 'T-shirt size*',
+          type: 'select',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#shirt_size'],
+          options: [
+            { value: 's', label: 'Small' },
+            { value: 'm', label: 'Medium' }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(provider.generateStructuredObjectWithMetadata).toHaveBeenCalledTimes(2);
+    expect(result.fillPlanValidation.ok).toBe(true);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'shirt_size',
+        action: 'select',
+        value: 'm',
+        confidence: 1,
+        skipReason: ''
+      }
     ]);
   });
 
@@ -771,6 +835,16 @@ describe('openrouter answer module', () => {
           value: null,
           confidence: 0,
           skipReason: 'ambiguous or unsupported field'
+        },
+        {
+          fieldId: 'employment_history',
+          action: 'click',
+          value: 'option-never',
+          selectedOptionValue: 'option-never',
+          selectedOptionLabel: 'I have never worked at Robinhood',
+          searchText: 'I have never worked at Robinhood',
+          confidence: 1,
+          skipReason: ''
         }
       ]
     });
@@ -815,6 +889,23 @@ describe('openrouter answer module', () => {
           enabled: true,
           selectorCandidates: ['#clearance'],
           options: []
+        },
+        {
+          id: 'employment_history',
+          label:
+            'Have you ever worked for Robinhood as an employee, intern or contractor?*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#employment-history'],
+          options: [
+            { value: 'option-current-ft', label: 'I currently work at Robinhood as a full-time employee or intern' },
+            { value: 'option-previous-ft', label: 'I have previously worked at Robinhood as a full-time employee or intern (Hoodie Alumni)' },
+            { value: 'option-current-contractor', label: 'I currently work at Robinhood in a contractor role' },
+            { value: 'option-previous-contractor', label: 'I have previously worked at Robinhood in a contractor role' },
+            { value: 'option-never', label: 'I have never worked at Robinhood' }
+          ]
         }
       ],
       provider
@@ -841,6 +932,13 @@ describe('openrouter answer module', () => {
         value: null,
         confidence: 0,
         skipReason: 'missing_profile_fact: no grounded structured applicant fact is available for this field'
+      },
+      {
+        fieldId: 'employment_history',
+        action: 'fill',
+        value: 'I have never worked at Robinhood',
+        confidence: 1,
+        skipReason: ''
       }
     ]);
 
@@ -867,6 +965,15 @@ describe('openrouter answer module', () => {
         category: 'missing_profile_fact',
         rawAction: 'select',
         normalizedAction: 'skip',
+        recovered: false
+      }),
+      expect.objectContaining({
+        fieldId: 'employment_history',
+        answerability: 'open_ended_best_effort',
+        category: 'schema_mismatch',
+        rawAction: 'click',
+        normalizedAction: 'fill',
+        expectedActions: ['fill'],
         recovered: false
       })
     ]);
@@ -1696,6 +1803,97 @@ describe('openrouter answer module', () => {
         expect.objectContaining({
           fieldId: 'question_65985372',
           category: 'policy_default_consent',
+          normalizedAction: 'fill'
+        })
+      ])
+    );
+  });
+
+  test('maps company relationship deterministic intent to exact Robinhood option labels', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'question_51272832',
+          action: 'select',
+          value: 'react-select-question_51272832-option-4',
+          selectedOptionValue: 'react-select-question_51272832-option-4',
+          selectedOptionLabel: 'I have never worked at Robinhood',
+          searchText: null,
+          confidence: 1,
+          skipReason: ''
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob({
+        companyName: 'Robinhood'
+      }),
+      fields: [
+        {
+          id: 'question_51272832',
+          label:
+            'Have you ever worked for Robinhood as an employee, intern or contractor? Note that providing false or misleading information may result in disqualification from the hiring process.*',
+          type: 'combobox',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#question_51272832'],
+          optionMode: 'static',
+          options: [
+            {
+              value: 'react-select-question_51272832-option-0',
+              label: 'I currently work at Robinhood as a full-time employee or intern',
+              source: 'combobox_option',
+              visible: true
+            },
+            {
+              value: 'react-select-question_51272832-option-1',
+              label:
+                'I have previously worked at Robinhood as a full-time employee or intern (Hoodie Alumni)',
+              source: 'combobox_option',
+              visible: true
+            },
+            {
+              value: 'react-select-question_51272832-option-2',
+              label: 'I currently work at Robinhood in a contractor role',
+              source: 'combobox_option',
+              visible: true
+            },
+            {
+              value: 'react-select-question_51272832-option-3',
+              label: 'I have previously worked at Robinhood in a contractor role',
+              source: 'combobox_option',
+              visible: true
+            },
+            {
+              value: 'react-select-question_51272832-option-4',
+              label: 'I have never worked at Robinhood',
+              source: 'combobox_option',
+              visible: true
+            }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlanValidation.ok).toBe(true);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'question_51272832',
+        action: 'fill',
+        value: 'I have never worked at Robinhood',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+    expect(result.fieldDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldId: 'question_51272832',
+          category: 'best_effort_negative_inference',
           normalizedAction: 'fill'
         })
       ])

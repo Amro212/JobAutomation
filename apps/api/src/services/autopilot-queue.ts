@@ -29,11 +29,26 @@ import { recomputeJobPrefilterMatches } from './job-prefilter-recompute';
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_APPLICATION_STUCK_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_ARTIFACT_GENERATION_MAX_ATTEMPTS = 3;
+const ARTIFACT_GENERATION_RETRY_DELAY_MS = 750;
 
 class ApplicationRunTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
     super(`Application run exceeded watchdog timeout of ${timeoutMs}ms.`);
     this.name = 'ApplicationRunTimeoutError';
+  }
+}
+
+class ArtifactGenerationError extends Error {
+  constructor(
+    message: string,
+    readonly details: {
+      attempts: number;
+      failureReasons: string[];
+    }
+  ) {
+    super(message);
+    this.name = 'ArtifactGenerationError';
   }
 }
 
@@ -218,6 +233,7 @@ export class AutopilotQueueService {
   private readonly applicationRunTimeoutMs: number;
   private readonly staleApplicationRunThresholdMs: number;
   private readonly terminateCamoufoxImpl: () => Promise<void>;
+  private readonly artifactGenerationMaxAttempts = DEFAULT_ARTIFACT_GENERATION_MAX_ATTEMPTS;
 
   enqueueRun(input: QueueAutopilotRunInput): void {
     const controller = new AbortController();
@@ -444,25 +460,10 @@ export class AutopilotQueueService {
             currentStep: `generating_artifacts:${job.title}`
           });
 
-          const generated = await this.generateArtifactsImpl({
+          const generatedArtifacts = await this.generateArtifactsWithRetries({
             jobId: job.id,
-            mode: input.config.artifactMode,
-            repositories: {
-              applicantProfile: this.input.repositories.applicantProfile,
-              artifacts: this.input.repositories.artifacts,
-              jobs: this.input.repositories.jobs
-            },
-            config: this.input.config
+            mode: input.config.artifactMode
           });
-
-          const resumeArtifact = latestPdfArtifact(
-            generated.artifacts,
-            'resume-variant'
-          );
-          const coverLetterArtifact = latestPdfArtifact(
-            generated.artifacts,
-            'cover-letter'
-          );
 
           const createdRun = await this.input.repositories.applicationRuns.create({
             jobId: job.id,
@@ -471,8 +472,8 @@ export class AutopilotQueueService {
             status: 'pending',
             currentStep: 'queued',
             prefilterReasons: [],
-            resumeArtifactId: resumeArtifact?.id ?? null,
-            coverLetterArtifactId: coverLetterArtifact?.id ?? null
+            resumeArtifactId: generatedArtifacts.resumeArtifact.id,
+            coverLetterArtifactId: generatedArtifacts.coverLetterArtifact?.id ?? null
           });
           createdRunId = createdRun.id;
 
@@ -542,6 +543,37 @@ export class AutopilotQueueService {
                   jobId: job.id,
                   siteKey: matchedSite!.siteKey,
                   timeoutMs: error.timeoutMs
+                })
+              })
+              .catch(() => null);
+          } else if (error instanceof ArtifactGenerationError) {
+            failedCount += 1;
+            if (!createdRunId) {
+              const failedRun = await this.input.repositories.applicationRuns.create({
+                jobId: job.id,
+                autopilotRunId: run.id,
+                siteKey: matchedSite!.siteKey,
+                status: 'failed',
+                currentStep: 'artifact_generation_failed',
+                stopReason: 'artifact_generation_failed',
+                prefilterReasons: [],
+                completedAt: new Date()
+              });
+              createdRunId = failedRun.id;
+            }
+            await this.input.repositories.logEvents
+              .create({
+                applicationRunId: createdRunId,
+                jobId: job.id,
+                level: 'error',
+                message:
+                  'Autopilot could not generate a required resume PDF artifact after retries.',
+                detailsJson: JSON.stringify({
+                  applicationRunId: createdRunId,
+                  jobId: job.id,
+                  siteKey: matchedSite!.siteKey,
+                  attempts: error.details.attempts,
+                  failureReasons: error.details.failureReasons
                 })
               })
               .catch(() => null);
@@ -642,6 +674,62 @@ export class AutopilotQueueService {
     }
   ): Promise<void> {
     await this.input.repositories.autopilotRuns.update(runId, counters);
+  }
+
+  private async generateArtifactsWithRetries(input: {
+    jobId: string;
+    mode: AutopilotConfig['artifactMode'];
+  }): Promise<{
+    generated: Awaited<ReturnType<typeof generateJobArtifactsForJob>>;
+    resumeArtifact: NonNullable<ReturnType<typeof latestPdfArtifact>>;
+    coverLetterArtifact: ReturnType<typeof latestPdfArtifact>;
+  }> {
+    const failureReasons: string[] = [];
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= this.artifactGenerationMaxAttempts; attempt += 1) {
+      try {
+        const generated = await this.generateArtifactsImpl({
+          jobId: input.jobId,
+          mode: input.mode,
+          repositories: {
+            applicantProfile: this.input.repositories.applicantProfile,
+            artifacts: this.input.repositories.artifacts,
+            jobs: this.input.repositories.jobs
+          },
+          config: this.input.config
+        });
+        const resumeArtifact = latestPdfArtifact(generated.artifacts, 'resume-variant');
+        const coverLetterArtifact = latestPdfArtifact(generated.artifacts, 'cover-letter');
+        if (resumeArtifact) {
+          return {
+            generated,
+            resumeArtifact,
+            coverLetterArtifact
+          };
+        }
+
+        const warningSummary =
+          generated.warnings && generated.warnings.length > 0
+            ? ` warnings=${generated.warnings.join(' | ')}`
+            : '';
+        failureReasons.push(`attempt_${attempt}: missing_resume_pdf.${warningSummary}`.trim());
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        failureReasons.push(`attempt_${attempt}: ${lastError.message}`);
+      }
+
+      if (attempt < this.artifactGenerationMaxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, ARTIFACT_GENERATION_RETRY_DELAY_MS * attempt));
+      }
+    }
+
+    const fallbackMessage =
+      lastError?.message ?? 'Resume PDF artifact was not produced by artifact generation.';
+    throw new ArtifactGenerationError(fallbackMessage, {
+      attempts: this.artifactGenerationMaxAttempts,
+      failureReasons
+    });
   }
 
   private async runApplicationWithWatchdog<T>(
