@@ -115,15 +115,12 @@ export type PrefilterAudit = {
   };
 };
 
-/**
- * Phrases that imply a minimum experience requirement; capture the first number group.
- * Kept conservative to reduce false positives from prose like "within 5 years".
- */
-const EXPERIENCE_REGEXES: RegExp[] = [
-  /\b(?:at least|minimum of|min\.?)\s+(\d+)\s*\+?\s*(?:-\s*\d+\+?)?\s*years?\b/gi,
-  /\b(\d+)\s*\+\s*years?\s+of\s+experience\b/gi,
-  /\b(\d+)\s*\+\s*years?\b/gi
-];
+const EXPERIENCE_REGEX =
+  /\b(\d+)\s*(?:\+|\s*(?:-|–|—|to)\s*(\d+))?\s*years?\b/gi;
+const REQUIRED_EXPERIENCE_CONTEXT_REGEX =
+  /\b(?:required|requirements?|must(?:\s+have)?|minimum|min\.?|at\s+least|need(?:ed)?|requires?)\b/i;
+const PREFERRED_EXPERIENCE_CONTEXT_REGEX =
+  /\b(?:preferred|bonus|nice[-\s]?to[-\s]?have|plus|ideally|would\s+be\s+(?:a\s+)?plus)\b/i;
 
 const MATCH_PASS_THRESHOLD = 45;
 const EXPERIENCE_TOLERANCE_YEARS = 1;
@@ -320,18 +317,33 @@ function hasPositiveMatchCriteria(profile: DeterministicMatchProfile): boolean {
   );
 }
 
-function maxImpliedMinYears(description: string): number {
+function maxImpliedMinYears(
+  description: string,
+  options: { includePreferred?: boolean; requiredOnly?: boolean } = {}
+): number {
   let max = 0;
-  const text = description.toLowerCase();
+  const text = description.toLowerCase().replace(/[–—]/g, '-');
 
-  for (const re of EXPERIENCE_REGEXES) {
-    const withG = new RegExp(re.source, re.flags);
-    let m: RegExpExecArray | null;
-    while ((m = withG.exec(text)) !== null) {
-      const n = Number.parseInt(m[1] ?? '', 10);
-      if (Number.isFinite(n)) {
-        max = Math.max(max, n);
-      }
+  let m: RegExpExecArray | null;
+  while ((m = EXPERIENCE_REGEX.exec(text)) !== null) {
+    const before = text.slice(Math.max(0, m.index - 80), m.index);
+    const after = text.slice(m.index + m[0].length, m.index + m[0].length + 40);
+    if (!options.includePreferred && PREFERRED_EXPERIENCE_CONTEXT_REGEX.test(before)) {
+      continue;
+    }
+    if (
+      options.requiredOnly &&
+      !REQUIRED_EXPERIENCE_CONTEXT_REGEX.test(before) &&
+      !REQUIRED_EXPERIENCE_CONTEXT_REGEX.test(after)
+    ) {
+      continue;
+    }
+
+    const lower = Number.parseInt(m[1] ?? '', 10);
+    const upper = Number.parseInt(m[2] ?? '', 10);
+    const n = Number.isFinite(upper) ? upper : lower;
+    if (Number.isFinite(n)) {
+      max = Math.max(max, n);
     }
   }
 
@@ -411,7 +423,7 @@ function passesLocationFilter(
 }
 
 function passesExperienceFilter(descriptionText: string, profile: DeterministicMatchProfile): PrefilterReason | null {
-  const implied = maxImpliedMinYears(descriptionText);
+  const implied = maxImpliedMinYears(descriptionText, { requiredOnly: true });
 
   if (implied === 0) {
     return null;
@@ -441,7 +453,7 @@ function hasSoftExperienceCap(descriptionText: string, profile: DeterministicMat
     return false;
   }
 
-  const implied = maxImpliedMinYears(descriptionText);
+  const implied = maxImpliedMinYears(descriptionText, { includePreferred: true });
   return implied === 3 && !EARLY_CAREER_REGEX.test(descriptionText);
 }
 
@@ -633,7 +645,7 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
     reasons.push(seniorityReason);
   }
 
-  const minYearsRequired = maxImpliedMinYears(job.descriptionText) || null;
+  const minYearsRequired = maxImpliedMinYears(job.descriptionText, { requiredOnly: true }) || null;
   const earlyCareerSignal = EARLY_CAREER_REGEX.test(`${job.title}\n${job.descriptionText}`);
   const scored = scoreJobMatch(
     job,
