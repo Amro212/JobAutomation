@@ -19,6 +19,7 @@ export const discoveryRunStatusSchema = z.enum([
 export const applicationRunStatusSchema = z.enum([
   'pending',
   'running',
+  'retry',
   'paused',
   'skipped',
   'completed',

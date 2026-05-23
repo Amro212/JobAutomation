@@ -1096,4 +1096,243 @@ describe('autopilot queue service', () => {
     expect(runApplicationStub.mock.calls[0]?.[0].siteFlows[0]?.siteKey).toBe('lever');
     expect(childRuns).toHaveLength(1);
   });
+
+  test('recovers stale running application runs into retry state before processing', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}'
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+
+    const job = await repositories.jobs.upsert({
+      sourceKind: 'playwright',
+      sourceId: 'stale-running-job',
+      sourceUrl: 'https://example.com/jobs/stale',
+      companyName: 'Acme Corp',
+      title: 'Platform Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Build TypeScript systems.',
+      rawPayload: null,
+      discoveryRunId: null,
+      status: 'discovered',
+      discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+      updatedAt: new Date('2026-05-08T10:00:00.000Z')
+    });
+    const staleRun = await repositories.applicationRuns.create({
+      jobId: job.id,
+      siteKey: 'greenhouse',
+      status: 'running',
+      currentStep: 'starting',
+      startedAt: new Date('2026-05-08T10:01:00.000Z'),
+      createdAt: new Date('2026-05-08T10:01:00.000Z'),
+      updatedAt: new Date('2026-05-08T10:01:00.000Z')
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run }) => {
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 0,
+        newJobCount: 0,
+        updatedJobCount: 0
+      });
+    });
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      staleApplicationRunThresholdMs: 25,
+      terminateCamoufoxImpl: vi.fn(async () => undefined)
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+    await queue.onIdle();
+
+    const recoveredRun = await repositories.applicationRuns.findById(staleRun.id);
+    expect(recoveredRun).toMatchObject({
+      status: 'retry',
+      currentStep: 'retry_queued',
+      stopReason: 'stuck_timeout'
+    });
+  });
+
+  test('marks timed-out application attempts as retry and finishes batch', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}',
+      jobKeywordProfile: {
+        seniority: 'mid',
+        target_titles: ['platform engineer'],
+        positive_keywords: ['typescript'],
+        negative_keywords: []
+      }
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run, jobsRepository }) => {
+      await jobsRepository.upsert({
+        sourceKind: 'greenhouse',
+        sourceId: 'job-timeout',
+        sourceUrl: 'https://boards.greenhouse.io/example/jobs/timeout',
+        companyName: 'Acme Corp',
+        title: 'Platform Engineer',
+        location: 'Remote',
+        remoteType: 'remote',
+        employmentType: 'full-time',
+        compensationText: null,
+        descriptionText: 'Build TypeScript systems.',
+        rawPayload: null,
+        discoveryRunId: run.id,
+        status: 'discovered',
+        discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-08T10:00:00.000Z')
+      });
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 1,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi.fn(async ({ jobId }: { jobId: string }) => ({
+      job: (await repositories.jobs.findById(jobId))!,
+      profile: (await repositories.applicantProfile.get())!,
+      artifacts: [
+        await repositories.artifacts.create({
+          jobId,
+          discoveryRunId: null,
+          kind: 'resume-variant',
+          format: 'pdf',
+          fileName: 'resume.pdf',
+          storagePath: `/tmp/${jobId}-resume.pdf`,
+          createdAt: new Date('2026-05-08T10:01:00.000Z')
+        })
+      ]
+    }));
+
+    const runApplicationStub = vi.fn(
+      async () => await new Promise<never>(() => {})
+    );
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never,
+      applicationRunTimeoutMs: 25,
+      staleApplicationRunThresholdMs: 60_000,
+      terminateCamoufoxImpl: vi.fn(async () => undefined)
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+    await queue.onIdle();
+
+    const updatedBatch = await repositories.autopilotRuns.findById(autopilotRun.id);
+    const childRuns = await repositories.applicationRuns.listByAutopilotRun(autopilotRun.id);
+
+    expect(runApplicationStub).toHaveBeenCalledTimes(1);
+    expect(updatedBatch).toMatchObject({
+      status: 'failed',
+      blockedCount: 1,
+      submittedCount: 0
+    });
+    expect(childRuns).toHaveLength(1);
+    expect(childRuns[0]).toMatchObject({
+      status: 'retry',
+      currentStep: 'retry_queued',
+      stopReason: 'stuck_timeout'
+    });
+  });
 });

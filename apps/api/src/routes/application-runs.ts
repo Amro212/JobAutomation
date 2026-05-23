@@ -42,6 +42,8 @@ function statusMessageForRun(status: ApplicationRunStatus): string {
       return 'Automation skipped before browser work started.';
     case 'running':
       return 'Automation is currently running.';
+    case 'retry':
+      return 'Automation timed out and is queued for retry on the next autopilot pass.';
     case 'completed':
       return 'Automation completed.';
     case 'failed':

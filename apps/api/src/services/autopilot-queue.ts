@@ -1,5 +1,7 @@
 import PQueue from 'p-queue';
 import { dirname, join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import {
   ashbyApplicationSite,
@@ -24,6 +26,16 @@ import { generateJobArtifactsForJob } from './generate-job-artifacts';
 import { reviewJobMatchWithLlm } from './job-match-llm-review';
 import { autopilotJobPoolFilters } from './jobs-tab-filters';
 import { recomputeJobPrefilterMatches } from './job-prefilter-recompute';
+
+const execFileAsync = promisify(execFile);
+const DEFAULT_APPLICATION_STUCK_TIMEOUT_MS = 10 * 60 * 1000;
+
+class ApplicationRunTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Application run exceeded watchdog timeout of ${timeoutMs}ms.`);
+    this.name = 'ApplicationRunTimeoutError';
+  }
+}
 
 export type QueueAutopilotRunInput = {
   run: Awaited<ReturnType<ApiRepositories['autopilotRuns']['create']>>;
@@ -181,6 +193,9 @@ export class AutopilotQueueService {
       generateArtifactsImpl?: typeof generateJobArtifactsForJob;
       runApplicationImpl?: typeof runApplication;
       reviewJobMatchImpl?: typeof reviewJobMatchWithLlm;
+      applicationRunTimeoutMs?: number;
+      staleApplicationRunThresholdMs?: number;
+      terminateCamoufoxImpl?: () => Promise<void>;
     }
   ) {
     this.queue = new PQueue({ concurrency: 1 });
@@ -192,7 +207,17 @@ export class AutopilotQueueService {
       input.generateArtifactsImpl ?? generateJobArtifactsForJob;
     this.runApplicationImpl = input.runApplicationImpl ?? runApplication;
     this.reviewJobMatchImpl = input.reviewJobMatchImpl ?? reviewJobMatchWithLlm;
+    this.applicationRunTimeoutMs =
+      input.applicationRunTimeoutMs ?? DEFAULT_APPLICATION_STUCK_TIMEOUT_MS;
+    this.staleApplicationRunThresholdMs =
+      input.staleApplicationRunThresholdMs ?? DEFAULT_APPLICATION_STUCK_TIMEOUT_MS;
+    this.terminateCamoufoxImpl =
+      input.terminateCamoufoxImpl ?? (() => this.terminateCamoufoxProcessesDefault());
   }
+
+  private readonly applicationRunTimeoutMs: number;
+  private readonly staleApplicationRunThresholdMs: number;
+  private readonly terminateCamoufoxImpl: () => Promise<void>;
 
   enqueueRun(input: QueueAutopilotRunInput): void {
     const controller = new AbortController();
@@ -244,6 +269,8 @@ export class AutopilotQueueService {
     }
 
     try {
+      await this.recoverStaleRunningApplicationRuns(run.id);
+
       let discoveryRunId: string;
       const selectedSources = discoverySourcesForConfig(input.sources, input.config);
       const activeApplicationSites = applicationSitesForConfig(input.config);
@@ -453,28 +480,30 @@ export class AutopilotQueueService {
             currentStep: `submitting_application:${job.title}`
           });
 
-          const result = await this.runApplicationImpl({
-            jobId: job.id,
-            runId: createdRun.id,
-            jobsRepository: this.input.repositories.jobs,
-            applicantProfileRepository: this.input.repositories.applicantProfile,
-            applicationRunsRepository: this.input.repositories.applicationRuns,
-            artifactsRepository: this.input.repositories.artifacts,
-            logEventsRepository: this.input.repositories.logEvents,
-            siteFlows: activeApplicationSites,
-            // Batch autopilot must close headed browsers on pause so the next job
-            // can reuse the same persistent profile without spawning empty windows.
-            leaveBrowserOpenOnPause: false,
-            openRouter: openRouterConfigForModel(
-              this.input.config,
-              this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
-                this.input.config.OPENROUTER_JOB_SUMMARY_MODEL
-            ),
-            artifactsRootDir: join(
-              dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
-              'artifacts'
-            )
-          });
+          const result = await this.runApplicationWithWatchdog(() =>
+            this.runApplicationImpl({
+              jobId: job.id,
+              runId: createdRun.id,
+              jobsRepository: this.input.repositories.jobs,
+              applicantProfileRepository: this.input.repositories.applicantProfile,
+              applicationRunsRepository: this.input.repositories.applicationRuns,
+              artifactsRepository: this.input.repositories.artifacts,
+              logEventsRepository: this.input.repositories.logEvents,
+              siteFlows: activeApplicationSites,
+              // Batch autopilot must close headed browsers on pause so the next job
+              // can reuse the same persistent profile without spawning empty windows.
+              leaveBrowserOpenOnPause: false,
+              openRouter: openRouterConfigForModel(
+                this.input.config,
+                this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
+                  this.input.config.OPENROUTER_JOB_SUMMARY_MODEL
+              ),
+              artifactsRootDir: join(
+                dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
+                'artifacts'
+              )
+            })
+          );
 
           if (result.status === 'completed') {
             submittedCount += 1;
@@ -487,37 +516,68 @@ export class AutopilotQueueService {
             blockedCount += 1;
           }
         } catch (error) {
-          failedCount += 1;
-          // runApplicationImpl can throw before its own catch (e.g. browser
-          // launch failure). Persist 'failed' so the run never stays stuck in
-          // 'running'.
-          if (createdRunId) {
-            await this.input.repositories.applicationRuns
-              .update(createdRunId, {
-                status: 'failed',
-                currentStep: 'autopilot_error',
-                stopReason: 'autopilot_error',
-                completedAt: new Date(),
-                updatedAt: new Date()
+          if (error instanceof ApplicationRunTimeoutError) {
+            blockedCount += 1;
+            await this.terminateCamoufoxImpl();
+            if (createdRunId) {
+              await this.input.repositories.applicationRuns
+                .update(createdRunId, {
+                  status: 'retry',
+                  currentStep: 'retry_queued',
+                  stopReason: 'stuck_timeout',
+                  completedAt: new Date(),
+                  updatedAt: new Date()
+                })
+                .catch(() => null);
+            }
+            await this.input.repositories.logEvents
+              .create({
+                applicationRunId: createdRunId,
+                jobId: job.id,
+                level: 'warn',
+                message:
+                  'Autopilot watchdog timed out this application run; Camoufox was terminated and run was re-queued.',
+                detailsJson: JSON.stringify({
+                  applicationRunId: createdRunId,
+                  jobId: job.id,
+                  siteKey: matchedSite!.siteKey,
+                  timeoutMs: error.timeoutMs
+                })
+              })
+              .catch(() => null);
+          } else {
+            failedCount += 1;
+            // runApplicationImpl can throw before its own catch (e.g. browser
+            // launch failure). Persist 'failed' so the run never stays stuck in
+            // 'running'.
+            if (createdRunId) {
+              await this.input.repositories.applicationRuns
+                .update(createdRunId, {
+                  status: 'failed',
+                  currentStep: 'autopilot_error',
+                  stopReason: 'autopilot_error',
+                  completedAt: new Date(),
+                  updatedAt: new Date()
+                })
+                .catch(() => null);
+            }
+            await this.input.repositories.logEvents
+              .create({
+                applicationRunId: createdRunId,
+                jobId: job.id,
+                level: 'error',
+                message:
+                  'Autopilot application run threw before completion; marked as failed.',
+                detailsJson: JSON.stringify({
+                  applicationRunId: createdRunId,
+                  jobId: job.id,
+                  siteKey: matchedSite!.siteKey,
+                  errorMessage:
+                    error instanceof Error ? error.message : String(error)
+                })
               })
               .catch(() => null);
           }
-          await this.input.repositories.logEvents
-            .create({
-              applicationRunId: createdRunId,
-              jobId: job.id,
-              level: 'error',
-              message:
-                'Autopilot application run threw before completion; marked as failed.',
-              detailsJson: JSON.stringify({
-                applicationRunId: createdRunId,
-                jobId: job.id,
-                siteKey: matchedSite!.siteKey,
-                errorMessage:
-                  error instanceof Error ? error.message : String(error)
-              })
-            })
-            .catch(() => null);
         }
 
         await this.updateCounts(run.id, {
@@ -582,5 +642,79 @@ export class AutopilotQueueService {
     }
   ): Promise<void> {
     await this.input.repositories.autopilotRuns.update(runId, counters);
+  }
+
+  private async runApplicationWithWatchdog<T>(
+    operation: () => Promise<T>
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new ApplicationRunTimeoutError(this.applicationRunTimeoutMs));
+          }, this.applicationRunTimeoutMs);
+        })
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  private async recoverStaleRunningApplicationRuns(
+    autopilotRunId: string
+  ): Promise<void> {
+    const cutoff = Date.now() - this.staleApplicationRunThresholdMs;
+    const runningRuns = (await this.input.repositories.applicationRuns.list()).filter(
+      (candidate) =>
+        candidate.status === 'running' &&
+        candidate.updatedAt.getTime() < cutoff
+    );
+    if (runningRuns.length === 0) {
+      return;
+    }
+
+    await this.terminateCamoufoxImpl();
+    for (const staleRun of runningRuns) {
+      await this.input.repositories.applicationRuns
+        .update(staleRun.id, {
+          status: 'retry',
+          currentStep: 'retry_queued',
+          stopReason: 'stuck_timeout',
+          completedAt: new Date(),
+          updatedAt: new Date()
+        })
+        .catch(() => null);
+      await this.input.repositories.logEvents
+        .create({
+          applicationRunId: staleRun.id,
+          jobId: staleRun.jobId,
+          level: 'warn',
+          message:
+            'Recovered stale running application run; Camoufox was terminated and run was re-queued.',
+          detailsJson: JSON.stringify({
+            applicationRunId: staleRun.id,
+            previousUpdatedAt: staleRun.updatedAt.toISOString(),
+            staleThresholdMs: this.staleApplicationRunThresholdMs,
+            recoveredByAutopilotRunId: autopilotRunId
+          })
+        })
+        .catch(() => null);
+    }
+  }
+
+  private async terminateCamoufoxProcessesDefault(): Promise<void> {
+    try {
+      if (process.platform === 'win32') {
+        await execFileAsync('taskkill', ['/F', '/T', '/IM', 'camoufox.exe']);
+        return;
+      }
+      await execFileAsync('pkill', ['-f', 'camoufox']);
+    } catch {
+      // Best-effort process cleanup only.
+    }
   }
 }
