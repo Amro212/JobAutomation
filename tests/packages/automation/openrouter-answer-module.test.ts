@@ -1657,6 +1657,85 @@ describe('openrouter answer module', () => {
     ]);
   });
 
+  test('aligns deterministic legal authorization yes/no answers to verbose select options', async () => {
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'lever_canada_work_auth',
+          action: 'select',
+          value: 'No',
+          selectedOptionValue: 'No',
+          selectedOptionLabel: 'No',
+          confidence: 1,
+          skipReason: ''
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant({
+        autofillProfile: minimalAutofillProfileSchema.parse({
+          workAuthorizationCountriesCsv: '',
+          requiresSponsorship: 'yes',
+          requiresSponsorshipCountriesCsv: 'US',
+          currentCountryCode: 'CA',
+          primaryCitizenshipCountryCode: 'CA',
+          currentCountryResidenceStatus: 'citizen',
+          legallyAuthorizedInCurrentCountry: 'yes',
+          needsSponsorshipInCurrentCountry: 'no'
+        })
+      }),
+      job: baseJob({
+        sourceKind: 'lever',
+        sourceUrl: 'https://jobs.lever.co/syntronic/example',
+        companyName: 'Syntronic',
+        location: 'Ottawa, ON, Canada'
+      }),
+      fields: [
+        {
+          id: 'lever_canada_work_auth',
+          label: 'Are you legally authorized to work in Canada for any employer?✱',
+          type: 'select',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['[name="lever_canada_work_auth"]'],
+          options: [
+            { value: '', label: 'Select...' },
+            {
+              value: 'Yes, I am authorized to work for any employer in Canada',
+              label: 'Yes, I am authorized to work for any employer in Canada'
+            },
+            {
+              value: 'I would require sponsorship to work in Canada',
+              label: 'I would require sponsorship to work in Canada'
+            }
+          ]
+        }
+      ],
+      provider
+    });
+
+    expect(result.fillPlanValidation.ok).toBe(true);
+    expect(result.fillPlan).toEqual([
+      {
+        fieldId: 'lever_canada_work_auth',
+        action: 'select',
+        value: 'Yes, I am authorized to work for any employer in Canada',
+        confidence: 1,
+        skipReason: ''
+      }
+    ]);
+    expect(result.fieldDiagnostics).toEqual([
+      expect.objectContaining({
+        fieldId: 'lever_canada_work_auth',
+        category: 'accepted',
+        normalizedAction: 'select',
+        recovered: true
+      })
+    ]);
+  });
+
   test('recovers optional direct profile comboboxes from structured identity facts', async () => {
     const provider = createProvider({
       items: [

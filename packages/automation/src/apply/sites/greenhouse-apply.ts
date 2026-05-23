@@ -4,7 +4,7 @@ import { executeApplicationFillPlan } from '../fill-plan-executor';
 import { scrapeApplicationFields } from '../form-scraper';
 import { generateApplicationFillPlan } from '../openrouter-answer-module';
 import { guardRequiredFieldsBeforeSubmit } from '../required-field-submit-gate';
-import { submitApplicationAndConfirm } from '../submit-application';
+import { confirmApplicationSubmission, submitApplicationAndConfirm } from '../submit-application';
 import {
   createGmailApiClient,
   isEnabledForGmailVerification,
@@ -336,6 +336,70 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
             message: verificationMessage
           })
     });
+
+    if (verificationResult.status === 'challenge_not_visible') {
+      const submissionResult = await confirmApplicationSubmission({
+        page: context.session.page,
+        board: 'greenhouse',
+        submitButtonSource: 'greenhouse_email_verification_submit'
+      });
+
+      if (submissionResult.status !== 'submitted') {
+        return context.pauseForManualReview({
+          step: 'submit_confirmation_missing',
+          message: submissionResult.message,
+          stopReason: submissionResult.status,
+          details: {
+            boardEntry,
+            scrapedFields,
+            ...fillPlanDetails,
+            executionResult,
+            confirmationStatus: submissionResult.status,
+            verificationStatus: verificationResult.status,
+            preEntryWarmup,
+            preFillWarmup,
+            profileDirectory: context.session.identity.userDataDir ?? null,
+            pageHtml: await context.session.page.content(),
+          },
+        });
+      }
+
+      await context.logStep(
+        'submitted',
+        'Submitted the Greenhouse application without an email security challenge.',
+        {
+          boardEntry,
+          scrapedFields,
+          ...fillPlanDetails,
+          executionResult,
+          confirmationStatus: submissionResult.status,
+          confirmationMessage: submissionResult.confirmationMessage,
+          submitButtonSource: submissionResult.submitButtonSource,
+          verificationStatus: verificationResult.status,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        }
+      );
+
+      return context.completeRun({
+        step: 'submitted',
+        message: 'Submitted the Greenhouse application without an email security challenge.',
+        details: {
+          boardEntry,
+          scrapedFields,
+          ...fillPlanDetails,
+          executionResult,
+          confirmationStatus: submissionResult.status,
+          confirmationMessage: submissionResult.confirmationMessage,
+          submitButtonSource: submissionResult.submitButtonSource,
+          verificationStatus: verificationResult.status,
+          preEntryWarmup,
+          preFillWarmup,
+          profileDirectory: context.session.identity.userDataDir ?? null,
+        },
+      });
+    }
 
     if (verificationResult.status !== 'code_entered') {
       return context.pauseForManualReview({

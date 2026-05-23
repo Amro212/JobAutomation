@@ -27,14 +27,14 @@ export class ApplicationLinkExpiredError extends Error {
 const EXPIRED_PAGE_TEXT_PATTERNS: RegExp[] = [
   /no longer accepting applications/i,
   /we (are|'?re) no longer accepting/i,
-  /this (job|position|posting|role|listing) (is no longer|has been|is) (open|available|active|accepting|posted)/i,
+  /this (job|position|posting|role|listing) (is no longer|has been) (open|available|active|accepting|posted)/i,
   /this (job|position|posting|role|listing) (has (been )?(closed|removed|filled|expired)|is closed)/i,
   /position has been (closed|filled|removed)/i,
   /(job|posting) (not found|has expired|no longer exists)/i,
   /sorry,? (this|the) (job|posting|role|position|page) (is no longer|has been|cannot be|could not be|doesn'?t exist)/i,
   /the (job|posting|page) you (are looking for|requested) (has been|is no longer|cannot be|could not be)/i,
   /this (page|listing) (does not|doesn'?t) exist/i,
-  /404[\s\u2014\u2013\-]*not found/i,
+  /404[\s\u2014\u2013-]*not found/i,
 ];
 
 const EXPIRED_URL_PATTERNS: RegExp[] = [
@@ -95,6 +95,7 @@ async function assertApplicationLinkNotExpired(input: {
 
 export type ApplicationBoardEntryAction =
   | 'direct_form'
+  | 'embedded_form'
   | 'clicked_apply_button'
   | 'clicked_application_tab';
 
@@ -157,6 +158,136 @@ const DIRECT_FORM_TIMEOUT_MS: Record<SupportedApplicationBoard, number> = {
   lever: 1_500,
   ashby: 2_500,
 };
+
+const GREENHOUSE_EMBED_HOSTS = new Set([
+  'boards.greenhouse.io',
+  'job-boards.greenhouse.io',
+  'job-boards.eu.greenhouse.io'
+]);
+
+const GREENHOUSE_APPLY_TRIGGER_TIMEOUT_MS = 3_000;
+
+function normalizeGreenhouseEmbedUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'boards.greenhouse.io') {
+      parsed.hostname = 'job-boards.greenhouse.io';
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function greenhouseTokenFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.get('gh_jid') ?? parsed.searchParams.get('token');
+  } catch {
+    return null;
+  }
+}
+
+function greenhouseBoardSlugFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const jobBoardPathMatch = parsed.pathname.match(/\/job-board\/([^/]+)/i);
+    if (jobBoardPathMatch?.[1]) {
+      return jobBoardPathMatch[1].toLowerCase();
+    }
+
+    const hostParts = parsed.hostname.replace(/^www\./, '').split('.');
+    const domainSlug =
+      ['careers', 'jobs', 'app'].includes(hostParts[0] ?? '') && hostParts[1]
+        ? hostParts[1]
+        : hostParts[0];
+    return domainSlug && /^[a-z0-9-]+$/i.test(domainSlug) ? domainSlug.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function visibleGreenhouseEmbedUrls(page: Page): Promise<string[]> {
+  const urls = await page.evaluate((hosts) => {
+    const visible = (element: Element): boolean => {
+      const htmlElement = element as HTMLElement;
+      const style = window.getComputedStyle(htmlElement);
+      const rect = htmlElement.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+
+    return Array.from(document.querySelectorAll('iframe[src]'))
+      .filter(visible)
+      .map((iframe) => (iframe as HTMLIFrameElement).src)
+      .filter((src) => {
+        try {
+          const parsed = new URL(src);
+          return hosts.includes(parsed.hostname) && parsed.pathname.includes('/embed/job_app');
+        } catch {
+          return false;
+        }
+      });
+  }, Array.from(GREENHOUSE_EMBED_HOSTS));
+
+  return Array.from(new Set(urls.map(normalizeGreenhouseEmbedUrl)));
+}
+
+async function navigateToFirstReadyGreenhouseEmbed(input: {
+  page: Page;
+  startUrl: string;
+}): Promise<ApplicationBoardEntryResult | null> {
+  const embedUrls = await visibleGreenhouseEmbedUrls(input.page);
+  const token = greenhouseTokenFromUrl(input.startUrl);
+  const boardSlug = greenhouseBoardSlugFromUrl(input.startUrl);
+  if (token && boardSlug) {
+    embedUrls.push(
+      `https://job-boards.greenhouse.io/embed/job_app?for=${encodeURIComponent(boardSlug)}&token=${encodeURIComponent(token)}`
+    );
+  }
+
+  let result: ApplicationBoardEntryResult | null = null;
+  try {
+    for (const embedUrl of Array.from(new Set(embedUrls))) {
+      const navigated = await input.page
+        .goto(embedUrl, { waitUntil: 'domcontentloaded' })
+        .then(() => true)
+        .catch(() => false);
+      if (!navigated) {
+        continue;
+      }
+
+      const usableCandidate = await assertApplicationLinkNotExpired({
+        page: input.page,
+        board: 'greenhouse'
+      })
+        .then(() => true)
+        .catch(() => false);
+      if (!usableCandidate) {
+        continue;
+      }
+
+      const embeddedForm = await waitForApplicationForm(input.page, 'greenhouse', 3_000);
+      if (embeddedForm) {
+        result = {
+          board: 'greenhouse',
+          entryAction: 'embedded_form',
+          startUrl: input.startUrl,
+          finalUrl: input.page.url(),
+          readyFieldCount: embeddedForm.readyFieldCount,
+          rootSelector: embeddedForm.rootSelector,
+          rootIndex: embeddedForm.rootIndex
+        };
+        break;
+      }
+    }
+  } finally {
+    if (!result && input.page.url() !== input.startUrl) {
+      await input.page.goto(input.startUrl, { waitUntil: 'domcontentloaded' }).catch(() => undefined);
+    }
+  }
+
+  return result;
+}
 
 function parsePositiveInt(value: string | undefined): number | null {
   if (!value) {
@@ -283,6 +414,17 @@ async function clickFirstVisibleTrigger(triggers: Locator[]): Promise<boolean> {
   return false;
 }
 
+async function clickGreenhouseApplyTrigger(page: Page): Promise<boolean> {
+  return clickFirstVisibleTrigger([
+    page.getByRole('button', { name: /apply now/i }).first(),
+    page.getByRole('link', { name: /apply now/i }).first(),
+    page.getByRole('button', { name: /apply for this (job|role)/i }).first(),
+    page.getByRole('link', { name: /apply for this (job|role)/i }).first(),
+    page.getByRole('button', { name: /^apply$/i }).first(),
+    page.getByRole('link', { name: /^apply$/i }).first()
+  ]);
+}
+
 export async function reachApplicationForm(input: {
   page: Page;
   board: SupportedApplicationBoard;
@@ -318,6 +460,46 @@ export async function reachApplicationForm(input: {
   });
 
   if (input.board === 'greenhouse') {
+    const embeddedForm = await navigateToFirstReadyGreenhouseEmbed({
+      page: input.page,
+      startUrl
+    });
+    if (embeddedForm) {
+      return embeddedForm;
+    }
+
+    const clickedGreenhouseApply = await clickGreenhouseApplyTrigger(input.page);
+    if (clickedGreenhouseApply) {
+      await input.page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      const postClickDirectForm = await waitForApplicationForm(
+        input.page,
+        input.board,
+        GREENHOUSE_APPLY_TRIGGER_TIMEOUT_MS
+      );
+      if (postClickDirectForm) {
+        return {
+          board: input.board,
+          entryAction: 'clicked_apply_button',
+          startUrl,
+          finalUrl: input.page.url(),
+          readyFieldCount: postClickDirectForm.readyFieldCount,
+          rootSelector: postClickDirectForm.rootSelector,
+          rootIndex: postClickDirectForm.rootIndex
+        };
+      }
+
+      const postClickEmbeddedForm = await navigateToFirstReadyGreenhouseEmbed({
+        page: input.page,
+        startUrl
+      });
+      if (postClickEmbeddedForm) {
+        return {
+          ...postClickEmbeddedForm,
+          entryAction: 'clicked_apply_button'
+        };
+      }
+    }
+
     throw new Error(
       'Greenhouse application form was not directly available on the initial page load.'
     );

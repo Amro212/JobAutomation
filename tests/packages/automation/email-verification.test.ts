@@ -214,6 +214,58 @@ describe('greenhouse email verification', () => {
     expect(page.keyboard.type).toHaveBeenCalledWith('KDpjDhqX', expect.anything());
   });
 
+  test('does not poll Gmail when no security challenge is visible after submit', async () => {
+    const submitButton = {
+      isVisible: vi.fn().mockResolvedValue(true),
+      click: vi.fn().mockResolvedValue(undefined)
+    };
+    const ordinaryTextInput = {
+      isVisible: vi.fn().mockResolvedValue(true)
+    };
+    const hiddenVerificationInput = {
+      isVisible: vi.fn().mockResolvedValue(false)
+    };
+    const segmentedInputs = {
+      count: vi.fn().mockResolvedValue(0)
+    };
+    const retrieveCode = vi.fn();
+    const page = {
+      locator: vi.fn((selector: string) => {
+        if (selector === 'input[id^="security-input-"]') {
+          return segmentedInputs;
+        }
+        if (selector.includes('submit')) {
+          return { first: () => submitButton };
+        }
+        if (selector === 'input[type="text"]') {
+          return { first: () => ordinaryTextInput };
+        }
+        return { first: () => hiddenVerificationInput };
+      }),
+      getByRole: vi.fn((_role: string, options?: { name?: RegExp }) => ({
+        first: () =>
+          options?.name && /submit|apply/i.test(String(options.name))
+            ? submitButton
+            : hiddenVerificationInput,
+      })),
+      getByLabel: vi.fn(() => ({ first: () => hiddenVerificationInput })),
+      getByText: vi.fn(() => ({ first: () => ({ isVisible: vi.fn().mockResolvedValue(false) }) })),
+      waitForTimeout: vi.fn().mockResolvedValue(undefined)
+    };
+
+    await expect(
+      submitGreenhouseApplicationAndEnterVerificationCode({
+        page: page as never,
+        retrieveCode
+      })
+    ).resolves.toEqual({
+      status: 'challenge_not_visible',
+      message: 'Greenhouse verification challenge did not become visible after submit.'
+    });
+
+    expect(retrieveCode).not.toHaveBeenCalled();
+  });
+
   test('merges missing Gmail OAuth fields from env when profile config is enabled but incomplete', () => {
     process.env.JOBAUTOMATION_GREENHOUSE_EMAIL_VERIFICATION_ENABLED = '1';
     process.env.JOBAUTOMATION_GMAIL_USER_EMAIL = 'amromousa8@gmail.com';

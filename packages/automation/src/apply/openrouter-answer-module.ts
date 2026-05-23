@@ -1349,6 +1349,51 @@ function optionAliases(candidate: string, field?: ScrapedApplicationField): stri
   const normalizedCandidate = normalizeForComparison(candidate);
   const aliases = new Set([normalizedCandidate]);
   const compactCandidate = normalizedCandidate.replace(/[^a-z0-9]+/g, '');
+  const fieldFingerprint = field ? normalizeTextForMatching(`${field.id} ${field.label}`) : '';
+  const candidateFingerprint = normalizeTextForMatching(candidate);
+
+  if (field && isWorkAuthorizationPrompt(fieldFingerprint)) {
+    const isSponsorshipQuestion = includesAny(fieldFingerprint, ['sponsorship', 'sponsor']);
+    const hasPositiveAuthorization =
+      includesAny(candidateFingerprint, [
+        'yes',
+        'authorized',
+        'eligible',
+        'entitled',
+        'work for any employer'
+      ]) &&
+      !includesAny(candidateFingerprint, ['not authorized', 'not eligible', 'not entitled', 'require sponsorship']);
+    const hasSponsorshipRequirement = includesAny(candidateFingerprint, [
+      'require sponsorship',
+      'requires sponsorship',
+      'need sponsorship',
+      'needs sponsorship',
+      'would require sponsorship'
+    ]);
+    const hasNegativeSponsorship = includesAny(candidateFingerprint, [
+      'no sponsorship',
+      'not require sponsorship',
+      'do not require sponsorship',
+      'does not require sponsorship',
+      'without sponsorship'
+    ]);
+
+    if (isSponsorshipQuestion) {
+      if (normalizedCandidate === 'yes' || hasSponsorshipRequirement) {
+        aliases.add('yes');
+      }
+      if (normalizedCandidate === 'no' || hasNegativeSponsorship) {
+        aliases.add('no');
+      }
+    } else {
+      if (normalizedCandidate === 'yes' || hasPositiveAuthorization) {
+        aliases.add('yes');
+      }
+      if (normalizedCandidate === 'no' || hasSponsorshipRequirement) {
+        aliases.add('no');
+      }
+    }
+  }
 
   if (
     field &&
@@ -1412,12 +1457,12 @@ function resolveOptionValue(
   }
 
   for (const option of options) {
-    const optionValueAliases = optionAliases(option.value);
+    const optionValueAliases = optionAliases(option.value, field);
     if (optionValueAliases.some((alias) => candidateAliases.includes(alias))) {
       return option.value;
     }
 
-    const optionLabelAliases = optionAliases(option.label);
+    const optionLabelAliases = optionAliases(option.label, field);
     if (optionLabelAliases.some((alias) => candidateAliases.includes(alias))) {
       return option.value;
     }
@@ -1512,9 +1557,10 @@ function firstEntryString(entry: ApplicationFillPlanEntry): string | null {
 
 function resolveEntryOption(
   options: ScrapedApplicationFieldOption[],
-  entry: ApplicationFillPlanEntry
+  entry: ApplicationFillPlanEntry,
+  field?: ScrapedApplicationField
 ): ScrapedApplicationFieldOption | null {
-  return resolveOptionFromCandidates(options, entryStringCandidates(entry));
+  return resolveOptionFromCandidates(options, entryStringCandidates(entry), field);
 }
 
 function expectedActionsForField(field: ScrapedApplicationField): ApplicationFillPlanAction[] {
@@ -2748,7 +2794,7 @@ function normalizeEntryForField(
 
       const optionMode = field.optionMode ?? (field.options.length > 0 ? 'static' : 'dynamic_search');
       if (optionMode === 'static' && field.options.length > 0 && textValue.length > 0) {
-        const option = resolveEntryOption(field.options, entry);
+        const option = resolveEntryOption(field.options, entry, field);
         if (option) {
           return createAcceptedResult({
             field,
@@ -2839,7 +2885,7 @@ function normalizeEntryForField(
       const textValue = firstEntryString(entry) ?? '';
       const optionMode = field.optionMode ?? (field.options.length > 0 ? 'static' : 'dynamic_search');
       if (optionMode === 'static' && field.options.length > 0 && textValue.length > 0) {
-        const option = resolveEntryOption(field.options, entry);
+        const option = resolveEntryOption(field.options, entry, field);
         if (option) {
           return createAcceptedResult({
             field,
@@ -2945,7 +2991,7 @@ function normalizeEntryForField(
       });
     }
 
-    const option = resolveEntryOption(field.options, entry);
+    const option = resolveEntryOption(field.options, entry, field);
     return option
       ? createAcceptedResult({
           field,
@@ -2995,7 +3041,7 @@ function normalizeEntryForField(
       });
     }
 
-    const option = resolveEntryOption(field.options, radioEntry);
+    const option = resolveEntryOption(field.options, radioEntry, field);
     return option
         ? createAcceptedResult({
           field,

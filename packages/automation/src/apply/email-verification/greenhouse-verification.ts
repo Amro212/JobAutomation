@@ -40,8 +40,7 @@ async function findVerificationInput(page: Page): Promise<{ locator: Locator | n
     ['css:input[name*="security" i]', page.locator('input[name*="security" i]').first()],
     ['css:input[id*="security" i]', page.locator('input[id*="security" i]').first()],
     ['css:input[name*="verification" i]', page.locator('input[name*="verification" i]').first()],
-    ['css:input[id*="verification" i]', page.locator('input[id*="verification" i]').first()],
-    ['css:input[type="text"]', page.locator('input[type="text"]').first()]
+    ['css:input[id*="verification" i]', page.locator('input[id*="verification" i]').first()]
   ] as const;
 
   for (const [source, locator] of candidates) {
@@ -108,7 +107,7 @@ export async function submitGreenhouseApplicationAndEnterVerificationCode(input:
     verificationInputSource: verificationInput.source,
     segmentedInputCount
   });
-  if (!challengeVisible && !verificationInput.locator) {
+  if (!challengeVisible && !verificationInput.locator && segmentedInputCount === 0) {
     return {
       status: 'challenge_not_visible',
       message: 'Greenhouse verification challenge did not become visible after submit.'

@@ -122,21 +122,12 @@ async function waitForSuccessSignal(input: {
   return detectSuccessSignal(input.page, input.patterns);
 }
 
-export async function submitApplicationAndConfirm(input: {
+export async function confirmApplicationSubmission(input: {
   page: Page;
   board: SupportedApplicationBoard;
+  submitButtonSource?: string;
   confirmationTimeoutMs?: number;
 }): Promise<SubmitApplicationResult> {
-  const submitButton = await findSubmitButton(input.page);
-  if (!submitButton.locator || !submitButton.source) {
-    return {
-      status: 'submit_button_not_found',
-      message: 'Application submit button was not visible.'
-    };
-  }
-
-  await submitButton.locator.click();
-
   const confirmationSignal = await waitForSuccessSignal({
     page: input.page,
     patterns: SUCCESS_TEXT_BY_BOARD[input.board],
@@ -152,7 +143,32 @@ export async function submitApplicationAndConfirm(input: {
   return {
     status: 'submitted',
     confirmationMessage: 'Application submitted successfully.',
-    submitButtonSource: submitButton.source,
+    submitButtonSource: input.submitButtonSource ?? 'already_clicked',
     confirmationSignal
   };
+}
+
+export async function submitApplicationAndConfirm(input: {
+  page: Page;
+  board: SupportedApplicationBoard;
+  confirmationTimeoutMs?: number;
+}): Promise<SubmitApplicationResult> {
+  const submitButton = await findSubmitButton(input.page);
+  if (!submitButton.locator || !submitButton.source) {
+    return {
+      status: 'submit_button_not_found',
+      message: 'Application submit button was not visible.'
+    };
+  }
+
+  await submitButton.locator.click();
+
+  return confirmApplicationSubmission({
+    page: input.page,
+    board: input.board,
+    submitButtonSource: submitButton.source,
+    ...(input.confirmationTimeoutMs !== undefined
+      ? { confirmationTimeoutMs: input.confirmationTimeoutMs }
+      : {})
+  });
 }
