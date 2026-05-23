@@ -368,6 +368,84 @@ describe('prefilterJob', () => {
     expect(r.reasons).toContain('experience_min_years');
   });
 
+  test.each([
+    ['4+ years', 'Requirements: 4+ years of software engineering experience.', 4],
+    ['5+ years', 'Minimum 5+ years of backend engineering experience.', 5],
+    ['3-5 years', 'Requirements: 3-5 years of full-stack development experience.', 5],
+    ['3–6 years', 'Required: 3–6 years of professional software engineering experience.', 6],
+    ['4 to 7 years', 'Must have 4 to 7 years of TypeScript backend experience.', 7]
+  ])('rejects required %s when it exceeds max_required_years', (_label, descriptionText, expectedYears) => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Software Engineer',
+        descriptionText
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer'],
+          positive_keywords: ['typescript', 'backend'],
+          max_required_years: 3
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(false);
+    expect(r.reasons).toContain('experience_min_years');
+    expect(r.audit.seniority.minYearsRequired).toBe(expectedYears);
+  });
+
+  test.each([
+    ['0-3 years', 'Requirements: 0-3 years of software engineering experience.'],
+    ['1-3 years', 'Minimum 1-3 years of backend engineering experience.'],
+    ['3+ years', 'Required: 3+ years of TypeScript backend experience.']
+  ])('allows required %s when it does not exceed max_required_years', (_label, descriptionText) => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Software Engineer',
+        descriptionText
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer'],
+          positive_keywords: ['typescript', 'backend'],
+          max_required_years: 3
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(true);
+    expect(r.reasons).not.toContain('experience_min_years');
+  });
+
+  test('does not hard reject preferred over-cap years when the role otherwise matches', () => {
+    const r = prefilterJob(
+      {
+        ...baseJob,
+        title: 'Software Engineer',
+        descriptionText:
+          'Build TypeScript backend services. Bonus: 5+ years of software engineering experience.'
+      },
+      {
+        jobKeywordProfile: profile({
+          seniority: 'new_grad',
+          target_titles: ['software engineer'],
+          positive_keywords: ['typescript', 'backend'],
+          max_required_years: 3
+        }),
+        preferredCountries: []
+      }
+    );
+
+    expect(r.pass).toBe(true);
+    expect(r.reasons).not.toContain('experience_min_years');
+  });
+
   test('allows a strong new-grad engineering role with entry-level evidence', () => {
     const r = prefilterJob(
       {
