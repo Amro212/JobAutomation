@@ -2,6 +2,12 @@ export type OpenRouterConfig = {
   apiKey: string;
   baseUrl: string;
   model: string;
+  reasoning?: {
+    enabled?: boolean;
+    exclude?: boolean;
+    effort?: 'xhigh' | 'high' | 'medium' | 'low' | 'minimal' | 'none';
+    max_tokens?: number;
+  };
   fetchImpl?: typeof fetch;
 };
 
@@ -267,6 +273,7 @@ export function createOpenRouterProvider(config: OpenRouterConfig) {
           body: JSON.stringify({
             model: config.model,
             response_format: responseFormat,
+            ...(config.reasoning ? { reasoning: config.reasoning } : {}),
             messages: [
               {
                 role: 'system',

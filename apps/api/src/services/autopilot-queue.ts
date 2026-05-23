@@ -132,7 +132,8 @@ function finalAutopilotStatus(input: {
 
 function openRouterConfigForModel(
   config: AppEnv,
-  model: string | undefined
+  model: string | undefined,
+  options?: { enableReasoning?: boolean }
 ): OpenRouterConfig | null {
   if (!config.OPENROUTER_API_KEY || !model) {
     return null;
@@ -141,7 +142,15 @@ function openRouterConfigForModel(
   return {
     apiKey: config.OPENROUTER_API_KEY,
     baseUrl: config.OPENROUTER_API_BASE_URL,
-    model
+    model,
+    ...(options?.enableReasoning
+      ? {
+          reasoning: {
+            enabled: true,
+            exclude: true
+          }
+        }
+      : {})
   };
 }
 
@@ -497,7 +506,8 @@ export class AutopilotQueueService {
               openRouter: openRouterConfigForModel(
                 this.input.config,
                 this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
-                  this.input.config.OPENROUTER_JOB_SUMMARY_MODEL
+                  this.input.config.OPENROUTER_JOB_SUMMARY_MODEL,
+                { enableReasoning: true }
               ),
               artifactsRootDir: join(
                 dirname(this.input.config.JOB_AUTOMATION_DB_PATH),

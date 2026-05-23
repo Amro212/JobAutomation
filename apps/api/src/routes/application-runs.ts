@@ -191,6 +191,10 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
             apiKey: app.config.OPENROUTER_API_KEY,
             baseUrl: app.config.OPENROUTER_API_BASE_URL,
             model: applicationFillPlanModel!,
+            reasoning: {
+              enabled: true,
+              exclude: true,
+            },
           }
         : null,
       artifactsRootDir: join(
