@@ -53,15 +53,41 @@ export type UpdateAutopilotRunInput = Partial<
   >
 >;
 
+const defaultAutopilotConfig = autopilotConfigSchema.parse({});
+
+function mapStoredConfig(configJson: string | null): AutopilotRunRecord['config'] {
+  let parsed: unknown = {};
+
+  try {
+    parsed = JSON.parse(configJson ?? '{}') as unknown;
+  } catch {
+    return defaultAutopilotConfig;
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return defaultAutopilotConfig;
+  }
+
+  const config = parsed as Record<string, unknown>;
+  const normalized = {
+    ...config,
+    applySiteKeys:
+      Array.isArray(config.applySiteKeys) && config.applySiteKeys.length > 0
+        ? config.applySiteKeys
+        : defaultAutopilotConfig.applySiteKeys
+  };
+
+  const candidate = autopilotConfigSchema.safeParse(normalized);
+  return candidate.success ? candidate.data : defaultAutopilotConfig;
+}
+
 function mapAutopilotRun(
   record: typeof autopilotRunsTable.$inferSelect
 ): AutopilotRunRecord {
   return autopilotRunRecordSchema.parse({
     ...record,
     discoveryRunId: record.discoveryRunId ?? null,
-    config: autopilotConfigSchema.parse(
-      JSON.parse(record.configJson ?? '{}') as unknown
-    ),
+    config: mapStoredConfig(record.configJson),
     errorMessage: record.errorMessage ?? null,
     startedAt: record.startedAt ?? null,
     completedAt: record.completedAt ?? null

@@ -13,10 +13,32 @@ import type { JobAutomationDatabase } from '../client';
 import { autopilotSettingsTable } from '../schema';
 
 const DEFAULT_AUTOPILOT_SETTINGS_ID = 'default';
+const defaultAutopilotConfig = autopilotConfigSchema.parse({});
 
 function parseConfigJson(value: string): AutopilotConfig {
-  const parsed = JSON.parse(value) as unknown;
-  return autopilotConfigSchema.parse(parsed);
+  let parsed: unknown = {};
+
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    return defaultAutopilotConfig;
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return defaultAutopilotConfig;
+  }
+
+  const config = parsed as Record<string, unknown>;
+  const normalized = {
+    ...config,
+    applySiteKeys:
+      Array.isArray(config.applySiteKeys) && config.applySiteKeys.length > 0
+        ? config.applySiteKeys
+        : defaultAutopilotConfig.applySiteKeys
+  };
+
+  const candidate = autopilotConfigSchema.safeParse(normalized);
+  return candidate.success ? candidate.data : defaultAutopilotConfig;
 }
 
 function mapAutopilotSettings(
