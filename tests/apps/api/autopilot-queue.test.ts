@@ -1612,4 +1612,496 @@ describe('autopilot queue service', () => {
       stopReason: 'stuck_timeout'
     });
   });
+
+  test('cancels a running batch by terminating Camoufox and preserving cancelled status', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}',
+      jobKeywordProfile: {
+        seniority: 'mid',
+        target_titles: ['platform engineer'],
+        positive_keywords: ['typescript'],
+        negative_keywords: []
+      }
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run, jobsRepository }) => {
+      await jobsRepository.upsert({
+        sourceKind: 'greenhouse',
+        sourceId: 'job-cancel',
+        sourceUrl: 'https://boards.greenhouse.io/example/jobs/cancel',
+        companyName: 'Acme Corp',
+        title: 'Platform Engineer',
+        location: 'Remote',
+        remoteType: 'remote',
+        employmentType: 'full-time',
+        compensationText: null,
+        descriptionText: 'Build TypeScript systems.',
+        rawPayload: null,
+        discoveryRunId: run.id,
+        status: 'discovered',
+        discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-08T10:00:00.000Z')
+      });
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 1,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi.fn(async ({ jobId }: { jobId: string }) => ({
+      job: (await repositories.jobs.findById(jobId))!,
+      profile: (await repositories.applicantProfile.get())!,
+      artifacts: [
+        await repositories.artifacts.create({
+          jobId,
+          discoveryRunId: null,
+          kind: 'resume-variant',
+          format: 'pdf',
+          fileName: 'resume.pdf',
+          storagePath: `/tmp/${jobId}-resume.pdf`,
+          createdAt: new Date('2026-05-08T10:01:00.000Z')
+        })
+      ]
+    }));
+
+    let resolveRunApplicationStarted: () => void = () => undefined;
+    let rejectRunApplication: ((error: Error) => void) | null = null;
+    const runApplicationStarted = new Promise<void>((resolve) => {
+      resolveRunApplicationStarted = resolve;
+    });
+
+    const runApplicationStub = vi.fn(async () => {
+      resolveRunApplicationStarted();
+      return await new Promise<never>((_, reject) => {
+        rejectRunApplication = reject;
+      });
+    });
+
+    const terminateCamoufoxStub = vi.fn(async () => {
+      rejectRunApplication?.(new Error('Camoufox terminated by cancel'));
+    });
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never,
+      terminateCamoufoxImpl: terminateCamoufoxStub
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+
+    await runApplicationStarted;
+    await expect(queue.cancelRun(autopilotRun.id)).resolves.toBe(true);
+    await queue.onIdle();
+
+    const updatedBatch = await repositories.autopilotRuns.findById(autopilotRun.id);
+    const childRuns = await repositories.applicationRuns.listByAutopilotRun(autopilotRun.id);
+
+    expect(terminateCamoufoxStub).toHaveBeenCalledTimes(1);
+    expect(updatedBatch).toMatchObject({
+      status: 'cancelled',
+      currentStep: 'cancelled',
+      discoveredJobCount: 1,
+      submittedCount: 0,
+      blockedCount: 0,
+      failedCount: 0
+    });
+    expect(childRuns).toHaveLength(1);
+    expect(childRuns[0]).toMatchObject({
+      status: 'failed',
+      currentStep: 'cancelled',
+      stopReason: 'autopilot_cancelled'
+    });
+  });
+
+  test('cancelRun instantly aborts a hanging application run via the watchdog abort racer', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}',
+      jobKeywordProfile: {
+        seniority: 'mid',
+        target_titles: ['platform engineer'],
+        positive_keywords: ['typescript'],
+        negative_keywords: []
+      }
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run, jobsRepository }) => {
+      await jobsRepository.upsert({
+        sourceKind: 'greenhouse',
+        sourceId: 'job-instant-cancel',
+        sourceUrl: 'https://boards.greenhouse.io/example/jobs/instant-cancel',
+        companyName: 'Acme Corp',
+        title: 'Platform Engineer',
+        location: 'Remote',
+        remoteType: 'remote',
+        employmentType: 'full-time',
+        compensationText: null,
+        descriptionText: 'Build TypeScript systems.',
+        rawPayload: null,
+        discoveryRunId: run.id,
+        status: 'discovered',
+        discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+        updatedAt: new Date('2026-05-08T10:00:00.000Z')
+      });
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 1,
+        newJobCount: 1,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi.fn(async ({ jobId }: { jobId: string }) => ({
+      job: (await repositories.jobs.findById(jobId))!,
+      profile: (await repositories.applicantProfile.get())!,
+      artifacts: [
+        await repositories.artifacts.create({
+          jobId,
+          discoveryRunId: null,
+          kind: 'resume-variant',
+          format: 'pdf',
+          fileName: 'resume.pdf',
+          storagePath: `/tmp/${jobId}-resume.pdf`,
+          createdAt: new Date('2026-05-08T10:01:00.000Z')
+        })
+      ]
+    }));
+
+    let resolveRunApplicationStarted: () => void = () => undefined;
+    const runApplicationStarted = new Promise<void>((resolve) => {
+      resolveRunApplicationStarted = resolve;
+    });
+
+    // This stub hangs forever and does NOT resolve when terminateCamoufox is
+    // called. Before the fix, cancelRun would block until the 10-minute
+    // watchdog timeout. With the abort racer, it resolves instantly.
+    const runApplicationStub = vi.fn(async () => {
+      resolveRunApplicationStarted();
+      return await new Promise<never>(() => {
+        // intentionally never resolves — simulating a completely stuck browser
+      });
+    });
+
+    // terminateCamoufox does NOT reject the runApplication promise — this
+    // proves the abort racer in the watchdog handles cancellation.
+    const terminateCamoufoxStub = vi.fn(async () => {});
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never,
+      terminateCamoufoxImpl: terminateCamoufoxStub
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+
+    await runApplicationStarted;
+
+    // cancelRun should resolve quickly — NOT block for the watchdog timeout.
+    const cancelStart = Date.now();
+    await expect(queue.cancelRun(autopilotRun.id)).resolves.toBe(true);
+    await queue.onIdle();
+    const cancelDuration = Date.now() - cancelStart;
+
+    // Generous bound — the point is it finishes in <2s, not ~10 minutes.
+    expect(cancelDuration).toBeLessThan(5000);
+
+    expect(terminateCamoufoxStub).toHaveBeenCalledTimes(1);
+
+    const updatedBatch = await repositories.autopilotRuns.findById(autopilotRun.id);
+    expect(updatedBatch).toMatchObject({
+      status: 'cancelled',
+      currentStep: 'cancelled'
+    });
+
+    const childRuns = await repositories.applicationRuns.listByAutopilotRun(autopilotRun.id);
+    expect(childRuns).toHaveLength(1);
+    expect(childRuns[0]).toMatchObject({
+      status: 'failed',
+      currentStep: 'cancelled',
+      stopReason: 'autopilot_cancelled'
+    });
+  });
+
+  test('cancelRun does not wait for slow Camoufox process termination before resetting status', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    let resolveDiscoveryStarted: () => void = () => undefined;
+    const discoveryStarted = new Promise<void>((resolve) => {
+      resolveDiscoveryStarted = resolve;
+    });
+
+    let resolveDiscovery: (() => void) | null = null;
+    const runStructuredDiscoveryStub = vi.fn(async () => {
+      resolveDiscoveryStarted();
+      await new Promise<void>((resolve) => {
+        resolveDiscovery = resolve;
+      });
+    });
+
+    let resolveTermination: () => void = () => undefined;
+    const terminationCompleted = new Promise<void>((resolve) => {
+      resolveTermination = resolve;
+    });
+    const terminateCamoufoxStub = vi.fn(async () => {
+      await terminationCompleted;
+    });
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runStructuredDiscoveryImpl: runStructuredDiscoveryStub as never,
+      terminateCamoufoxImpl: terminateCamoufoxStub
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [],
+      config: defaultAutopilotConfig
+    });
+
+    await discoveryStarted;
+
+    const cancelResult = await Promise.race([
+      queue.cancelRun(autopilotRun.id),
+      new Promise<'timed-out'>((resolve) => setTimeout(() => resolve('timed-out'), 500))
+    ]);
+
+    expect(cancelResult).toBe(true);
+    expect(terminateCamoufoxStub).toHaveBeenCalledTimes(1);
+
+    const updatedBatch = await repositories.autopilotRuns.findById(autopilotRun.id);
+    expect(updatedBatch).toMatchObject({
+      status: 'cancelled',
+      currentStep: 'cancelled'
+    });
+
+    resolveTermination();
+    resolveDiscovery?.();
+    await queue.onIdle();
+  });
+
+  test('cancelRun during discovery phase aborts immediately without waiting for discovery', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repositories = {
+      applicantProfile: new ApplicantProfileRepository(db),
+      applicationRuns: new ApplicationRunsRepository(db),
+      autopilotRuns: new AutopilotRunsRepository(db),
+      artifacts: new ArtifactsRepository(db),
+      discoveryRuns: new DiscoveryRunsRepository(db),
+      discoverySources: new DiscoverySourcesRepository(db),
+      jobs: new JobsRepository(db),
+      logEvents: new LogEventsRepository(db)
+    };
+
+    await repositories.applicantProfile.save({
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}'
+    });
+
+    const source = await repositories.discoverySources.upsert({
+      sourceKind: 'playwright',
+      sourceKey: 'acme',
+      label: 'Acme Corp',
+      enabled: true
+    });
+    const autopilotRun = await repositories.autopilotRuns.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued'
+    });
+
+    let resolveDiscoveryStarted: () => void = () => undefined;
+    const discoveryStarted = new Promise<void>((resolve) => {
+      resolveDiscoveryStarted = resolve;
+    });
+
+    // Discovery hangs after signaling it started — simulates a slow crawl.
+    // After abort, it will eventually return, but the post-discovery
+    // throwIfAborted check should prevent any further work.
+    let discoveryResolve: (() => void) | null = null;
+    const runPlaywrightDiscoveryStub = vi.fn(async ({ run }) => {
+      resolveDiscoveryStarted();
+      await new Promise<void>((resolve) => {
+        discoveryResolve = resolve;
+      });
+
+      await repositories.discoveryRuns.markFinished({
+        id: run.id,
+        status: 'completed',
+        jobCount: 0,
+        newJobCount: 0,
+        updatedJobCount: 0
+      });
+    });
+
+    const generateArtifactsStub = vi.fn();
+    const runApplicationStub = vi.fn();
+    const terminateCamoufoxStub = vi.fn(async () => {});
+
+    const queue = new AutopilotQueueService({
+      repositories,
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath
+      }),
+      runPlaywrightDiscoveryImpl: runPlaywrightDiscoveryStub as never,
+      generateArtifactsImpl: generateArtifactsStub as never,
+      runApplicationImpl: runApplicationStub as never,
+      terminateCamoufoxImpl: terminateCamoufoxStub
+    });
+
+    queue.enqueueRun({
+      run: autopilotRun,
+      sources: [source],
+      config: defaultAutopilotConfig
+    });
+
+    // Wait until discovery is actively running, then cancel
+    await discoveryStarted;
+    await expect(queue.cancelRun(autopilotRun.id)).resolves.toBe(true);
+
+    // Let discovery finish (simulating the crawl completing after cancel)
+    discoveryResolve?.();
+    await queue.onIdle();
+
+    const updatedBatch = await repositories.autopilotRuns.findById(autopilotRun.id);
+    expect(updatedBatch?.status).toBe('cancelled');
+
+    // No applications should have been attempted
+    expect(generateArtifactsStub).not.toHaveBeenCalled();
+    expect(runApplicationStub).not.toHaveBeenCalled();
+  });
 });

@@ -52,6 +52,19 @@ class ArtifactGenerationError extends Error {
   }
 }
 
+class AutopilotAbortError extends Error {
+  constructor() {
+    super('Autopilot run was cancelled.');
+    this.name = 'AutopilotAbortError';
+  }
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new AutopilotAbortError();
+  }
+}
+
 export type QueueAutopilotRunInput = {
   run: Awaited<ReturnType<ApiRepositories['autopilotRuns']['create']>>;
   sources: DiscoverySourceRecord[];
@@ -263,12 +276,13 @@ export class AutopilotQueueService {
 
   async cancelRun(runId: string): Promise<boolean> {
     const controller = this.abortControllers.get(runId);
-    if (!controller) {
-      return false;
-    }
-
-    controller.abort();
+    this.queue.clear();
+    controller?.abort();
     this.abortControllers.delete(runId);
+
+    void this.terminateCamoufoxImpl().catch(() => null);
+
+    await this.cancelRunningApplicationRuns(runId);
 
     await this.input.repositories.autopilotRuns.update(runId, {
       status: 'cancelled',
@@ -276,7 +290,7 @@ export class AutopilotQueueService {
       completedAt: new Date()
     });
 
-    return true;
+    return Boolean(controller);
   }
 
   async onIdle(): Promise<void> {
@@ -295,6 +309,8 @@ export class AutopilotQueueService {
 
     try {
       await this.recoverStaleRunningApplicationRuns(run.id);
+
+      throwIfAborted(signal);
 
       let discoveryRunId: string;
       const selectedSources = discoverySourcesForConfig(input.sources, input.config);
@@ -364,6 +380,8 @@ export class AutopilotQueueService {
         });
       }
 
+      throwIfAborted(signal);
+
       await this.input.repositories.autopilotRuns.update(run.id, {
         currentStep: 'prefilter_running'
       });
@@ -372,6 +390,8 @@ export class AutopilotQueueService {
       await recomputeJobPrefilterMatches(this.input.repositories.jobs, profile, {
         mode: 'stale'
       });
+
+      throwIfAborted(signal);
 
       await this.input.repositories.autopilotRuns.update(run.id, {
         currentStep: 'prefilter_completed'
@@ -429,6 +449,8 @@ export class AutopilotQueueService {
           continue;
         }
 
+        throwIfAborted(signal);
+
         const matchReview = await this.reviewJobMatchImpl({
           job,
           applicantProfile: profile,
@@ -465,6 +487,8 @@ export class AutopilotQueueService {
 
         let createdRunId: string | null = null;
         try {
+          throwIfAborted(signal);
+
           await this.input.repositories.autopilotRuns.update(run.id, {
             currentStep: `generating_artifacts:${job.title}`
           });
@@ -490,30 +514,34 @@ export class AutopilotQueueService {
             currentStep: `submitting_application:${job.title}`
           });
 
-          const result = await this.runApplicationWithWatchdog(() =>
-            this.runApplicationImpl({
-              jobId: job.id,
-              runId: createdRun.id,
-              jobsRepository: this.input.repositories.jobs,
-              applicantProfileRepository: this.input.repositories.applicantProfile,
-              applicationRunsRepository: this.input.repositories.applicationRuns,
-              artifactsRepository: this.input.repositories.artifacts,
-              logEventsRepository: this.input.repositories.logEvents,
-              siteFlows: activeApplicationSites,
-              // Batch autopilot must close headed browsers on pause so the next job
-              // can reuse the same persistent profile without spawning empty windows.
-              leaveBrowserOpenOnPause: false,
-              openRouter: openRouterConfigForModel(
-                this.input.config,
-                this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
-                  this.input.config.OPENROUTER_JOB_SUMMARY_MODEL,
-                { enableReasoning: true }
-              ),
-              artifactsRootDir: join(
-                dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
-                'artifacts'
-              )
-            })
+          throwIfAborted(signal);
+
+          const result = await this.runApplicationWithWatchdog(
+            () =>
+              this.runApplicationImpl({
+                jobId: job.id,
+                runId: createdRun.id,
+                jobsRepository: this.input.repositories.jobs,
+                applicantProfileRepository: this.input.repositories.applicantProfile,
+                applicationRunsRepository: this.input.repositories.applicationRuns,
+                artifactsRepository: this.input.repositories.artifacts,
+                logEventsRepository: this.input.repositories.logEvents,
+                siteFlows: activeApplicationSites,
+                // Batch autopilot must close headed browsers on pause so the next job
+                // can reuse the same persistent profile without spawning empty windows.
+                leaveBrowserOpenOnPause: false,
+                openRouter: openRouterConfigForModel(
+                  this.input.config,
+                  this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
+                    this.input.config.OPENROUTER_JOB_SUMMARY_MODEL,
+                  { enableReasoning: true }
+                ),
+                artifactsRootDir: join(
+                  dirname(this.input.config.JOB_AUTOMATION_DB_PATH),
+                  'artifacts'
+                )
+              }),
+            signal
           );
 
           if (result.status === 'completed') {
@@ -527,6 +555,22 @@ export class AutopilotQueueService {
             blockedCount += 1;
           }
         } catch (error) {
+          if (error instanceof AutopilotAbortError || signal.aborted) {
+            if (createdRunId) {
+              await this.input.repositories.applicationRuns
+                .update(createdRunId, {
+                  status: 'failed',
+                  currentStep: 'cancelled',
+                  stopReason: 'autopilot_cancelled',
+                  completedAt: new Date(),
+                  updatedAt: new Date()
+                })
+                .catch(() => null);
+            }
+
+            break;
+          }
+
           if (error instanceof ApplicationRunTimeoutError) {
             blockedCount += 1;
             await this.terminateCamoufoxImpl();
@@ -660,6 +704,12 @@ export class AutopilotQueueService {
         });
       }
     } catch (error) {
+      // AutopilotAbortError means cancelRun() was called and already persisted
+      // the 'cancelled' status — no need to overwrite it with 'failed'.
+      if (error instanceof AutopilotAbortError || signal.aborted) {
+        return;
+      }
+
       const message =
         error instanceof Error ? error.message : 'Unknown autopilot queue error.';
 
@@ -684,6 +734,29 @@ export class AutopilotQueueService {
     }
   ): Promise<void> {
     await this.input.repositories.autopilotRuns.update(runId, counters);
+  }
+
+  private async cancelRunningApplicationRuns(autopilotRunId: string): Promise<void> {
+    const runningRuns = await this.input.repositories.applicationRuns.listByAutopilotRun(
+      autopilotRunId
+    );
+
+    const now = new Date();
+    await Promise.all(
+      runningRuns
+        .filter((run) => run.status === 'running' || run.status === 'pending')
+        .map((run) =>
+          this.input.repositories.applicationRuns
+            .update(run.id, {
+              status: 'failed',
+              currentStep: 'cancelled',
+              stopReason: 'autopilot_cancelled',
+              completedAt: now,
+              updatedAt: now
+            })
+            .catch(() => null)
+        )
+    );
   }
 
   private async generateArtifactsWithRetries(input: {
@@ -743,7 +816,8 @@ export class AutopilotQueueService {
   }
 
   private async runApplicationWithWatchdog<T>(
-    operation: () => Promise<T>
+    operation: () => Promise<T>,
+    signal: AbortSignal
   ): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | null = null;
     try {
@@ -753,6 +827,15 @@ export class AutopilotQueueService {
           timer = setTimeout(() => {
             reject(new ApplicationRunTimeoutError(this.applicationRunTimeoutMs));
           }, this.applicationRunTimeoutMs);
+        }),
+        new Promise<T>((_, reject) => {
+          if (signal.aborted) {
+            reject(new AutopilotAbortError());
+            return;
+          }
+          signal.addEventListener('abort', () => reject(new AutopilotAbortError()), {
+            once: true
+          });
         })
       ]);
     } finally {
