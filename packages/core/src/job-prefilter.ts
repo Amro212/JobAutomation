@@ -11,7 +11,6 @@ export const prefilterReasonSchema = z.enum([
   'title_negative',
   'title_no_match',
   'role_family_mismatch',
-  'location',
   'experience_min_years',
   'seniority_title_mismatch',
   'llm_veto',
@@ -28,7 +27,6 @@ export type MatchSignal =
   | 'experience_fit'
   | 'years_soft_cap'
   | 'seniority_fit'
-  | 'location_fit'
   | 'description_evidence'
   | 'llm_review_recommended'
   | 'low_match_score';
@@ -49,7 +47,6 @@ export type DeterministicMatchProfile = {
 
 export type PrefilterContext = {
   jobKeywordProfile: JobKeywordProfile | null;
-  preferredCountries: string[];
   matchProfile?: DeterministicMatchProfile;
 };
 
@@ -60,7 +57,6 @@ export function prefilterContextFromApplicant(profile: ApplicantProfile | null):
 
   return {
     jobKeywordProfile: profile?.jobKeywordProfile ?? null,
-    preferredCountries: profile?.preferredCountries ?? [],
     matchProfile: buildDeterministicMatchProfile(profile?.jobKeywordProfile ?? null, text)
   };
 }
@@ -70,7 +66,6 @@ export function prefilterMatchesMeaningful(ctx: PrefilterContext): boolean {
   const profile = normalizeMatchProfile(ctx);
   return (
     ctx.jobKeywordProfile != null ||
-    ctx.preferredCountries.length > 0 ||
     profile.skills.length > 0 ||
     profile.titleTerms.length > 0 ||
     profile.targetTitles.length > 0
@@ -391,37 +386,6 @@ function passesTitleFilter(
   return 'title_no_match';
 }
 
-function passesLocationFilter(
-  location: string,
-  remoteType: string,
-  preferredCountries: string[]
-): boolean {
-  if (!preferredCountries.length) {
-    return true;
-  }
-
-  const locNorm = location.toLowerCase().trim();
-
-  // Check if the location text matches any preferred country
-  for (const code of preferredCountries) {
-    for (const token of getCountrySearchTokens(code)) {
-      if (locNorm.includes(token)) {
-        return true;
-      }
-    }
-  }
-
-  // Remote jobs with a generic/empty location pass (truly worldwide remote)
-  if (remoteType === 'remote') {
-    const stripped = locNorm.replace(/\bremote\b/gi, '').replace(/[^a-z]/g, '').trim();
-    if (stripped.length === 0) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function passesExperienceFilter(descriptionText: string, profile: DeterministicMatchProfile): PrefilterReason | null {
   const implied = maxImpliedMinYears(descriptionText, { requiredOnly: true });
 
@@ -511,7 +475,6 @@ export type PrefilterJobInput = Pick<JobRecord, 'title' | 'location' | 'remoteTy
 function scoreJobMatch(
   job: PrefilterJobInput,
   ctx: PrefilterContext,
-  locationPass: boolean,
   experiencePass: boolean,
   roleFamilyFit: boolean,
   softExperienceCap: boolean
@@ -594,11 +557,6 @@ function scoreJobMatch(
     signals.push('llm_review_recommended');
   }
 
-  if (locationPass) {
-    score += 10;
-    signals.push('location_fit');
-  }
-
   if (profileTermOverlap.length >= 2 || titleOverlap.length > 0) {
     score += 10;
     signals.push('description_evidence');
@@ -628,11 +586,6 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
     reasons.push('role_family_mismatch');
   }
 
-  const locationPass = passesLocationFilter(job.location, job.remoteType, ctx.preferredCountries);
-  if (!locationPass) {
-    reasons.push('location');
-  }
-
   const expReason = passesExperienceFilter(job.descriptionText, profile);
   const experiencePass = expReason == null;
   if (expReason) {
@@ -650,7 +603,6 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
   const scored = scoreJobMatch(
     job,
     ctx,
-    locationPass,
     experiencePass,
     roleFamily.explicitFit,
     softExperienceCap
