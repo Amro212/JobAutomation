@@ -1,23 +1,20 @@
-import {
-  prefilterContextFromApplicant,
-  prefilterMatchesMeaningful,
-  type ApplicantProfile,
-  type AutopilotConfig,
-  type JobListFilters
-} from '@jobautomation/core';
+import type { ApplicantProfile, AutopilotConfig, JobListFilters } from '@jobautomation/core';
 
-/** Same default filters as the dashboard Jobs page (My matches + Setup countries). */
+/** Same default filters as the dashboard Jobs page (My matches when a keyword profile exists). */
 export function defaultJobListFiltersFromApplicant(
   profile: ApplicantProfile | null
 ): JobListFilters {
-  const meaningful = prefilterMatchesMeaningful(prefilterContextFromApplicant(profile));
-  const preferredCountries = profile?.preferredCountries ?? [];
+  const meaningful = profile?.jobKeywordProfile != null;
 
   return {
-    matchProfile: meaningful ? 'me' : 'all',
-    ...(preferredCountries.length > 0
-      ? { locationCountries: preferredCountries }
-      : {})
+    sourceKind: undefined,
+    status: undefined,
+    remoteType: undefined,
+    title: undefined,
+    location: undefined,
+    companyName: undefined,
+    locationCountries: undefined,
+    matchProfile: meaningful ? 'me' : 'all'
   };
 }
 
@@ -40,10 +37,6 @@ export function autopilotJobPoolFilters(
     merged.matchProfile = 'me';
   } else if (config.matchProfile) {
     merged.matchProfile = config.matchProfile;
-  }
-
-  if (tabDefaults.locationCountries && tabDefaults.locationCountries.length > 0) {
-    merged.locationCountries = tabDefaults.locationCountries;
   }
 
   return merged;

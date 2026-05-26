@@ -5,7 +5,6 @@ import {
 } from '@jobautomation/core';
 
 import { MinimalAutofillFields } from '@/components/setup/minimal-autofill-fields';
-import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
 import { PhoneField } from '@/components/setup/phone-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -87,18 +86,6 @@ export function ApplicantProfileForm({
         <span className="font-medium">Reusable applicant context</span>
         <Textarea name="reusableContext" defaultValue={current.reusableContext} rows={6} />
       </label>
-
-      <div className="space-y-2 text-sm">
-        <span className="font-medium">Preferred countries for job automation</span>
-        <p className="text-xs text-muted-foreground">
-          Select the countries you want to target. The jobs filter will default to these when no explicit country filter is set.
-        </p>
-        <LocationCountryCombobox
-          name="preferredCountry"
-          defaultValue={current.preferredCountries}
-          aria-label="Preferred countries"
-        />
-      </div>
 
       <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
         <label className="space-y-2 text-sm">

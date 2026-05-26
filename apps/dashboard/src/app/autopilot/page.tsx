@@ -164,6 +164,7 @@ export default async function AutopilotPage({
           enabledSources={enabledSources}
           settings={autopilotSettings}
           hasActiveRun={hasActiveRun}
+          preferredCountriesFallback={profileState.profile?.preferredCountries ?? []}
           saveAction={saveAutopilotSettingsAction}
           launchAction={launchAutopilotAction}
         />

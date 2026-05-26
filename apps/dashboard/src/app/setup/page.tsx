@@ -15,10 +15,7 @@ async function saveSetup(formData: FormData): Promise<void> {
   const hasUploadedResume = uploadedResume instanceof File && uploadedResume.size > 0;
   const uploadedText = hasUploadedResume ? await uploadedResume.text() : null;
 
-  const preferredCountries = formData
-    .getAll('preferredCountry')
-    .filter((v): v is string => typeof v === 'string' && v.trim().length === 2)
-    .map((v) => v.toUpperCase());
+  const preferredCountries = existing?.preferredCountries ?? [];
 
   await saveApplicantProfile({
     id: String(formData.get('id') ?? 'default'),

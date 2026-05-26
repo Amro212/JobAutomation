@@ -28,10 +28,16 @@ function profile(overrides: Partial<ApplicantProfile> = {}): ApplicantProfile {
 }
 
 describe('defaultJobListFiltersFromApplicant', () => {
-  test('uses My matches and Setup countries when profile is meaningful', () => {
+  test('uses My matches when a keyword profile exists', () => {
     expect(defaultJobListFiltersFromApplicant(profile())).toEqual({
-      matchProfile: 'me',
-      locationCountries: ['CA']
+      sourceKind: undefined,
+      status: undefined,
+      remoteType: undefined,
+      title: undefined,
+      location: undefined,
+      companyName: undefined,
+      locationCountries: undefined,
+      matchProfile: 'me'
     });
   });
 
@@ -47,6 +53,13 @@ describe('defaultJobListFiltersFromApplicant', () => {
         })
       )
     ).toEqual({
+      sourceKind: undefined,
+      status: undefined,
+      remoteType: undefined,
+      title: undefined,
+      location: undefined,
+      companyName: undefined,
+      locationCountries: undefined,
       matchProfile: 'all'
     });
   });

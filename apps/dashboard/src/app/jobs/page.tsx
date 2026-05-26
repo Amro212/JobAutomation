@@ -301,9 +301,7 @@ export default async function JobsPage({
   const resolvedSearchParams = await searchParams;
   const { profile } = await getApplicantProfile();
 
-  const meaningfulMatchScope =
-    profile != null &&
-    (profile.jobKeywordProfile != null || profile.preferredCountries.length > 0);
+  const meaningfulMatchScope = profile != null && profile.jobKeywordProfile != null;
 
   const query = jobListQuerySchema.parse({
     sourceKind: getSearchParamValue(resolvedSearchParams.sourceKind),
@@ -340,13 +338,6 @@ export default async function JobsPage({
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
 
-  const hasExplicitCountry = resolvedSearchParams.country !== undefined;
-  if (!hasExplicitCountry && (!filters.locationCountries || filters.locationCountries.length === 0)) {
-    if (profile && profile.preferredCountries.length > 0) {
-      filters = { ...filters, locationCountries: profile.preferredCountries };
-    }
-  }
-
   const listQuery: JobListQuery = {
     ...query,
     matchProfile,
@@ -370,8 +361,7 @@ export default async function JobsPage({
           Structured discovery is live for Greenhouse, Lever, and Ashby, and Camoufox fallback can
           now onboard persisted browser sources when a public jobs page has no supported feed.
           Applied jobs stay visible with their persisted status instead of falling back into the
-          review queue.
-          When you have a job filter profile or preferred countries on Setup, this list defaults to{' '}
+          review queue. When you have a job filter profile on Setup, this list defaults to{' '}
           <span className="font-medium text-foreground">My matches</span> so off-target roles stay
           out of the way—use <span className="font-medium text-foreground">All jobs</span> to see the
           full discovery pool.

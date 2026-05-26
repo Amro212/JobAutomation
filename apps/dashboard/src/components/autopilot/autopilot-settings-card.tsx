@@ -13,6 +13,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
 import { sourceIdsForApplySites } from '@/lib/autopilot-settings-form';
 import { cn } from '@/lib/utils';
 
@@ -115,12 +116,14 @@ export function AutopilotSettingsCard({
   enabledSources,
   settings,
   hasActiveRun,
+  preferredCountriesFallback,
   saveAction,
   launchAction,
 }: {
   enabledSources: DiscoverySourceRecord[];
   settings: AutopilotSettingsRecord;
   hasActiveRun: boolean;
+  preferredCountriesFallback?: string[];
   saveAction: (formData: FormData) => Promise<void>;
   launchAction: (formData: FormData) => Promise<void>;
 }) {
@@ -146,6 +149,10 @@ export function AutopilotSettingsCard({
     settings.config.applySiteKeys
   );
   const [sourceSearch, setSourceSearch] = useState('');
+  const preferredCountries =
+    settings.config.jobFilters.locationCountries?.length
+      ? settings.config.jobFilters.locationCountries
+      : preferredCountriesFallback ?? [];
 
   const selectedSourceSet = useMemo(
     () => new Set(selectedSourceIds),
@@ -510,6 +517,23 @@ export function AutopilotSettingsCard({
                 <option value="">Auto from profile</option>
                 <option value="me">My matches only</option>
               </select>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-1.5">
+                <span className="font-medium">Preferred countries</span>
+                <FieldHelp
+                  id="autopilot-preferred-countries-help"
+                  label="Preferred countries"
+                >
+                  Limits autopilot discovery and apply runs without changing Jobs tab filters.
+                </FieldHelp>
+              </div>
+              <LocationCountryCombobox
+                name="preferredCountry"
+                defaultValue={preferredCountries}
+                aria-label="Preferred countries"
+              />
             </div>
 
             <div className="space-y-2 text-sm">

@@ -10,6 +10,12 @@ function trimValues(values: FormDataEntryValue[]): string[] {
     .filter((value) => value.length > 0);
 }
 
+function parsePreferredCountries(formData: FormData): string[] {
+  return trimValues(formData.getAll('preferredCountry'))
+    .filter((value) => value.length === 2)
+    .map((value) => value.toUpperCase());
+}
+
 function isApplySiteSourceKind(
   value: DiscoverySourceRecord['sourceKind']
 ): value is AutopilotApplySiteKey {
@@ -35,6 +41,7 @@ export function parseAutopilotSettingsFormData(
 ): AutopilotConfigInput {
   const maxJobsRaw = String(formData.get('maxJobsPerRun') ?? '').trim();
   const matchProfileRaw = String(formData.get('matchProfile') ?? '').trim();
+  const preferredCountries = parsePreferredCountries(formData);
   const discoveryCacheHoursRaw = String(
     formData.get('discoveryCacheHours') ?? ''
   ).trim();
@@ -69,5 +76,12 @@ export function parseAutopilotSettingsFormData(
         : artifactModeRaw === 'cover-letter'
           ? 'cover-letter'
           : 'both',
+    jobFilters: {
+      locationCountries: preferredCountries
+    }
   };
+}
+
+export function parseAutopilotPreferredCountries(formData: FormData): string[] {
+  return parsePreferredCountries(formData);
 }

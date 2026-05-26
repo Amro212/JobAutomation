@@ -3,17 +3,40 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { createAutopilotRun, updateAutopilotSettings } from '@/lib/api';
-import { parseAutopilotSettingsFormData } from '@/lib/autopilot-settings-form';
+import {
+  createAutopilotRun,
+  getApplicantProfile,
+  saveApplicantProfile,
+  updateAutopilotSettings
+} from '@/lib/api';
+import {
+  parseAutopilotPreferredCountries,
+  parseAutopilotSettingsFormData
+} from '@/lib/autopilot-settings-form';
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+async function updateAutopilotPreferredCountries(formData: FormData): Promise<void> {
+  const preferredCountries = parseAutopilotPreferredCountries(formData);
+  const { profile } = await getApplicantProfile();
+  if (!profile) {
+    return;
+  }
+
+  const { updatedAt: _updatedAt, ...rest } = profile;
+  await saveApplicantProfile({
+    ...rest,
+    preferredCountries
+  });
 }
 
 export async function saveAutopilotSettingsAction(
   formData: FormData
 ): Promise<void> {
   try {
+    await updateAutopilotPreferredCountries(formData);
     await updateAutopilotSettings(parseAutopilotSettingsFormData(formData));
   } catch (error) {
     redirect(
@@ -33,6 +56,7 @@ export async function launchAutopilotAction(formData: FormData): Promise<void> {
   let result: Awaited<ReturnType<typeof createAutopilotRun>>;
 
   try {
+    await updateAutopilotPreferredCountries(formData);
     result = await createAutopilotRun(parseAutopilotSettingsFormData(formData));
   } catch (error) {
     redirect(
