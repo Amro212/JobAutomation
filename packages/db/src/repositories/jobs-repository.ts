@@ -414,6 +414,35 @@ export class JobsRepository {
     return map;
   }
 
+  /**
+   * Batch fetch only the display fields needed for autopilot batch detail child-run rows.
+   * Returns a slim object (id, title, companyName, location) instead of a full JobRecord,
+   * keeping the API response small even when there are many child application runs.
+   */
+  async findSummariesByIds(
+    ids: string[]
+  ): Promise<Map<string, { id: string; title: string; companyName: string; location: string }>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const records = await this.db
+      .select({
+        id: jobsTable.id,
+        title: jobsTable.title,
+        companyName: jobsTable.companyName,
+        location: jobsTable.location
+      })
+      .from(jobsTable)
+      .where(inArray(jobsTable.id, ids));
+
+    const map = new Map<string, { id: string; title: string; companyName: string; location: string }>();
+    for (const record of records) {
+      map.set(record.id, record);
+    }
+    return map;
+  }
+
   async findBySource(sourceKind: string, sourceId: string): Promise<JobRecord | null> {
     const record = await this.db.query.jobsTable.findFirst({
       where: and(eq(jobsTable.sourceKind, sourceKind), eq(jobsTable.sourceId, sourceId))

@@ -5,8 +5,7 @@ import {
   autopilotRunRecordSchema,
   discoveryRunRecordSchema,
   type AutopilotConfig,
-  type AutopilotConfigInput,
-  jobRecordSchema
+  type AutopilotConfigInput
 } from '@jobautomation/core';
 import type { FastifyPluginAsync } from 'fastify';
 
@@ -71,9 +70,11 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
       : null;
     const childRuns = await app.repositories.applicationRuns.listByAutopilotRun(run.id);
 
-    // Batch-fetch all jobs instead of N individual findById calls
+    // Batch-fetch only the fields the UI needs (title, companyName, location)
+    // instead of full JobRecord objects with descriptionText, rawPayload, etc.
+    // This keeps the response payload small even when there are many child runs.
     const uniqueJobIds = [...new Set(childRuns.map((r) => r.jobId))];
-    const jobsMap = await app.repositories.jobs.findByIds(uniqueJobIds);
+    const jobsMap = await app.repositories.jobs.findSummariesByIds(uniqueJobIds);
 
     const applications = childRuns
       .map((childRun) => {
@@ -84,7 +85,7 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
 
         return {
           run: applicationRunRecordSchema.parse(childRun),
-          job: jobRecordSchema.parse(job)
+          job
         };
       })
       .filter(
@@ -93,7 +94,10 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
 
     return {
       run: autopilotRunRecordSchema.parse(run),
-      discoveryRun: discoveryRun ? discoveryRunRecordSchema.parse(discoveryRun) : null,
+      // Return only the id from discoveryRun — the UI uses it solely to render
+      // the "Open discovery run" button. The full record can contain megabyte-sized
+      // error_message blobs from Zod validation dumps that bloat the response.
+      discoveryRun: discoveryRun ? { id: discoveryRun.id } : null,
       applications
     };
   });

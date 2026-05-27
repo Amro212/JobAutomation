@@ -47,11 +47,27 @@ export type ApplicationRunDetail = ApplicationRunSummary & {
 
 export type AutopilotRunSummary = {
   run: AutopilotRunRecord;
-  discoveryRun: DiscoveryRunRecord | null;
+  /** Only the id is returned in the detail view to avoid serving large error_message blobs. */
+  discoveryRun: { id: string } | null;
+};
+
+/** Slim job info returned within an autopilot batch detail — only display fields. */
+export type AutopilotJobSummary = {
+  id: string;
+  title: string;
+  companyName: string;
+  location: string;
+};
+
+export type AutopilotApplicationSummary = {
+  run: ApplicationRunRecord;
+  job: AutopilotJobSummary;
+  resumeArtifact: ArtifactRecord | null;
+  coverLetterArtifact: ArtifactRecord | null;
 };
 
 export type AutopilotRunDetail = AutopilotRunSummary & {
-  applications: ApplicationRunSummary[];
+  applications: AutopilotApplicationSummary[];
 };
 
 export function getApiBaseUrl(): string {
