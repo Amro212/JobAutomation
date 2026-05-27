@@ -50,7 +50,7 @@ export function buildCoverLetterContactRow(profile: ApplicantProfile): string {
     parts.push(linkedIconText({
       href: urlForDetokenize(`mailto:${email}`),
       icon: String.raw`\faEnvelope`,
-      text: email
+      text: 'Email'
     }));
   }
 
@@ -59,18 +59,17 @@ export function buildCoverLetterContactRow(profile: ApplicantProfile): string {
     parts.push(linkedIconText({
       href: webHrefTarget(linkedin),
       icon: String.raw`\faLinkedin`,
-      text: linkedin.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '')
+      text: 'LinkedIn'
     }));
   }
 
   const phone = profile.phone.trim();
   const tel = telHref(phone);
   if (tel) {
-    const phoneDisplay = formatPhoneDisplay(phone);
     parts.push(linkedIconText({
       href: tel,
       icon: String.raw`\faPhone`,
-      text: phoneDisplay
+      text: 'Phone'
     }));
   }
 
@@ -79,7 +78,7 @@ export function buildCoverLetterContactRow(profile: ApplicantProfile): string {
     parts.push(String.raw`\faMapMarker\enspace ${escapeLatex(location)}`);
   }
 
-  return parts.join(String.raw`\hfill`);
+  return parts.join(String.raw` \quad \textbullet \quad `);
 }
 
 /** Optional lines under company: Re: title, then job location. */

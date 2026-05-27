@@ -156,8 +156,7 @@ describe('tailoring', () => {
       expect(coverLetterTex).toContain('\\faLinkedin');
       expect(coverLetterTex).toContain('\\faPhone');
       expect(coverLetterTex).toContain('\\faMapMarker');
-      expect(coverLetterTex).toContain('\\scshape Taylor');
-      expect(coverLetterTex).not.toContain('\\scshape Taylor Example');
+      expect(coverLetterTex).toContain('\\scshape Taylor Example');
       expect(coverLetterTex).not.toContain('Portfolio');
       expect(coverLetterTex).not.toContain('fontawesome5');
 
