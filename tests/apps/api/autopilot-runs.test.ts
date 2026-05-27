@@ -174,6 +174,26 @@ describe('autopilot run routes', () => {
     });
   });
 
+  test('accepts cancel without waiting for run lookup or queue persistence', async () => {
+    const requestCancelSpy = vi
+      .spyOn(app.autopilotQueue, 'requestCancelRun')
+      .mockReturnValue(true);
+    const findSpy = vi.spyOn(app.repositories.autopilotRuns, 'findById');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/autopilot-runs/${randomUUID()}/cancel`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accepted: true, active: true });
+    expect(requestCancelSpy).toHaveBeenCalledTimes(1);
+    expect(findSpy).not.toHaveBeenCalled();
+
+    requestCancelSpy.mockRestore();
+    findSpy.mockRestore();
+  });
+
   test('rejects launch when selected discovery source IDs are not enabled', async () => {
     const response = await app.inject({
       method: 'POST',

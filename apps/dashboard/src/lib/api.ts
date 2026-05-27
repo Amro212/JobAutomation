@@ -329,7 +329,7 @@ export async function createAutopilotRun(
   return (await response.json()) as { run: AutopilotRunRecord };
 }
 
-export async function cancelAutopilotRun(runId: string): Promise<{ run: AutopilotRunRecord }> {
+export async function cancelAutopilotRun(runId: string): Promise<{ accepted: boolean; active: boolean }> {
   const response = await fetch(`${getApiBaseUrl()}/autopilot-runs/${runId}/cancel`, {
     method: 'POST',
     cache: 'no-store'
@@ -339,7 +339,7 @@ export async function cancelAutopilotRun(runId: string): Promise<{ run: Autopilo
     throw new Error(await readError(response));
   }
 
-  return (await response.json()) as { run: AutopilotRunRecord };
+  return (await response.json()) as { accepted: boolean; active: boolean };
 }
 
 export async function createApplicationRun(payload: {
