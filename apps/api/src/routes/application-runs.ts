@@ -88,28 +88,60 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
   app.get('/application-runs', async () => {
     const runs = await app.repositories.applicationRuns.list();
 
-    const summaries = await Promise.all(
-      runs.map(async (run) => {
-        const job = await app.repositories.jobs.findById(run.jobId);
+    // Batch-fetch all related jobs in a single query instead of N individual findById calls
+    const uniqueJobIds = [...new Set(runs.map((run) => run.jobId))];
+    const jobsMap = await app.repositories.jobs.findByIds(uniqueJobIds);
+
+    // Batch-fetch all referenced artifacts in a single query
+    const artifactIds = runs.flatMap((run) =>
+      [run.resumeArtifactId, run.coverLetterArtifactId].filter(
+        (id): id is string => id != null
+      )
+    );
+    const artifactsList =
+      artifactIds.length > 0
+        ? await Promise.all(
+            [...new Set(artifactIds)].map((id) =>
+              app.repositories.artifacts.findById(id)
+            )
+          )
+        : [];
+    const artifactsMap = new Map(
+      artifactsList
+        .filter((a): a is NonNullable<typeof a> => a != null)
+        .map((a) => [a.id, a])
+    );
+
+    const summaries = runs
+      .map((run) => {
+        const job = jobsMap.get(run.jobId);
         if (!job) {
           return null;
         }
 
-        const submittedArtifacts = await resolveSubmittedArtifacts(app, run);
+        const resumeArtifact = run.resumeArtifactId
+          ? artifactsMap.get(run.resumeArtifactId) ?? null
+          : null;
+        const coverLetterArtifact = run.coverLetterArtifactId
+          ? artifactsMap.get(run.coverLetterArtifactId) ?? null
+          : null;
 
         return {
           run: applicationRunRecordSchema.parse(run),
           job: jobRecordSchema.parse(job),
-          ...submittedArtifacts
+          resumeArtifact: resumeArtifact
+            ? artifactRecordSchema.parse(resumeArtifact)
+            : null,
+          coverLetterArtifact: coverLetterArtifact
+            ? artifactRecordSchema.parse(coverLetterArtifact)
+            : null
         };
       })
-    );
-
-    return {
-      runs: summaries.filter(
+      .filter(
         (value): value is NonNullable<typeof value> => value !== null
-      ),
-    };
+      );
+
+    return { runs: summaries };
   });
 
   app.get('/application-runs/:runId', async (request, reply) => {

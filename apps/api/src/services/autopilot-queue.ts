@@ -178,10 +178,11 @@ async function collectAutopilotJobIds(input: {
   let page = 1;
 
   for (;;) {
+    // skipCount: the autopilot queue never uses the total, so avoid the expensive COUNT
     const { ids } = await input.repositories.jobs.listIds(input.filters, {
       page,
       pageSize: AUTOPILOT_JOB_ID_PAGE_SIZE
-    });
+    }, { skipCount: true });
 
     if (ids.length === 0) {
       break;
@@ -274,7 +275,19 @@ export class AutopilotQueueService {
       });
   }
 
+  requestCancelRun(runId: string): boolean {
+    const cancelledActiveRun = this.abortRun(runId);
+    void this.persistCancelledRun(runId).catch(() => null);
+    return cancelledActiveRun;
+  }
+
   async cancelRun(runId: string): Promise<boolean> {
+    const cancelledActiveRun = this.abortRun(runId);
+    await this.persistCancelledRun(runId);
+    return cancelledActiveRun;
+  }
+
+  private abortRun(runId: string): boolean {
     const controller = this.abortControllers.get(runId);
     this.queue.clear();
     controller?.abort();
@@ -282,6 +295,10 @@ export class AutopilotQueueService {
 
     void this.terminateCamoufoxImpl().catch(() => null);
 
+    return Boolean(controller);
+  }
+
+  private async persistCancelledRun(runId: string): Promise<void> {
     await this.cancelRunningApplicationRuns(runId);
 
     await this.input.repositories.autopilotRuns.update(runId, {
@@ -289,8 +306,6 @@ export class AutopilotQueueService {
       currentStep: 'cancelled',
       completedAt: new Date()
     });
-
-    return Boolean(controller);
   }
 
   async onIdle(): Promise<void> {
@@ -849,10 +864,9 @@ export class AutopilotQueueService {
     autopilotRunId: string
   ): Promise<void> {
     const cutoff = Date.now() - this.staleApplicationRunThresholdMs;
-    const runningRuns = (await this.input.repositories.applicationRuns.list()).filter(
-      (candidate) =>
-        candidate.status === 'running' &&
-        candidate.updatedAt.getTime() < cutoff
+    // Only fetch running runs instead of ALL application runs
+    const runningRuns = (await this.input.repositories.applicationRuns.listByStatus(['running'])).filter(
+      (candidate) => candidate.updatedAt.getTime() < cutoff
     );
     if (runningRuns.length === 0) {
       return;

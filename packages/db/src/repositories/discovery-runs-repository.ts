@@ -46,6 +46,24 @@ export class DiscoveryRunsRepository {
     return record ? mapDiscoveryRun(record) : null;
   }
 
+  /** Batch fetch by IDs — eliminates N+1 when resolving discovery runs for autopilot list. */
+  async findByIds(ids: string[]): Promise<Map<string, DiscoveryRunRecord>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const records = await this.db
+      .select()
+      .from(discoveryRunsTable)
+      .where(inArray(discoveryRunsTable.id, ids));
+
+    const map = new Map<string, DiscoveryRunRecord>();
+    for (const record of records) {
+      map.set(record.id, mapDiscoveryRun(record));
+    }
+    return map;
+  }
+
   async findLatestCompleted(): Promise<DiscoveryRunRecord | null> {
     const record = await this.db.query.discoveryRunsTable.findFirst({
       where: inArray(discoveryRunsTable.status, ['completed', 'partial']),

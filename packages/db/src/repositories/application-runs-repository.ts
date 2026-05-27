@@ -85,12 +85,27 @@ function mapApplicationRun(record: typeof applicationRunsTable.$inferSelect): Ap
 }
 
 export class ApplicationRunsRepository {
-  constructor(private readonly db: JobAutomationDatabase) {}
+  constructor(private readonly db: JobAutomationDatabase) { }
 
   async list(): Promise<ApplicationRunRecord[]> {
     const records = await this.db
       .select()
       .from(applicationRunsTable)
+      .orderBy(desc(applicationRunsTable.updatedAt));
+
+    return records.map(mapApplicationRun);
+  }
+
+  /** Fetch runs filtered by status — avoids loading all runs for stale recovery. */
+  async listByStatus(statuses: string[]): Promise<ApplicationRunRecord[]> {
+    if (statuses.length === 0) {
+      return [];
+    }
+
+    const records = await this.db
+      .select()
+      .from(applicationRunsTable)
+      .where(inArray(applicationRunsTable.status, statuses))
       .orderBy(desc(applicationRunsTable.updatedAt));
 
     return records.map(mapApplicationRun);
@@ -140,6 +155,24 @@ export class ApplicationRunsRepository {
     });
 
     return record ? mapApplicationRun(record) : null;
+  }
+
+  /** Batch fetch by IDs — eliminates N+1 queries when resolving artifacts for run lists. */
+  async findByIds(ids: string[]): Promise<Map<string, ApplicationRunRecord>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const records = await this.db
+      .select()
+      .from(applicationRunsTable)
+      .where(inArray(applicationRunsTable.id, ids));
+
+    const map = new Map<string, ApplicationRunRecord>();
+    for (const record of records) {
+      map.set(record.id, mapApplicationRun(record));
+    }
+    return map;
   }
 
   async create(input: CreateApplicationRunInput): Promise<ApplicationRunRecord> {
@@ -197,6 +230,7 @@ export class ApplicationRunsRepository {
 
     await this.db.update(applicationRunsTable).set(updateSet).where(eq(applicationRunsTable.id, id));
 
-    return this.findById(id);
+    // Return the merged record directly instead of re-reading from DB
+    return applicationRunRecordSchema.parse(record);
   }
 }

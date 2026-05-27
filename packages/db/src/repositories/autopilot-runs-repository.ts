@@ -176,6 +176,8 @@ export class AutopilotRunsRepository {
       })
       .where(eq(autopilotRunsTable.id, id));
 
-    return this.findById(id);
+    // Return the merged record directly instead of re-reading from DB.
+    // This is called very frequently during autopilot runs (updateCounts per job).
+    return autopilotRunRecordSchema.parse(record);
   }
 }

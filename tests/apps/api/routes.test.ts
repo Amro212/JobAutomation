@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, describe, expect, test } from 'vitest';
+import { afterAll, describe, expect, test, vi } from 'vitest';
 
 import { buildApp } from '../../../apps/api/src/app';
 
@@ -127,6 +127,48 @@ describe('API routes', () => {
     expect(loadResponse.json().profile.autofillProfile.consentToDemographicDataProcessing).toBe('yes');
     expect(loadResponse.json().profile.autofillProfile.lgbtqiaCommunityIdentification).toBe('no');
     expect(loadResponse.json().readiness.readyForTailoring).toBe(true);
+  });
+
+  test('does not recompute all job prefilters when only preferred countries change', async () => {
+    const basePayload = {
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}',
+      preferredCountries: ['CA']
+    };
+
+    await app.inject({
+      method: 'PUT',
+      url: '/applicant-profile',
+      payload: basePayload
+    });
+
+    const recomputeAllSpy = vi.spyOn(app.repositories.jobs, 'recomputePrefilterForAllJobs');
+    const clearSpy = vi.spyOn(app.repositories.jobs, 'clearAllPrefilterResults');
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/applicant-profile',
+      payload: {
+        ...basePayload,
+        preferredCountries: ['CA', 'US']
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(recomputeAllSpy).not.toHaveBeenCalled();
+    expect(clearSpy).not.toHaveBeenCalled();
+
+    recomputeAllSpy.mockRestore();
+    clearSpy.mockRestore();
   });
 
   test('filters jobs by repeated country query params', async () => {

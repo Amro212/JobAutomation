@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, count, desc, eq, isNull, like, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 
 import {
   buildLocationLikePatterns,
@@ -128,17 +128,21 @@ export class JobsRepository {
     nullPrefilterCount: number;
     stalePrefilterCount: number;
   }> {
-    const [{ total: jobCount }] = await this.db.select({ total: count() }).from(jobsTable);
-    const [{ total: nullPrefilterCount }] = await this.db
-      .select({ total: count() })
-      .from(jobsTable)
-      .where(isNull(jobsTable.prefilterPass));
-    const [{ total: stalePrefilterCount }] = await this.db
-      .select({ total: count() })
-      .from(jobsTable)
-      .where(stalePrefilterWhereClause());
+    // Single query with conditional aggregation instead of 3 separate COUNT queries
+    const stalePattern = `%"matcherVersion":"${JOB_MATCHER_VERSION}"%`;
+    const [row] = await this.db
+      .select({
+        jobCount: count(),
+        nullPrefilterCount: sql<number>`sum(case when ${jobsTable.prefilterPass} is null then 1 else 0 end)`,
+        stalePrefilterCount: sql<number>`sum(case when ${jobsTable.prefilterSignalsJson} is null or ${jobsTable.prefilterSignalsJson} not like ${stalePattern} then 1 else 0 end)`
+      })
+      .from(jobsTable);
 
-    return { jobCount, nullPrefilterCount, stalePrefilterCount };
+    return {
+      jobCount: row.jobCount,
+      nullPrefilterCount: row.nullPrefilterCount ?? 0,
+      stalePrefilterCount: row.stalePrefilterCount ?? 0
+    };
   }
 
   async recomputePrefilterForAllJobs(ctx: PrefilterContext): Promise<number> {
@@ -164,22 +168,33 @@ export class JobsRepository {
         break;
       }
 
+      // Compute all results first, then batch-write inside a single transaction
+      const updates = rows.map((row) => {
+        const result = prefilterJob(row, ctx);
+        return {
+          id: row.id,
+          prefilterPass: result.pass ? 1 : 0,
+          prefilterScore: result.score,
+          prefilterReasonsJson: JSON.stringify(result.reasons),
+          prefilterSignalsJson: JSON.stringify(result.audit)
+        };
+      });
+
       await this.db.transaction(async (tx) => {
-        for (const row of rows) {
-          const result = prefilterJob(row, ctx);
+        for (const update of updates) {
           await tx
             .update(jobsTable)
             .set({
-              prefilterPass: result.pass ? 1 : 0,
-              prefilterScore: result.score,
-              prefilterReasonsJson: JSON.stringify(result.reasons),
-              prefilterSignalsJson: JSON.stringify(result.audit)
+              prefilterPass: update.prefilterPass,
+              prefilterScore: update.prefilterScore,
+              prefilterReasonsJson: update.prefilterReasonsJson,
+              prefilterSignalsJson: update.prefilterSignalsJson
             })
-            .where(eq(jobsTable.id, row.id));
-          evaluated += 1;
+            .where(eq(jobsTable.id, update.id));
         }
       });
 
+      evaluated += rows.length;
       offset += PAGE;
     }
 
@@ -208,21 +223,33 @@ export class JobsRepository {
         break;
       }
 
+      // Compute all results first, then batch-write inside a single transaction
+      const updates = rows.map((row) => {
+        const result = prefilterJob(row, ctx);
+        return {
+          id: row.id,
+          prefilterPass: result.pass ? 1 : 0,
+          prefilterScore: result.score,
+          prefilterReasonsJson: JSON.stringify(result.reasons),
+          prefilterSignalsJson: JSON.stringify(result.audit)
+        };
+      });
+
       await this.db.transaction(async (tx) => {
-        for (const row of rows) {
-          const result = prefilterJob(row, ctx);
+        for (const update of updates) {
           await tx
             .update(jobsTable)
             .set({
-              prefilterPass: result.pass ? 1 : 0,
-              prefilterScore: result.score,
-              prefilterReasonsJson: JSON.stringify(result.reasons),
-              prefilterSignalsJson: JSON.stringify(result.audit)
+              prefilterPass: update.prefilterPass,
+              prefilterScore: update.prefilterScore,
+              prefilterReasonsJson: update.prefilterReasonsJson,
+              prefilterSignalsJson: update.prefilterSignalsJson
             })
-            .where(eq(jobsTable.id, row.id));
-          evaluated += 1;
+            .where(eq(jobsTable.id, update.id));
         }
       });
+
+      evaluated += rows.length;
     }
 
     return evaluated;
@@ -236,7 +263,7 @@ export class JobsRepository {
       reasons: string[];
       audit: unknown;
     }
-  ): Promise<JobRecord | null> {
+  ): Promise<void> {
     await this.db
       .update(jobsTable)
       .set({
@@ -247,8 +274,6 @@ export class JobsRepository {
         updatedAt: new Date()
       })
       .where(eq(jobsTable.id, id));
-
-    return this.findById(id);
   }
 
   async list(
@@ -280,14 +305,20 @@ export class JobsRepository {
 
   async listIds(
     filters: JobListFilters = {},
-    pagination?: { page: number; pageSize: number }
+    pagination?: { page: number; pageSize: number },
+    options?: { skipCount?: boolean }
   ): Promise<{ ids: string[]; total: number }> {
     const whereClause = this.buildWhereClause(filters);
 
-    const countQuery = this.db.select({ total: count() }).from(jobsTable);
-    const [{ total }] = whereClause
-      ? await countQuery.where(whereClause)
-      : await countQuery;
+    // Allow callers like autopilot queue to skip the expensive COUNT query
+    let total = 0;
+    if (!options?.skipCount) {
+      const countQuery = this.db.select({ total: count() }).from(jobsTable);
+      const [countRow] = whereClause
+        ? await countQuery.where(whereClause)
+        : await countQuery;
+      total = countRow.total;
+    }
 
     const baseSelect = this.db.select({ id: jobsTable.id }).from(jobsTable);
     const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
@@ -363,6 +394,24 @@ export class JobsRepository {
     });
 
     return record ? mapJobRecord(record) : null;
+  }
+
+  /** Batch fetch by IDs — eliminates N+1 queries when resolving jobs for run lists. */
+  async findByIds(ids: string[]): Promise<Map<string, JobRecord>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const records = await this.db
+      .select()
+      .from(jobsTable)
+      .where(inArray(jobsTable.id, ids));
+
+    const map = new Map<string, JobRecord>();
+    for (const record of records) {
+      map.set(record.id, mapJobRecord(record));
+    }
+    return map;
   }
 
   async findBySource(sourceKind: string, sourceId: string): Promise<JobRecord | null> {
@@ -533,12 +582,7 @@ export class JobsRepository {
     return this.findById(id);
   }
 
-  async updateStatus(id: string, status: JobStatus): Promise<JobRecord | null> {
-    const existing = await this.findById(id);
-    if (!existing) {
-      return null;
-    }
-
+  async updateStatus(id: string, status: JobStatus): Promise<void> {
     await this.db
       .update(jobsTable)
       .set({
@@ -546,7 +590,5 @@ export class JobsRepository {
         updatedAt: new Date()
       })
       .where(eq(jobsTable.id, id));
-
-    return this.findById(id);
   }
 }
