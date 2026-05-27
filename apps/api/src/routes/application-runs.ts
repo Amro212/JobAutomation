@@ -22,8 +22,8 @@ type CreateApplicationRunPayload = {
 function parseCreatePayload(body: unknown): CreateApplicationRunPayload {
   const jobId =
     typeof body === 'object' &&
-    body !== null &&
-    typeof (body as { jobId?: unknown }).jobId === 'string'
+      body !== null &&
+      typeof (body as { jobId?: unknown }).jobId === 'string'
       ? (body as { jobId: string }).jobId
       : null;
 
@@ -98,19 +98,10 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
         (id): id is string => id != null
       )
     );
-    const artifactsList =
+    const artifactsMap =
       artifactIds.length > 0
-        ? await Promise.all(
-            [...new Set(artifactIds)].map((id) =>
-              app.repositories.artifacts.findById(id)
-            )
-          )
-        : [];
-    const artifactsMap = new Map(
-      artifactsList
-        .filter((a): a is NonNullable<typeof a> => a != null)
-        .map((a) => [a.id, a])
-    );
+        ? await app.repositories.artifacts.findByIds([...new Set(artifactIds)])
+        : new Map();
 
     const summaries = runs
       .map((run) => {
@@ -220,14 +211,14 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
       ],
       openRouter: app.config.OPENROUTER_API_KEY
         ? {
-            apiKey: app.config.OPENROUTER_API_KEY,
-            baseUrl: app.config.OPENROUTER_API_BASE_URL,
-            model: applicationFillPlanModel!,
-            reasoning: {
-              enabled: true,
-              exclude: true,
-            },
-          }
+          apiKey: app.config.OPENROUTER_API_KEY,
+          baseUrl: app.config.OPENROUTER_API_BASE_URL,
+          model: applicationFillPlanModel!,
+          reasoning: {
+            enabled: true,
+            exclude: true,
+          },
+        }
         : null,
       artifactsRootDir: join(
         dirname(app.config.JOB_AUTOMATION_DB_PATH),
