@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { Worker, type MessagePort } from 'node:worker_threads';
 
@@ -42,6 +44,13 @@ export type WorkerLike = Pick<
 >;
 
 function resolveWorkerEntry(): URL {
+  const explicitWorkerEntry = process.env.JOB_AUTOMATION_AUTOPILOT_WORKER_ENTRY;
+  if (explicitWorkerEntry) {
+    return explicitWorkerEntry.startsWith('file:')
+      ? new URL(explicitWorkerEntry)
+      : pathToFileURL(path.resolve(explicitWorkerEntry));
+  }
+
   const extension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
   return new URL(`../workers/autopilot-worker.${extension}`, import.meta.url);
 }

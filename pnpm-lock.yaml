@@ -146,18 +146,48 @@ importers:
       '@jobautomation/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@libsql/client':
+        specifier: ^0.15.15
+        version: 0.15.15
+      camoufox-js:
+        specifier: ^0.10.2
+        version: 0.10.2(playwright-core@1.58.2)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      drizzle-orm:
+        specifier: ^0.44.7
+        version: 0.44.7(@libsql/client@0.15.15)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)
       electron-store:
         specifier: ^10.1.0
         version: 10.1.0
       electron-updater:
         specifier: ^6.6.2
         version: 6.8.3
+      fastify:
+        specifier: ^5.6.0
+        version: 5.8.2
+      fastify-plugin:
+        specifier: ^5.0.1
+        version: 5.1.0
+      googleapis:
+        specifier: ^171.4.0
+        version: 171.4.0
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.4)
+      node-cron:
+        specifier: ^4.2.1
+        version: 4.2.1
+      node-html-parser:
+        specifier: ^7.1.0
+        version: 7.1.0
+      p-queue:
+        specifier: ^9.0.0
+        version: 9.1.0
+      playwright:
+        specifier: ^1.52.0
+        version: 1.58.2
       react:
         specifier: ^19.1.1
         version: 19.2.4
@@ -173,6 +203,9 @@ importers:
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
+      zod:
+        specifier: ^4.1.5
+        version: 4.3.6
     devDependencies:
       '@types/react':
         specifier: ^19.1.12
@@ -195,6 +228,9 @@ importers:
       electron-builder:
         specifier: ^26.0.12
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
+      esbuild:
+        specifier: ^0.25.10
+        version: 0.25.12
       tsx:
         specifier: ^4.20.5
         version: 4.21.0

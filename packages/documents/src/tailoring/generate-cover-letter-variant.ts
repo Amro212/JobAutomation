@@ -111,6 +111,18 @@ function firstNameOrFallback(fullName: string, fallback: string): string {
   return fullName.trim().split(/\s+/)[0] || fallback;
 }
 
+function resolveCoverLetterTemplatePath(): string | URL {
+  if (process.env.JOB_AUTOMATION_DOCUMENT_TEMPLATES_DIR) {
+    return join(
+      process.env.JOB_AUTOMATION_DOCUMENT_TEMPLATES_DIR,
+      'cover-letter',
+      'base.tex'
+    );
+  }
+
+  return new URL('../templates/cover-letter/base.tex', import.meta.url);
+}
+
 export async function generateCoverLetterVariant(
   input: GenerateCoverLetterVariantInput
 ): Promise<ArtifactRecord[]> {
@@ -154,10 +166,7 @@ export async function generateCoverLetterVariant(
     year: 'numeric'
   });
 
-  const coverLetterTemplate = await readFile(
-    new URL('../templates/cover-letter/base.tex', import.meta.url),
-    'utf8'
-  );
+  const coverLetterTemplate = await readFile(resolveCoverLetterTemplatePath(), 'utf8');
 
   const addressee = 'Hiring Manager';
   const candidateFullName = input.applicantProfile.fullName.trim() || 'Applicant';

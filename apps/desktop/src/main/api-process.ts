@@ -106,7 +106,31 @@ export class ApiProcessManager {
         API_HOST: this.options.apiHost,
         API_PORT: String(this.options.apiPort),
         API_BASE_URL: this.apiBaseUrl,
-        JOB_AUTOMATION_DB_PATH: this.options.dbPath
+        JOB_AUTOMATION_DB_PATH: this.options.dbPath,
+        JOB_AUTOMATION_TECTONIC_CACHE_DIR: path.join(
+          path.dirname(this.options.dbPath),
+          'tectonic'
+        ),
+        ...(this.options.packaged
+          ? {
+              JOB_AUTOMATION_AUTOPILOT_WORKER_ENTRY: path.join(
+                process.resourcesPath,
+                'api',
+                'workers',
+                'autopilot-worker.js'
+              ),
+              JOB_AUTOMATION_DB_MIGRATIONS_DIR: path.join(
+                process.resourcesPath,
+                'api',
+                'drizzle'
+              ),
+              JOB_AUTOMATION_DOCUMENT_TEMPLATES_DIR: path.join(
+                process.resourcesPath,
+                'api',
+                'templates'
+              )
+            }
+          : {})
       },
       execArgv: this.options.packaged ? [] : ['--import', 'tsx'],
       stdio: ['pipe', 'pipe', 'pipe', 'ipc']
