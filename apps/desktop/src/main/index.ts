@@ -28,11 +28,14 @@ let mainWindow: BrowserWindow | null = null;
 let trayController: TrayController | null = null;
 let isQuitting = false;
 let autopilotStatus = 'Idle';
+let hasActiveAutopilot = false;
 let backendStatus: import('./api-process.js').ApiProcessState = { status: 'stopped' };
 const autoUpdater = new DesktopAutoUpdater();
 let configStore: Store<DesktopConfig>;
 let camoufoxManager: CamoufoxManager;
 let backendStatusBroadcastUnsubscribe: (() => void) | null = null;
+let autopilotPollTimer: ReturnType<typeof setInterval> | null = null;
+let autopilotPollInFlight = false;
 let camoufoxStatus: CamoufoxDownloadStatus = {
   state: 'idle',
   message: 'Camoufox setup pending.'
@@ -142,6 +145,70 @@ async function stopActiveAutopilot(apiBaseUrl: string): Promise<void> {
   });
 }
 
+function clearAutopilotPolling(): void {
+  if (!autopilotPollTimer) {
+    autopilotPollInFlight = false;
+    return;
+  }
+
+  clearInterval(autopilotPollTimer);
+  autopilotPollTimer = null;
+  autopilotPollInFlight = false;
+}
+
+async function refreshAutopilotStatus(apiBaseUrl: string): Promise<void> {
+  if (autopilotPollInFlight) {
+    return;
+  }
+
+  autopilotPollInFlight = true;
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/autopilot-runs`);
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = (await response.json()) as {
+      runs: Array<{
+        run: {
+          id: string;
+          status: string;
+          currentStep: string;
+          submittedCount: number;
+        };
+      }>;
+    };
+
+    const activeRun = payload.runs.find(
+      (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
+    )?.run;
+
+    if (!activeRun) {
+      hasActiveAutopilot = false;
+      autopilotStatus = 'Idle';
+      refreshDesktopStatus();
+      return;
+    }
+
+    hasActiveAutopilot = true;
+    autopilotStatus = `${activeRun.status} | ${activeRun.currentStep} | submitted ${activeRun.submittedCount}`;
+    refreshDesktopStatus();
+  } catch {
+    // Keep the last known tray state if the backend is temporarily unreachable.
+  } finally {
+    autopilotPollInFlight = false;
+  }
+}
+
+function startAutopilotPolling(apiBaseUrl: string): void {
+  clearAutopilotPolling();
+  void refreshAutopilotStatus(apiBaseUrl);
+  autopilotPollTimer = setInterval(() => {
+    void refreshAutopilotStatus(apiBaseUrl);
+  }, 5_000);
+}
+
 async function bootstrap(): Promise<void> {
   debugLog('bootstrap:start');
   const gotLock = app.requestSingleInstanceLock();
@@ -189,6 +256,17 @@ async function bootstrap(): Promise<void> {
     packaged: app.isPackaged,
     onStateChange: (state) => {
       backendStatus = state;
+      if (state.status === 'running') {
+        startAutopilotPolling(apiProcess.apiBaseUrl);
+      } else if (state.status === 'starting' || state.status === 'restarting') {
+        hasActiveAutopilot = false;
+        autopilotStatus = 'Waiting for backend';
+        clearAutopilotPolling();
+      } else {
+        hasActiveAutopilot = false;
+        autopilotStatus = 'Idle';
+        clearAutopilotPolling();
+      }
       refreshDesktopStatus();
 
       if (state.status === 'restarting' && Notification.isSupported()) {
@@ -244,9 +322,11 @@ async function bootstrap(): Promise<void> {
   trayController = new TrayController({
     getWindow: () => mainWindow,
     getAutopilotStatus: () => `${autopilotStatus} | ${backendStatus.status}`,
+    canStopAutopilot: () => hasActiveAutopilot,
     onStopAutopilot: async () => {
       await stopActiveAutopilot(apiProcess.apiBaseUrl);
       autopilotStatus = 'Stopping';
+      hasActiveAutopilot = true;
       trayController?.refreshMenu();
     },
     onCheckForUpdates: async () => {
@@ -282,6 +362,7 @@ async function bootstrap(): Promise<void> {
   app.on('before-quit', async () => {
     isQuitting = true;
     backendStatusBroadcastUnsubscribe?.();
+    clearAutopilotPolling();
     autoUpdater.dispose();
     await apiProcess.stop();
   });

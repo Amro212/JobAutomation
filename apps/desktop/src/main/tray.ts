@@ -12,6 +12,7 @@ import {
 export type TrayControllerOptions = {
   getWindow: () => BrowserWindow | null;
   getAutopilotStatus: () => string;
+  canStopAutopilot: () => boolean;
   onStopAutopilot: () => Promise<void>;
   onCheckForUpdates: () => Promise<void>;
   onQuit: () => Promise<void>;
@@ -82,6 +83,7 @@ export class TrayController {
       },
       {
         label: 'Stop Autopilot',
+        enabled: this.options.canStopAutopilot(),
         click: () => {
           void this.options.onStopAutopilot();
         }
