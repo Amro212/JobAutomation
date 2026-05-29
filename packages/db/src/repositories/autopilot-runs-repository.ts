@@ -1,0 +1,183 @@
+import { randomUUID } from 'node:crypto';
+
+import { desc, eq } from 'drizzle-orm';
+
+import {
+  autopilotConfigSchema,
+  autopilotRunRecordSchema,
+  type AutopilotRunRecord,
+  type AutopilotRunStatus,
+  type AutopilotRunTriggerKind
+} from '@jobautomation/core';
+
+import type { JobAutomationDatabase } from '../client';
+import { autopilotRunsTable } from '../schema';
+
+export type CreateAutopilotRunInput = {
+  triggerKind: AutopilotRunTriggerKind;
+  status: AutopilotRunStatus;
+  currentStep?: string;
+  discoveryRunId?: string | null;
+  discoveredJobCount?: number;
+  eligibleJobCount?: number;
+  skippedJobCount?: number;
+  submittedCount?: number;
+  blockedCount?: number;
+  failedCount?: number;
+  config?: AutopilotRunRecord['config'];
+  errorMessage?: string | null;
+  createdAt?: Date;
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+  updatedAt?: Date;
+  id?: string;
+};
+
+export type UpdateAutopilotRunInput = Partial<
+  Pick<
+    AutopilotRunRecord,
+    | 'status'
+    | 'currentStep'
+    | 'discoveryRunId'
+    | 'discoveredJobCount'
+    | 'eligibleJobCount'
+    | 'skippedJobCount'
+    | 'submittedCount'
+    | 'blockedCount'
+    | 'failedCount'
+    | 'config'
+    | 'errorMessage'
+    | 'startedAt'
+    | 'completedAt'
+    | 'updatedAt'
+  >
+>;
+
+const defaultAutopilotConfig = autopilotConfigSchema.parse({});
+
+function mapStoredConfig(configJson: string | null): AutopilotRunRecord['config'] {
+  let parsed: unknown = {};
+
+  try {
+    parsed = JSON.parse(configJson ?? '{}') as unknown;
+  } catch {
+    return defaultAutopilotConfig;
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return defaultAutopilotConfig;
+  }
+
+  const config = parsed as Record<string, unknown>;
+  const normalized = {
+    ...config,
+    applySiteKeys:
+      Array.isArray(config.applySiteKeys) && config.applySiteKeys.length > 0
+        ? config.applySiteKeys
+        : defaultAutopilotConfig.applySiteKeys
+  };
+
+  const candidate = autopilotConfigSchema.safeParse(normalized);
+  return candidate.success ? candidate.data : defaultAutopilotConfig;
+}
+
+function mapAutopilotRun(
+  record: typeof autopilotRunsTable.$inferSelect
+): AutopilotRunRecord {
+  return autopilotRunRecordSchema.parse({
+    ...record,
+    discoveryRunId: record.discoveryRunId ?? null,
+    config: mapStoredConfig(record.configJson),
+    errorMessage: record.errorMessage ?? null,
+    startedAt: record.startedAt ?? null,
+    completedAt: record.completedAt ?? null
+  });
+}
+
+export class AutopilotRunsRepository {
+  constructor(private readonly db: JobAutomationDatabase) {}
+
+  async list(): Promise<AutopilotRunRecord[]> {
+    const records = await this.db
+      .select()
+      .from(autopilotRunsTable)
+      .orderBy(desc(autopilotRunsTable.createdAt));
+
+    return records.map(mapAutopilotRun);
+  }
+
+  async findById(id: string): Promise<AutopilotRunRecord | null> {
+    const record = await this.db.query.autopilotRunsTable.findFirst({
+      where: eq(autopilotRunsTable.id, id)
+    });
+
+    return record ? mapAutopilotRun(record) : null;
+  }
+
+  async create(input: CreateAutopilotRunInput): Promise<AutopilotRunRecord> {
+    const createdAt = input.createdAt ?? new Date();
+    const record = {
+      id: input.id ?? randomUUID(),
+      triggerKind: input.triggerKind,
+      status: input.status,
+      currentStep: input.currentStep ?? 'queued',
+      discoveryRunId: input.discoveryRunId ?? null,
+      discoveredJobCount: input.discoveredJobCount ?? 0,
+      eligibleJobCount: input.eligibleJobCount ?? 0,
+      skippedJobCount: input.skippedJobCount ?? 0,
+      submittedCount: input.submittedCount ?? 0,
+      blockedCount: input.blockedCount ?? 0,
+      failedCount: input.failedCount ?? 0,
+      configJson: JSON.stringify(input.config ?? autopilotConfigSchema.parse({})),
+      errorMessage: input.errorMessage ?? null,
+      createdAt,
+      startedAt: input.startedAt ?? null,
+      completedAt: input.completedAt ?? null,
+      updatedAt: input.updatedAt ?? createdAt
+    };
+
+    await this.db.insert(autopilotRunsTable).values(record);
+    return mapAutopilotRun(record);
+  }
+
+  async update(
+    id: string,
+    input: UpdateAutopilotRunInput
+  ): Promise<AutopilotRunRecord | null> {
+    const existing = await this.findById(id);
+    if (!existing) {
+      return null;
+    }
+
+    const record = {
+      ...existing,
+      ...input,
+      updatedAt: input.updatedAt ?? new Date()
+    };
+
+    await this.db
+      .update(autopilotRunsTable)
+      .set({
+        triggerKind: record.triggerKind,
+        status: record.status,
+        currentStep: record.currentStep,
+        discoveryRunId: record.discoveryRunId,
+        discoveredJobCount: record.discoveredJobCount,
+        eligibleJobCount: record.eligibleJobCount,
+        skippedJobCount: record.skippedJobCount,
+        submittedCount: record.submittedCount,
+        blockedCount: record.blockedCount,
+        failedCount: record.failedCount,
+        configJson: JSON.stringify(record.config),
+        errorMessage: record.errorMessage,
+        startedAt: record.startedAt,
+        completedAt: record.completedAt,
+        updatedAt: record.updatedAt
+      })
+      .where(eq(autopilotRunsTable.id, id));
+
+    // Return the merged record directly instead of re-reading from DB.
+    // This is called very frequently during autopilot runs (updateCounts per job).
+    return autopilotRunRecordSchema.parse(record);
+  }
+}

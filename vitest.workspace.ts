@@ -8,6 +8,13 @@ export const workspaceProjects = [
   },
   {
     test: {
+      name: 'dashboard',
+      environment: 'node',
+      include: ['tests/apps/dashboard/**/*.test.ts']
+    }
+  },
+  {
+    test: {
       name: 'core',
       environment: 'node',
       include: ['tests/packages/core/**/*.test.ts']
@@ -31,7 +38,18 @@ export const workspaceProjects = [
     test: {
       name: 'automation',
       environment: 'node',
-      include: ['tests/packages/automation/**/*.test.ts']
+      include: ['tests/packages/automation/**/*.test.ts'],
+      fileParallelism: false,
+      maxWorkers: 1,
+      minWorkers: 1,
+      testTimeout: 60_000
+    }
+  },
+  {
+    test: {
+      name: 'llm',
+      environment: 'node',
+      include: ['tests/packages/llm/**/*.test.ts']
     }
   },
   {

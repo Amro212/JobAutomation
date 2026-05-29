@@ -1,9 +1,11 @@
 import {
   applicantProfileInputSchema,
   applicantProfileSchema,
+  defaultEmailVerificationConfig,
   jobKeywordProfileSchema,
   minimalAutofillProfileSchema,
   type ApplicantProfile,
+  type ApplicantEmailVerificationConfig,
   type ApplicantProfileInput,
   type JobKeywordProfile,
   type MinimalAutofillProfile
@@ -52,6 +54,22 @@ function parseAutofillProfileJson(raw: string | null | undefined): MinimalAutofi
   }
 }
 
+function parseEmailVerificationJson(
+  raw: string | null | undefined
+): ApplicantEmailVerificationConfig {
+  if (raw == null || raw.trim() === '') {
+    return defaultEmailVerificationConfig;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const result = applicantProfileSchema.shape.emailVerification.safeParse(parsed);
+    return result.success ? result.data : defaultEmailVerificationConfig;
+  } catch {
+    return defaultEmailVerificationConfig;
+  }
+}
+
 function mapApplicantProfile(record: typeof applicantProfileTable.$inferSelect): ApplicantProfile {
   return applicantProfileSchema.parse({
     id: record.id,
@@ -69,6 +87,7 @@ function mapApplicantProfile(record: typeof applicantProfileTable.$inferSelect):
     jobKeywordProfile: parseJobKeywordProfileJson(record.jobKeywordProfileJson),
     jobKeywordProfileGeneratedAt: record.jobKeywordProfileGeneratedAt ?? null,
     autofillProfile: parseAutofillProfileJson(record.autofillProfileJson),
+    emailVerification: parseEmailVerificationJson(record.emailVerificationJson),
     updatedAt: record.updatedAt
   });
 }
@@ -107,10 +126,17 @@ export class ApplicantProfileRepository {
         : existing
           ? parseAutofillProfileJson(existing.autofillProfileJson)
           : minimalAutofillProfileSchema.parse({});
+    const mergedEmailVerification =
+      parsed.emailVerification !== undefined
+        ? applicantProfileSchema.shape.emailVerification.parse(parsed.emailVerification)
+        : existing
+          ? parseEmailVerificationJson(existing.emailVerificationJson)
+          : defaultEmailVerificationConfig;
 
     const countriesJson = JSON.stringify(parsed.preferredCountries ?? []);
     const keywordJson = mergedKeywordProfile ? JSON.stringify(mergedKeywordProfile) : null;
     const autofillJson = JSON.stringify(mergedAutofill);
+    const emailVerificationJson = JSON.stringify(mergedEmailVerification);
     const now = new Date();
 
     const row = {
@@ -129,6 +155,7 @@ export class ApplicantProfileRepository {
       jobKeywordProfileJson: keywordJson,
       jobKeywordProfileGeneratedAt: mergedKeywordGeneratedAt,
       autofillProfileJson: autofillJson,
+      emailVerificationJson,
       updatedAt: now
     };
 
@@ -149,6 +176,7 @@ export class ApplicantProfileRepository {
         jobKeywordProfileJson: row.jobKeywordProfileJson,
         jobKeywordProfileGeneratedAt: row.jobKeywordProfileGeneratedAt,
         autofillProfileJson: row.autofillProfileJson,
+        emailVerificationJson: row.emailVerificationJson,
         updatedAt: row.updatedAt
       }
     });
@@ -160,6 +188,7 @@ export class ApplicantProfileRepository {
       jobKeywordProfile: mergedKeywordProfile,
       jobKeywordProfileGeneratedAt: mergedKeywordGeneratedAt,
       autofillProfile: mergedAutofill,
+      emailVerification: mergedEmailVerification,
       updatedAt: now
     });
   }

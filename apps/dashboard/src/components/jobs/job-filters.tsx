@@ -19,6 +19,7 @@ const statusOptions = [
   { value: 'discovered', label: 'Discovered' },
   { value: 'reviewing', label: 'Reviewing' },
   { value: 'shortlisted', label: 'Shortlisted' },
+  { value: 'applied', label: 'Applied' },
   { value: 'archived', label: 'Archived' }
 ];
 

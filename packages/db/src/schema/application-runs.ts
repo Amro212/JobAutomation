@@ -1,11 +1,15 @@
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
+import { autopilotRunsTable } from './autopilot-runs';
 import { jobsTable } from './jobs';
 
 export const applicationRunsTable = sqliteTable('application_runs', {
   id: text('id').primaryKey(),
   jobId: text('job_id').notNull().references(() => jobsTable.id, {
     onDelete: 'cascade'
+  }),
+  autopilotRunId: text('autopilot_run_id').references(() => autopilotRunsTable.id, {
+    onDelete: 'set null'
   }),
   siteKey: text('site_key').notNull(),
   status: text('status').notNull(),
@@ -21,5 +25,8 @@ export const applicationRunsTable = sqliteTable('application_runs', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
 }, (table) => ({
   applicationRunsJobIdx: index('application_runs_job_idx').on(table.jobId),
+  applicationRunsAutopilotRunIdx: index('application_runs_autopilot_run_idx').on(
+    table.autopilotRunId
+  ),
   applicationRunsStatusIdx: index('application_runs_status_idx').on(table.status)
 }));

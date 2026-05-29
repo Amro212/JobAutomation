@@ -4,6 +4,7 @@ import { getTableColumns } from 'drizzle-orm';
 import {
   applicantProfileTable,
   applicationRunsTable,
+  autopilotRunsTable,
   artifactsTable,
   discoveryRunsTable,
   discoverySchedulesTable,
@@ -19,6 +20,7 @@ describe('database schema', () => {
     expect(applicantProfileTable[Symbol.for('drizzle:Name')]).toBe('applicant_profile');
     expect(artifactsTable[Symbol.for('drizzle:Name')]).toBe('artifacts');
     expect(applicationRunsTable[Symbol.for('drizzle:Name')]).toBe('application_runs');
+    expect(autopilotRunsTable[Symbol.for('drizzle:Name')]).toBe('autopilot_runs');
     expect(logEventsTable[Symbol.for('drizzle:Name')]).toBe('log_events');
   });
 
@@ -31,7 +33,9 @@ describe('database schema', () => {
     expect(jobColumns.sourceId).toBeDefined();
     expect(jobColumns.discoveryRunId).toBeDefined();
     expect(jobColumns.prefilterPass).toBeDefined();
+    expect(jobColumns.prefilterScore).toBeDefined();
     expect(jobColumns.prefilterReasonsJson).toBeDefined();
+    expect(jobColumns.prefilterSignalsJson).toBeDefined();
     expect(runColumns.scheduleId).toBeDefined();
     expect(applicantColumns.baseResumeFileName).toBeDefined();
     expect(applicantColumns.baseResumeTex).toBeDefined();
@@ -40,15 +44,20 @@ describe('database schema', () => {
 
   test('keeps application run and evidence linkage explicit', () => {
     const applicationRunColumns = getTableColumns(applicationRunsTable);
+    const autopilotRunColumns = getTableColumns(autopilotRunsTable);
     const artifactColumns = getTableColumns(artifactsTable);
     const logEventColumns = getTableColumns(logEventsTable);
 
     expect(applicationRunColumns.siteKey).toBeDefined();
+    expect(applicationRunColumns.autopilotRunId).toBeDefined();
     expect(applicationRunColumns.currentStep).toBeDefined();
     expect(applicationRunColumns.prefilterReasonsJson).toBeDefined();
     expect(applicationRunColumns.resumeArtifactId).toBeDefined();
     expect(applicationRunColumns.coverLetterArtifactId).toBeDefined();
     expect(applicationRunColumns.updatedAt).toBeDefined();
+    expect(autopilotRunColumns.discoveryRunId).toBeDefined();
+    expect(autopilotRunColumns.submittedCount).toBeDefined();
+    expect(autopilotRunColumns.blockedCount).toBeDefined();
     expect(artifactColumns.applicationRunId).toBeDefined();
     expect(logEventColumns.applicationRunId).toBeDefined();
   });

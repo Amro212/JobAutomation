@@ -5,6 +5,7 @@ import type { DiscoveryRunRecord, DiscoverySourceRecord } from '@jobautomation/c
 import type {
   ArtifactsRepository,
   DiscoveryRunsRepository,
+  DiscoverySourcesRepository,
   JobsRepository,
   LogEventsRepository
 } from '@jobautomation/db';
@@ -19,6 +20,7 @@ export type DiscoveryQueueServiceInput = {
   artifactsRepository: ArtifactsRepository;
   artifactsRootDir: string;
   jobsRepository: JobsRepository;
+  sourcesRepository: DiscoverySourcesRepository;
   runsRepository: DiscoveryRunsRepository;
   logEventsRepository: LogEventsRepository;
   greenhouseBaseUrl: string;
@@ -56,6 +58,7 @@ export class DiscoveryQueueService {
             await runStructuredDiscovery({
               run: input.run,
               sources: input.sources,
+              sourcesRepository: this.input.sourcesRepository,
               jobsRepository: this.input.jobsRepository,
               runsRepository: this.input.runsRepository,
               logEventsRepository: this.input.logEventsRepository,

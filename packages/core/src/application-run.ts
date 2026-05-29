@@ -6,6 +6,7 @@ import { applicationRunStatusSchema, applicationRunTypeSchema } from './status';
 export const applicationRunRecordSchema = z.object({
   id: z.string().min(1),
   jobId: z.string().min(1),
+  autopilotRunId: z.string().min(1).nullable().default(null),
   siteKey: applicationRunTypeSchema,
   status: applicationRunStatusSchema,
   currentStep: z.string().min(1),

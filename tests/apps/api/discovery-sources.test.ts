@@ -55,14 +55,14 @@ describe('discovery source routes', () => {
     expect(response.json().source.sourceKey).toBe('https://example.com/careers/jobs?team=eng');
   });
 
-  test('rejects stagehand as a persisted discovery source kind', async () => {
+  test('rejects unsupported discovery source kinds', async () => {
     const response = await app.inject({
       method: 'POST',
       url: '/discovery-sources',
       payload: {
-        sourceKind: 'stagehand',
+        sourceKind: 'unsupported-kind',
         sourceKey: 'https://example.com/careers/jobs',
-        label: 'Stagehand Source',
+        label: 'Unsupported Source',
         enabled: true
       }
     });

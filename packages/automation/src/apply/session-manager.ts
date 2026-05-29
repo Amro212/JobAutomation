@@ -1,25 +1,54 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Browser } from 'playwright';
+import type {
+  ApplicationSession,
+  ApplicationSessionOptions,
+  ApplicationSessionRuntime
+} from './contracts';
 
-import type { ApplicationSession } from './contracts';
+function isBlankPage(page: { url: () => string }): boolean {
+  const url = page.url();
+  return (
+    url === '' ||
+    url === 'about:blank' ||
+    url === 'about:newtab' ||
+    url === 'about:home' ||
+    url.startsWith('chrome://browser/content/blanktab')
+  );
+}
 
 export async function createApplicationSession(input: {
-  browser: Browser;
-  runId: string;
-  artifactsRootDir: string;
-  startUrl?: string;
-}): Promise<ApplicationSession> {
-  const context = await input.browser.newContext({
-    locale: 'en-US'
-  });
+  runtime: ApplicationSessionRuntime;
+} & ApplicationSessionOptions): Promise<ApplicationSession> {
+  const context =
+    input.runtime.context ??
+    (await input.runtime.browser?.newContext());
+
+  if (!context) {
+    throw new Error('Application session runtime did not provide a browser context.');
+  }
+
+  const ownsContext = input.runtime.context == null;
+
   await context.tracing.start({
     screenshots: true,
     snapshots: true
   });
 
-  const page = await context.newPage();
+  async function closeSurplusBlankPages(activePage = page): Promise<void> {
+    await Promise.all(
+      context
+        .pages()
+        .filter((candidate) => candidate !== activePage && isBlankPage(candidate))
+        .map((candidate) => candidate.close().catch(() => undefined))
+    );
+  }
+
+  const pages = context.pages();
+  const reusableBlankPage = pages.find(isBlankPage);
+  const page = reusableBlankPage ?? await context.newPage();
+  await closeSurplusBlankPages(page);
   if (input.startUrl) {
     await page.goto(input.startUrl, {
       waitUntil: 'domcontentloaded'
@@ -30,9 +59,12 @@ export async function createApplicationSession(input: {
   const tracePath = join(traceDir, 'trace.zip');
 
   return {
-    browser: input.browser,
+    browser: input.runtime.browser,
     context,
     page,
+    identity: input.identity,
+    ...(input.pacing ? { pacing: input.pacing } : {}),
+    closeSurplusBlankPages,
     async finalizeTrace() {
       await mkdir(traceDir, { recursive: true });
       await context.tracing.stop({
@@ -41,8 +73,15 @@ export async function createApplicationSession(input: {
       return tracePath;
     },
     async close() {
-      await context.close();
-      await input.browser.close();
+      if (ownsContext) {
+        await context.close();
+        if (input.runtime.browser) {
+          await input.runtime.browser.close();
+        }
+        return;
+      }
+
+      await input.runtime.close();
     }
   };
 }

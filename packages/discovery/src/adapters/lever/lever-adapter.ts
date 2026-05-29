@@ -1,6 +1,7 @@
 import type { DiscoverySourceRecord } from '@jobautomation/core';
 
 import type { SourceAdapter, SourceAdapterContext } from '../../contracts/source-adapter';
+import { deriveCompanyName } from '../../normalization/derive-company-name';
 import { normalizeJob } from '../../normalization/normalize-job';
 import type { LeverJob } from './lever-types';
 
@@ -92,7 +93,11 @@ export function createLeverAdapter(source: DiscoverySourceRecord): SourceAdapter
           sourceKind: 'lever',
           sourceId: sourceJob.id,
           sourceUrl: sourceJob.hostedUrl,
-          companyName: source.label,
+          companyName: deriveCompanyName({
+            sourceUrl: sourceJob.hostedUrl,
+            sourceKey: source.sourceKey,
+            fallbackLabel: source.label
+          }),
           title: sourceJob.text,
           location: sourceJob.categories.location,
           remoteType: deriveRemoteType(sourceJob),

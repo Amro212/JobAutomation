@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import type { ArtifactRecord } from '@jobautomation/core';
 
+import { LocalDateTime } from '@/components/local-datetime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -35,37 +36,46 @@ function getGenerateMessage(mode: 'both' | 'resume' | 'cover-letter'): string {
   return 'Generated tailored resume and cover letter.';
 }
 
-/** Latest resume-variant version has TeX/log but no PDF (Tectonic did not produce a PDF). */
-function latestResumeVariantVersionWithoutPdf(artifacts: ArtifactRecord[]): number | null {
-  const resume = artifacts.filter((a) => a.kind === 'resume-variant');
-  if (resume.length === 0) return null;
-  const maxVersion = Math.max(...resume.map((a) => a.version));
-  const atLatest = resume.filter((a) => a.version === maxVersion);
-  if (atLatest.some((a) => a.format === 'pdf')) return null;
-  if (atLatest.some((a) => a.format === 'tex' || a.format === 'log')) {
+const ARTIFACT_LABELS: Record<string, string> = {
+  'resume-variant': 'Resume',
+  'cover-letter': 'Cover letter'
+};
+
+function latestVersionWithoutPdf(artifacts: ArtifactRecord[], kind: string): number | null {
+  const matchingArtifacts = artifacts.filter((artifact) => artifact.kind === kind);
+  if (matchingArtifacts.length === 0) return null;
+  const maxVersion = Math.max(...matchingArtifacts.map((artifact) => artifact.version));
+  const atLatest = matchingArtifacts.filter((artifact) => artifact.version === maxVersion);
+  if (atLatest.some((artifact) => artifact.format === 'pdf')) return null;
+  if (atLatest.some((artifact) => artifact.format === 'tex' || artifact.format === 'log')) {
     return maxVersion;
   }
   return null;
 }
 
-function appendResumePdfMissingWarning(
+function appendMissingPdfWarnings(
   mode: 'both' | 'resume' | 'cover-letter',
   generatedArtifacts: ArtifactRecord[],
   prior: string[]
 ): string[] {
-  if (mode !== 'both' && mode !== 'resume') return prior;
-  const resume = generatedArtifacts.filter((a) => a.kind === 'resume-variant');
-  if (resume.length === 0) return prior;
-  const maxVersion = Math.max(...resume.map((a) => a.version));
-  const atLatest = resume.filter((a) => a.version === maxVersion);
-  if (atLatest.some((a) => a.format === 'pdf')) return prior;
-  if (!atLatest.some((a) => a.format === 'tex') && !atLatest.some((a) => a.format === 'log')) {
-    return prior;
-  }
-  return [
-    ...prior,
-    `Resume v${maxVersion}: no PDF was produced (LaTeX compile failed). Open resume-variant tectonic.log in the table below.`
+  const requestedKinds = [
+    ...(mode === 'both' || mode === 'resume' ? ['resume-variant'] : []),
+    ...(mode === 'both' || mode === 'cover-letter' ? ['cover-letter'] : [])
   ];
+  const warnings = [...prior];
+
+  for (const kind of requestedKinds) {
+    const missingVersion = latestVersionWithoutPdf(generatedArtifacts, kind);
+    if (missingVersion == null) {
+      continue;
+    }
+    const label = ARTIFACT_LABELS[kind] ?? kind;
+    warnings.push(
+      `${label} v${missingVersion}: no PDF was produced (LaTeX compile failed). Open ${kind} tectonic.log in the table below.`
+    );
+  }
+
+  return warnings;
 }
 
 function buildArtifactUrl(artifactId: string, download = false): string {
@@ -113,7 +123,7 @@ export default async function JobArtifactsPage({
       const result = await generateJobArtifacts(jobId, { mode: payloadMode });
       revalidatePath(`/jobs/${jobId}/artifacts`);
       revalidatePath(`/jobs/${jobId}`);
-      const merged = appendResumePdfMissingWarning(
+      const merged = appendMissingPdfWarnings(
         payloadMode,
         result.artifacts,
         result.warnings ?? []
@@ -127,6 +137,7 @@ export default async function JobArtifactsPage({
     }
 
     redirect(buildJobArtifactsHref(jobId, { message: `${getGenerateMessage(payloadMode)}${warningText}` }));
+
   }
 
   const readiness = profileState.readiness;
@@ -141,7 +152,9 @@ export default async function JobArtifactsPage({
       return accumulator;
     }, {});
 
-  const resumeMissingPdfVersion = latestResumeVariantVersionWithoutPdf(artifacts);
+  const latestMissingPdfVersions = ['resume-variant', 'cover-letter']
+    .map((kind) => ({ kind, version: latestVersionWithoutPdf(artifacts, kind) }))
+    .filter((entry): entry is { kind: string; version: number } => entry.version != null);
 
   // Read but don't display flash params - FlashToast handles them
   void resolvedSearchParams;
@@ -219,7 +232,7 @@ export default async function JobArtifactsPage({
         ) : null}
       </div>
 
-      {Object.keys(latestPdfArtifacts).length > 0 || resumeMissingPdfVersion != null ? (
+      {Object.keys(latestPdfArtifacts).length > 0 || latestMissingPdfVersions.length > 0 ? (
         <div className="rounded-xl border bg-card p-6 shadow-sm">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -230,12 +243,15 @@ export default async function JobArtifactsPage({
               These are the compiled outputs served by the API. Open or download the latest version
               for each artifact kind.
             </p>
-            {resumeMissingPdfVersion != null ? (
+            {latestMissingPdfVersions.length > 0 ? (
               <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                Latest tailored resume (v{resumeMissingPdfVersion}) has no PDF—only LaTeX and/or a
-                compile log were saved. The resume is omitted from this grid until Tectonic succeeds;
-                check the <span className="font-medium">tectonic.log</span> row for{' '}
-                <span className="font-medium">resume-variant</span> below.
+                Latest{' '}
+                {latestMissingPdfVersions
+                  .map((entry) => `${ARTIFACT_LABELS[entry.kind] ?? entry.kind} v${entry.version}`)
+                  .join(' and ')}{' '}
+                has no PDF; only LaTeX and/or a compile log were saved. Missing PDFs are omitted
+                from this grid until Tectonic succeeds; check the{' '}
+                <span className="font-medium">tectonic.log</span> rows below.
               </p>
             ) : null}
           </div>
@@ -321,9 +337,17 @@ export default async function JobArtifactsPage({
                       <code className="text-xs text-muted-foreground">{artifact.storagePath}</code>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {artifact.applicantProfileId
-                        ? `${artifact.applicantProfileId} @ ${String(artifact.applicantProfileUpdatedAt ?? 'n/a')}`
-                        : 'n/a'}
+                      {artifact.applicantProfileId ? (
+                        <>
+                          {artifact.applicantProfileId} @{' '}
+                          <LocalDateTime
+                            value={artifact.applicantProfileUpdatedAt}
+                            fallback="n/a"
+                          />
+                        </>
+                      ) : (
+                        'n/a'
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

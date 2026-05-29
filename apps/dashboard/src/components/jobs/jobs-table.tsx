@@ -15,10 +15,12 @@ import {
 
 function statusVariant(status: string) {
   switch (status) {
-    case 'shortlisted':
+    case 'applied':
       return 'success' as const;
-    case 'reviewing':
+    case 'shortlisted':
       return 'warning' as const;
+    case 'reviewing':
+      return 'outline' as const;
     case 'archived':
       return 'secondary' as const;
     default:
@@ -55,6 +57,7 @@ export function JobsTable({
               Location
             </TableHead>
             <TableHead className="w-[85px]">Remote</TableHead>
+            <TableHead className="w-[90px]">Match</TableHead>
             <TableHead className="w-[110px]">Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -75,6 +78,13 @@ export function JobsTable({
                 {job.location || 'Unspecified'}
               </TableCell>
               <TableCell className="capitalize">{job.remoteType}</TableCell>
+              <TableCell>
+                {job.prefilterScore != null ? (
+                  <Badge variant="outline">{job.prefilterScore}</Badge>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                )}
+              </TableCell>
               <TableCell>
                 <Badge variant={statusVariant(job.status)} className="capitalize">
                   {job.status}

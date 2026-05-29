@@ -15,10 +15,7 @@ async function saveSetup(formData: FormData): Promise<void> {
   const hasUploadedResume = uploadedResume instanceof File && uploadedResume.size > 0;
   const uploadedText = hasUploadedResume ? await uploadedResume.text() : null;
 
-  const preferredCountries = formData
-    .getAll('preferredCountry')
-    .filter((v): v is string => typeof v === 'string' && v.trim().length === 2)
-    .map((v) => v.toUpperCase());
+  const preferredCountries = existing?.preferredCountries ?? [];
 
   await saveApplicantProfile({
     id: String(formData.get('id') ?? 'default'),
@@ -36,6 +33,14 @@ async function saveSetup(formData: FormData): Promise<void> {
     baseResumeTex: uploadedText ?? String(formData.get('baseResumeTex') ?? ''),
     preferredCountries,
     autofillProfile: parseMinimalAutofillFormData(formData),
+    emailVerification: {
+      enabled: String(formData.get('emailVerificationEnabled') ?? '') === 'yes',
+      provider: 'gmail_oauth',
+      gmailUserEmail: String(formData.get('gmailUserEmail') ?? '').trim(),
+      gmailClientId: String(formData.get('gmailClientId') ?? '').trim(),
+      gmailClientSecret: String(formData.get('gmailClientSecret') ?? '').trim(),
+      gmailRefreshToken: String(formData.get('gmailRefreshToken') ?? '').trim()
+    },
     jobKeywordProfile: existing?.jobKeywordProfile ?? null,
     jobKeywordProfileGeneratedAt: existing?.jobKeywordProfileGeneratedAt ?? null
   });

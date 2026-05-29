@@ -60,7 +60,9 @@ export const jobRecordSchema = z.object({
   discoveredAt: z.date(),
   updatedAt: z.date(),
   prefilterPass: z.preprocess(prefilterPassFromDb, z.boolean().nullable()),
-  prefilterReasonsJson: z.string().nullable()
+  prefilterScore: z.number().int().min(0).max(100).nullable().default(null),
+  prefilterReasonsJson: z.string().nullable(),
+  prefilterSignalsJson: z.string().nullable().default(null)
 });
 
 const optionalMatchProfileSchema = z.preprocess((val) => {
@@ -143,7 +145,8 @@ export const jobListItemSchema = z.object({
   sourceKind: z.string().min(1),
   location: z.string().default(''),
   remoteType: z.string().default('unknown'),
-  status: jobStatusSchema
+  status: jobStatusSchema,
+  prefilterScore: z.number().int().min(0).max(100).nullable().default(null)
 });
 
 export type JobRecord = z.infer<typeof jobRecordSchema>;

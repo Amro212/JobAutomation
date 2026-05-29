@@ -107,6 +107,10 @@ function buildCoverLetterBody(
   ].join('\n\n');
 }
 
+function firstNameOrFallback(fullName: string, fallback: string): string {
+  return fullName.trim().split(/\s+/)[0] || fallback;
+}
+
 export async function generateCoverLetterVariant(
   input: GenerateCoverLetterVariantInput
 ): Promise<ArtifactRecord[]> {
@@ -156,8 +160,10 @@ export async function generateCoverLetterVariant(
   );
 
   const addressee = 'Hiring Manager';
+  const candidateFullName = input.applicantProfile.fullName.trim() || 'Applicant';
+  const candidateFirstName = firstNameOrFallback(input.applicantProfile.fullName, 'Applicant');
   const tokens: Record<string, string> = {
-    '{{candidate_name}}': escapeLatex(input.applicantProfile.fullName || 'Applicant'),
+    '{{candidate_name}}': escapeLatex(candidateFullName),
     '{{contact_row}}': buildCoverLetterContactRow(input.applicantProfile),
     '{{letter_date}}': escapeLatex(dateStr),
     '{{recipient_line}}': escapeLatex(addressee),
@@ -166,7 +172,7 @@ export async function generateCoverLetterVariant(
     '{{greeting_line}}': escapeLatex(`Dear ${addressee},`),
     '{{cover_letter_body}}': body,
     '{{closer_line}}': escapeLatex('Sincerely'),
-    '{{signoff_name}}': escapeLatex(input.applicantProfile.fullName || 'Applicant'),
+    '{{signoff_name}}': escapeLatex(candidateFullName),
     '{{signoff_title}}': ''
   };
 

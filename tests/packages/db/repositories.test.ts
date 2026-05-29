@@ -11,6 +11,7 @@ import type { PrefilterContext } from '@jobautomation/core';
 import {
   ApplicantProfileRepository,
   ApplicationRunsRepository,
+  AutopilotRunsRepository,
   ArtifactsRepository,
   DiscoveryRunsRepository,
   DiscoverySchedulesRepository,
@@ -154,7 +155,7 @@ describe('repositories', () => {
     expect(distinctWithCompanyFilter).toEqual(['Alpha Inc', 'Beta LLC']);
   });
 
-  test('listSummary matchProfile=me uses cached prefilter_pass', async () => {
+  test('listSummary matchProfile=me uses cached prefilter_pass ordered by deterministic score', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);
     trackedClients.push(db.$client);
@@ -184,20 +185,34 @@ describe('repositories', () => {
     await repository.upsert({
       ...base,
       sourceId: 'job-a',
-      title: 'Software Engineer'
+      title: 'Software Engineer',
+      descriptionText: 'Build TypeScript and React workflows with Node.js services.'
     });
     await repository.upsert({
       ...base,
       sourceId: 'job-b',
-      title: 'Line Cook'
+      title: 'Line Cook',
+      descriptionText: 'Prepare ingredients and support dinner service.'
+    });
+    await repository.upsert({
+      ...base,
+      sourceId: 'job-c',
+      title: 'Developer Tooling Engineer',
+      descriptionText:
+        'Build TypeScript, Node.js, and Playwright automation for developer workflows.'
     });
 
     const ctx: PrefilterContext = {
       jobKeywordProfile: {
         seniority: 'mid',
-        target_titles: [],
-        positive_keywords: ['software'],
-        negative_keywords: []
+        target_titles: ['software engineer'],
+        positive_keywords: ['typescript', 'react', 'node.js', 'playwright', 'automation'],
+        negative_keywords: [],
+        allowed_role_families: ['engineering'],
+        must_have_keywords: [],
+        nice_to_have_keywords: [],
+        negative_role_terms: [],
+        max_required_years: null
       },
       preferredCountries: []
     };
@@ -207,9 +222,13 @@ describe('repositories', () => {
     const all = await repository.listSummary({ matchProfile: 'all' });
     const me = await repository.listSummary({ matchProfile: 'me' });
 
-    expect(all.total).toBe(2);
-    expect(me.total).toBe(1);
-    expect(me.jobs[0]?.title).toBe('Software Engineer');
+    expect(all.total).toBe(3);
+    expect(me.total).toBe(2);
+    expect(me.jobs.map((job) => job.title)).toEqual([
+      'Software Engineer',
+      'Developer Tooling Engineer'
+    ]);
+    expect(me.jobs[0]?.prefilterScore).toBeGreaterThan(me.jobs[1]?.prefilterScore ?? 0);
   });
 
   test('upsert clears prefilter cache when title or location changes', async () => {
@@ -455,6 +474,85 @@ describe('repositories', () => {
     expect(logEvent.id).toBeDefined();
   });
 
+  test('tracks autopilot runs and links child application runs', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, {
+      migrationsFolder
+    });
+
+    const autopilotRunsRepository = new AutopilotRunsRepository(db);
+    const applicationRunsRepository = new ApplicationRunsRepository(db);
+    const discoveryRunsRepository = new DiscoveryRunsRepository(db);
+    const jobsRepository = new JobsRepository(db);
+
+    const discoveryRun = await discoveryRunsRepository.create({
+      sourceKind: 'structured',
+      runKind: 'structured',
+      triggerKind: 'manual',
+      status: 'completed'
+    });
+
+    const autopilotRun = await autopilotRunsRepository.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      discoveryRunId: discoveryRun.id
+    });
+
+    const job = await jobsRepository.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-autopilot-1',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/autopilot-1',
+      companyName: 'Example Corp',
+      title: 'Automation Engineer',
+      location: 'Remote',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: null,
+      descriptionText: 'Automate application workflows.',
+      rawPayload: null,
+      discoveryRunId: discoveryRun.id,
+      status: 'applied',
+      discoveredAt: new Date('2026-05-08T10:00:00.000Z'),
+      updatedAt: new Date('2026-05-08T10:00:00.000Z')
+    });
+
+    const childRun = await applicationRunsRepository.create({
+      jobId: job.id,
+      siteKey: 'greenhouse',
+      status: 'completed',
+      currentStep: 'submitted',
+      autopilotRunId: autopilotRun.id,
+      prefilterReasons: [],
+      createdAt: new Date('2026-05-08T10:10:00.000Z'),
+      startedAt: new Date('2026-05-08T10:10:05.000Z'),
+      completedAt: new Date('2026-05-08T10:12:00.000Z'),
+      updatedAt: new Date('2026-05-08T10:12:00.000Z')
+    });
+
+    await autopilotRunsRepository.update(autopilotRun.id, {
+      status: 'partial',
+      currentStep: 'applications_completed',
+      eligibleJobCount: 1,
+      submittedCount: 1,
+      blockedCount: 0,
+      completedAt: new Date('2026-05-08T10:12:00.000Z')
+    });
+
+    const storedRun = await autopilotRunsRepository.findById(autopilotRun.id);
+    const childRuns = await applicationRunsRepository.listByAutopilotRun(
+      autopilotRun.id
+    );
+
+    expect(storedRun?.discoveryRunId).toBe(discoveryRun.id);
+    expect(storedRun?.status).toBe('partial');
+    expect(storedRun?.submittedCount).toBe(1);
+    expect(childRuns).toHaveLength(1);
+    expect(childRuns[0]?.autopilotRunId).toBe(autopilotRun.id);
+    expect(childRun.autopilotRunId).toBe(autopilotRun.id);
+  });
+
   test('filters jobs by locationCountries with case-insensitive alias matching', async () => {
     const dbPath = createTestDatabasePath();
     const db = createDatabaseClient(dbPath);
@@ -551,6 +649,50 @@ describe('repositories', () => {
 
     const stored = await repository.get();
     expect(stored?.preferredCountries).toEqual(['US', 'CA']);
+  });
+
+  test('stores and retrieves applicant profile email verification settings', async () => {
+    const dbPath = createTestDatabasePath();
+    const db = createDatabaseClient(dbPath);
+    trackedClients.push(db.$client);
+    await migrate(db, { migrationsFolder });
+
+    const repository = new ApplicantProfileRepository(db);
+
+    await repository.save({
+      id: 'default',
+      fullName: 'Amro Mousa',
+      email: 'amromousa8@gmail.com',
+      phone: '',
+      location: 'Toronto, ON',
+      summary: '',
+      reusableContext: '',
+      linkedinUrl: '',
+      websiteUrl: '',
+      baseResumeFileName: '',
+      baseResumeTex: '',
+      preferredCountries: ['CA'],
+      emailVerification: {
+        enabled: true,
+        provider: 'gmail_oauth',
+        gmailUserEmail: 'amromousa8@gmail.com',
+        gmailClientId:
+          '465613848408-big0oa8sg0a77q3rclb65nudnquht2g3.apps.googleusercontent.com',
+        gmailClientSecret: 'secret',
+        gmailRefreshToken: 'refresh-token',
+      }
+    });
+
+    const stored = await repository.get();
+    expect(stored?.emailVerification).toMatchObject({
+      enabled: true,
+      provider: 'gmail_oauth',
+      gmailUserEmail: 'amromousa8@gmail.com',
+      gmailClientId:
+        '465613848408-big0oa8sg0a77q3rclb65nudnquht2g3.apps.googleusercontent.com',
+      gmailClientSecret: 'secret',
+      gmailRefreshToken: 'refresh-token',
+    });
   });
 
   test('persists the singleton discovery schedule and run log events', async () => {

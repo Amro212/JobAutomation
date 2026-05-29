@@ -1,4 +1,13 @@
+import { isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { z } from 'zod';
+
+const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));
+
+export function resolveProjectPath(pathValue: string): string {
+  return isAbsolute(pathValue) ? pathValue : resolve(workspaceRoot, pathValue);
+}
 
 const envSchema = z.object({
   API_BASE_URL: z.string().url().default('http://127.0.0.1:3001'),
@@ -14,14 +23,15 @@ const envSchema = z.object({
   DISCOVERY_SCHEDULE_CRON: z.string().default('0 */6 * * *'),
   DISCOVERY_SCHEDULE_TIMEZONE: z.string().default('America/Toronto'),
   DISCOVERY_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(1),
-  JOB_AUTOMATION_DB_PATH: z.string().min(1).default('./data/jobautomation.sqlite'),
+  JOB_AUTOMATION_DB_PATH: z
+    .string()
+    .min(1)
+    .default('./data/jobautomation.sqlite')
+    .transform(resolveProjectPath),
   OPENROUTER_API_KEY: z.string().trim().min(1).optional(),
   OPENROUTER_API_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
-  OPENROUTER_JOB_SUMMARY_MODEL: z
-    .string()
-    .trim()
-    .min(1)
-    .default('google/gemini-2.0-flash-lite-001')
+  OPENROUTER_JOB_SUMMARY_MODEL: z.string().trim().min(1).optional(),
+  OPENROUTER_APPLICATION_FILL_PLAN_MODEL: z.string().trim().min(1).optional()
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

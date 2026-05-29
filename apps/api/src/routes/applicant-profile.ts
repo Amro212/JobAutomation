@@ -34,12 +34,10 @@ export const registerApplicantProfileRoutes: FastifyPluginAsync = async (app) =>
     const input = applicantProfileInputSchema.parse(request.body ?? {});
     const profile = await app.repositories.applicantProfile.save(input);
 
-    const countriesChanged =
-      JSON.stringify(before?.preferredCountries ?? []) !== JSON.stringify(profile.preferredCountries);
     const keywordChanged =
       JSON.stringify(before?.jobKeywordProfile ?? null) !== JSON.stringify(profile.jobKeywordProfile ?? null);
 
-    if (countriesChanged || keywordChanged) {
+    if (keywordChanged) {
       await recomputeJobPrefilterMatches(app.repositories.jobs, profile);
     }
 

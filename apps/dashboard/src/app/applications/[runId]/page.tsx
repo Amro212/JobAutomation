@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { LocalDateTime } from '@/components/local-datetime';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,13 +11,29 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
-import { getApplicationRun } from '@/lib/api';
+import { buildArtifactFileUrl, getApplicationRun } from '@/lib/api';
 
 type ParsedLogDetails = Record<string, unknown> & {
   classification?: string;
   questionLabel?: string;
   blockedRequiredFields?: Array<{ label?: string }>;
   errorMessage?: string;
+  event?: string;
+};
+
+type MatchAudit = {
+  decision?: string;
+  score?: number;
+  reasons?: string[];
+  signals?: string[];
+  roleFamily?: { name?: string; matched?: boolean };
+  evidence?: { matchedKeywords?: string[]; missingMustHaveKeywords?: string[] };
+  seniority?: {
+    profile?: string | null;
+    minYearsRequired?: number | null;
+    softExperienceCap?: boolean;
+  };
+  llm?: { reviewed?: boolean; pass?: boolean | null; rationale?: string | null };
 };
 
 function statusVariant(status: string) {
@@ -35,9 +52,60 @@ function statusVariant(status: string) {
   }
 }
 
-function statusSummary(status: string, stopReason: string | null): string {
+function authFailureSummary(detail: Awaited<ReturnType<typeof getApplicationRun>>): string | null {
+  if (!detail || detail.run.stopReason !== 'auth_failed') {
+    return null;
+  }
+
+  for (let index = detail.logs.length - 1; index >= 0; index -= 1) {
+    const log = detail.logs[index];
+    const details = parseLogDetails(log.detailsJson);
+    if (details?.event !== 'gmail_poll_auth_failed') {
+      continue;
+    }
+
+    if (typeof details.errorMessage === 'string' && details.errorMessage.trim().length > 0) {
+      return details.errorMessage;
+    }
+  }
+
+  return null;
+}
+
+function statusSummary(
+  status: string,
+  stopReason: string | null,
+  detail?: Awaited<ReturnType<typeof getApplicationRun>> | null
+): string {
   if (status === 'paused' && stopReason === 'manual_review_required') {
-    return 'Paused at final review and waiting for a human to submit.';
+    return 'Paused because required answers still need manual intervention.';
+  }
+  if (status === 'paused' && stopReason === 'not_configured') {
+    return 'Greenhouse reached email verification, but Gmail OAuth is incomplete.';
+  }
+  if (status === 'paused' && stopReason === 'submit_button_not_found') {
+    return 'Final submit button was not found.';
+  }
+  if (status === 'paused' && stopReason === 'challenge_not_visible') {
+    return 'Greenhouse submit was attempted, but verification challenge did not appear.';
+  }
+  if (status === 'paused' && stopReason === 'code_input_not_found') {
+    return 'Greenhouse verification challenge appeared, but code input was not found.';
+  }
+  if (status === 'paused' && stopReason === 'timeout') {
+    return 'Greenhouse verification email was not found before timeout.';
+  }
+  if (status === 'paused' && stopReason === 'auth_failed') {
+    return (
+      authFailureSummary(detail) ??
+      'Greenhouse verification email retrieval failed during Gmail OAuth token exchange.'
+    );
+  }
+  if (status === 'paused' && stopReason === 'email_verification_code_entered') {
+    return 'Greenhouse verification code was entered and run paused before final resubmit.';
+  }
+  if (status === 'paused' && stopReason === 'submission_confirmation_missing') {
+    return 'Submit clicked, but the post-submit confirmation was not visible.';
   }
 
   switch (status) {
@@ -48,7 +116,7 @@ function statusSummary(status: string, stopReason: string | null): string {
     case 'running':
       return 'Automation is still in progress.';
     case 'completed':
-      return 'Automation completed successfully.';
+      return 'Application submitted successfully.';
     case 'failed':
       return 'Automation failed before completion.';
     default:
@@ -66,6 +134,32 @@ function parseLogDetails(detailsJson: string | null): ParsedLogDetails | null {
   } catch {
     return null;
   }
+}
+
+function parseMatchAudit(raw: string | null): MatchAudit | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return { signals: parsed.filter((value): value is string => typeof value === 'string') };
+    }
+    return parsed && typeof parsed === 'object' ? (parsed as MatchAudit) : null;
+  } catch {
+    return null;
+  }
+}
+
+function matchDecision(
+  prefilterPass: boolean | null,
+  audit: MatchAudit | null
+): 'pass' | 'reject' | 'unknown' {
+  if (prefilterPass != null) {
+    return prefilterPass ? 'pass' : 'reject';
+  }
+
+  return audit?.decision === 'pass' || audit?.decision === 'reject'
+    ? audit.decision
+    : 'unknown';
 }
 
 function failedAutomationErrorMessage(detail: Awaited<ReturnType<typeof getApplicationRun>>): string | null {
@@ -123,6 +217,8 @@ export default async function ApplicationRunDetailPage({
   const detail = await getApplicationRun(runId);
   const blockedLabels = blockedFieldLabels(detail);
   const automationFailureMessage = failedAutomationErrorMessage(detail);
+  const matchAudit = parseMatchAudit(detail?.job.prefilterSignalsJson ?? null);
+  const decision = matchDecision(detail?.job.prefilterPass ?? null, matchAudit);
 
   if (!detail) {
     return (
@@ -177,7 +273,7 @@ export default async function ApplicationRunDetailPage({
               Created
             </dt>
             <dd className="mt-1 text-sm text-muted-foreground">
-              {detail.run.createdAt.toLocaleString()}
+              <LocalDateTime value={detail.run.createdAt} />
             </dd>
           </div>
           <div>
@@ -185,7 +281,7 @@ export default async function ApplicationRunDetailPage({
               Updated
             </dt>
             <dd className="mt-1 text-sm text-muted-foreground">
-              {detail.run.updatedAt.toLocaleString()}
+              <LocalDateTime value={detail.run.updatedAt} />
             </dd>
           </div>
         </dl>
@@ -196,11 +292,11 @@ export default async function ApplicationRunDetailPage({
           Run State
         </p>
         <h3 className="mt-2 text-xl font-semibold text-foreground">
-          {statusSummary(detail.run.status, detail.run.stopReason)}
+          {statusSummary(detail.run.status, detail.run.stopReason, detail)}
         </h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          This read model stays explicit about skipped and manual review required outcomes so the
-          operator never has to infer whether browser automation ran.
+          This read model stays explicit about auto-submit success, blocked outcomes, and skipped
+          runs so the operator never has to infer what happened.
         </p>
         {detail.run.stopReason ? (
           <p className="mt-3 text-sm text-muted-foreground">
@@ -217,6 +313,27 @@ export default async function ApplicationRunDetailPage({
             Prefilter reasons: {detail.run.prefilterReasons.join(', ')}
           </p>
         ) : null}
+        {matchAudit ? (
+          <div className="mt-3 rounded-md border border-amber-200 bg-white/60 px-3 py-2 text-sm text-muted-foreground">
+            <p>
+              Match: {decision}
+              {detail.job.prefilterScore != null || matchAudit.score != null
+                ? `, score ${detail.job.prefilterScore ?? matchAudit.score}`
+                : ''}
+              {matchAudit.roleFamily?.name ? `, role ${matchAudit.roleFamily.name}` : ''}
+              {matchAudit.seniority?.profile ? `, seniority ${matchAudit.seniority.profile}` : ''}
+            </p>
+            {matchAudit.evidence?.matchedKeywords?.length ? (
+              <p className="mt-1">Matched: {matchAudit.evidence.matchedKeywords.join(', ')}</p>
+            ) : null}
+            {matchAudit.llm?.reviewed ? (
+              <p className="mt-1">
+                LLM {matchAudit.llm.pass ? 'passed' : 'vetoed'}
+                {matchAudit.llm.rationale ? `: ${matchAudit.llm.rationale}` : ''}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {blockedLabels.length > 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">
             Manual review fields: {blockedLabels.join(', ')}
@@ -228,7 +345,7 @@ export default async function ApplicationRunDetailPage({
             answers in the <span className="font-medium">automation browser tab</span> until you submit—opening
             this link in Chrome or Edge starts a <span className="font-medium">new</span> session, so the form
             looks empty. With <span className="font-medium">JOBAUTOMATION_APPLICATION_BROWSER_HEADED=1</span>{' '}
-            (and without <span className="font-medium">AUTO_CLOSE_BROWSER=1</span>), the Chromium window from
+                (and without <span className="font-medium">AUTO_CLOSE_BROWSER=1</span>), the Camoufox browser window from
             the run should stay open for you to finish custom questions; use screenshots in the log table if
             you need a record after closing.
           </p>
@@ -242,6 +359,52 @@ export default async function ApplicationRunDetailPage({
             </Button>
           </div>
         ) : null}
+      </section>
+
+      <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="border-b px-6 py-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Submitted Artifacts
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-foreground">Resume and cover letter</h3>
+        </div>
+        {!detail.resumeArtifact && !detail.coverLetterArtifact ? (
+          <div className="px-6 py-5 text-sm text-muted-foreground">
+            No submitted resume or cover letter artifacts were linked to this run.
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Type</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead>File</TableHead>
+                <TableHead>Open</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[
+                { label: 'Resume', artifact: detail.resumeArtifact },
+                { label: 'Cover letter', artifact: detail.coverLetterArtifact }
+              ].map(({ label, artifact }) =>
+                artifact ? (
+                  <TableRow key={artifact.id}>
+                    <TableCell>{label}</TableCell>
+                    <TableCell>v{artifact.version}</TableCell>
+                    <TableCell>{artifact.fileName}</TableCell>
+                    <TableCell>
+                      <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                        <a href={buildArtifactFileUrl(artifact.id)} target="_blank" rel="noreferrer">
+                          Open PDF
+                        </a>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ) : null
+              )}
+            </TableBody>
+          </Table>
+        )}
       </section>
 
       <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
@@ -307,7 +470,7 @@ export default async function ApplicationRunDetailPage({
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {log.createdAt.toLocaleString()}
+                    <LocalDateTime value={log.createdAt} />
                   </TableCell>
                 </TableRow>
               ))}

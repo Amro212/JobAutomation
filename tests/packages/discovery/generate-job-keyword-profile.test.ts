@@ -80,6 +80,60 @@ describe('generateJobKeywordProfile', () => {
     expect(result.target_titles.length).toBeGreaterThan(0);
   });
 
+  test('asks for balanced-recall seniority-aware filter keywords', async () => {
+    let systemPrompt = '';
+    await generateJobKeywordProfile({
+      applicantProfile: baseApplicant({
+        summary: 'New graduate software engineer focused on TypeScript and React.'
+      }),
+      openRouter: {
+        apiKey: 'test-key',
+        baseUrl: 'https://openrouter.example/api/v1',
+        model: 'openrouter/test',
+        fetchImpl: async (_url, init) => {
+          const body = JSON.parse(String(init?.body)) as {
+            messages: Array<{ role: string; content: string }>;
+          };
+          systemPrompt = body.messages.find((message) => message.role === 'system')?.content ?? '';
+
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      target_titles: ['new graduate software engineer', 'software engineer'],
+                      positive_keywords: ['typescript', 'react'],
+                      negative_keywords: ['senior', 'staff', 'principal', 'lead', 'manager'],
+                      seniority: 'new_grad'
+                    })
+                  }
+                }
+              ]
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          );
+        }
+      }
+    });
+
+    expect(systemPrompt.toLowerCase()).not.toContain('precision-first');
+    expect(systemPrompt.toLowerCase()).not.toContain('avoid broad generic keyword bloat');
+    expect(systemPrompt.toLowerCase()).toContain('balanced recall');
+    expect(systemPrompt.toLowerCase()).toContain('adjacent');
+    expect(systemPrompt.toLowerCase()).toContain('credible');
+    expect(systemPrompt.toLowerCase()).toContain('synonyms');
+    expect(systemPrompt.toLowerCase()).toContain('spelling variants');
+    expect(systemPrompt).toContain('15-30');
+    expect(systemPrompt).toContain('35-70');
+    expect(systemPrompt).toContain('8-15');
+    expect(systemPrompt).toContain('20-40');
+    expect(systemPrompt.toLowerCase()).toContain('do not invent');
+    expect(systemPrompt.toLowerCase()).toContain('seniority-aware');
+    expect(systemPrompt.toLowerCase()).toContain('senior');
+    expect(systemPrompt.toLowerCase()).toContain('wrong-track');
+  });
+
   test('throws invalid_output when model JSON does not match schema', async () => {
     await expect(
       generateJobKeywordProfile({

@@ -36,7 +36,7 @@ describe('Greenhouse discovery', () => {
       id: 'source-1',
       sourceKind: 'greenhouse',
       sourceKey: 'acme',
-      label: 'Acme Corp',
+      label: 'User Label Corp',
       enabled: true,
       createdAt: new Date('2026-03-13T12:00:00.000Z'),
       updatedAt: new Date('2026-03-13T12:00:00.000Z')
@@ -49,7 +49,7 @@ describe('Greenhouse discovery', () => {
     expect(normalized.sourceKind).toBe('greenhouse');
     expect(normalized.sourceId).toBe('123456');
     expect(normalized.sourceUrl).toBe('https://boards.greenhouse.io/acme/jobs/123456');
-    expect(normalized.companyName).toBe('Acme Corp');
+    expect(normalized.companyName).toBe('Acme');
     expect(normalized.title).toBe('Senior Platform Engineer');
     expect(normalized.location).toBe('Remote - Canada');
     expect(normalized.remoteType).toBe('remote');

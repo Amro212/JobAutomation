@@ -1,7 +1,9 @@
 import type {
+  AutopilotConfigInput,
+  AutopilotSettingsRecord,
   ApplicantProfile,
   ApplicationRunRecord,
-  ApplicationRunStatus,
+  AutopilotRunRecord,
   ArtifactRecord,
   DiscoveryRunRecord,
   DiscoveryRunSourceSummary,
@@ -34,6 +36,8 @@ export type ApplicantProfileResponse = {
 export type ApplicationRunSummary = {
   run: ApplicationRunRecord;
   job: JobRecord;
+  resumeArtifact: ArtifactRecord | null;
+  coverLetterArtifact: ArtifactRecord | null;
 };
 
 export type ApplicationRunDetail = ApplicationRunSummary & {
@@ -41,8 +45,38 @@ export type ApplicationRunDetail = ApplicationRunSummary & {
   artifacts: ArtifactRecord[];
 };
 
+export type AutopilotRunSummary = {
+  run: AutopilotRunRecord;
+  /** Only the id is returned in the detail view to avoid serving large error_message blobs. */
+  discoveryRun: { id: string } | null;
+};
+
+/** Slim job info returned within an autopilot batch detail — only display fields. */
+export type AutopilotJobSummary = {
+  id: string;
+  title: string;
+  companyName: string;
+  location: string;
+};
+
+export type AutopilotApplicationSummary = {
+  run: ApplicationRunRecord;
+  job: AutopilotJobSummary;
+  resumeArtifact: ArtifactRecord | null;
+  coverLetterArtifact: ArtifactRecord | null;
+};
+
+export type AutopilotRunDetail = AutopilotRunSummary & {
+  applications: AutopilotApplicationSummary[];
+};
+
 export function getApiBaseUrl(): string {
   return process.env.API_BASE_URL ?? 'http://127.0.0.1:3001';
+}
+
+export function buildArtifactFileUrl(artifactId: string, download = false): string {
+  const search = download ? '?download=1' : '';
+  return `${getApiBaseUrl()}/artifacts/${artifactId}/file${search}`;
 }
 
 function buildQueryString(
@@ -243,6 +277,85 @@ export async function getApplicationRun(runId: string): Promise<ApplicationRunDe
   }
 
   return (await response.json()) as ApplicationRunDetail;
+}
+
+export async function getAutopilotRuns(): Promise<AutopilotRunSummary[]> {
+  const response = await fetchFromApi<{ runs: AutopilotRunSummary[] }>('/autopilot-runs');
+  return response.runs;
+}
+
+export async function getAutopilotRun(runId: string): Promise<AutopilotRunDetail | null> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-runs/${runId}`, {
+    cache: 'no-store'
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`API request failed: /autopilot-runs/${runId}`);
+  }
+
+  return (await response.json()) as AutopilotRunDetail;
+}
+
+export async function getAutopilotSettings(): Promise<AutopilotSettingsRecord> {
+  const response = await fetchFromApi<{ settings: AutopilotSettingsRecord }>(
+    '/autopilot-settings'
+  );
+  return response.settings;
+}
+
+export async function updateAutopilotSettings(
+  payload: AutopilotConfigInput
+): Promise<AutopilotSettingsRecord> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-settings`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { settings: AutopilotSettingsRecord }).settings;
+}
+
+export async function createAutopilotRun(
+  payload: AutopilotConfigInput = {}
+): Promise<{ run: AutopilotRunRecord }> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-runs`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as { run: AutopilotRunRecord };
+}
+
+export async function cancelAutopilotRun(runId: string): Promise<{ accepted: boolean; active: boolean }> {
+  const response = await fetch(`${getApiBaseUrl()}/autopilot-runs/${runId}/cancel`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as { accepted: boolean; active: boolean };
 }
 
 export async function createApplicationRun(payload: {

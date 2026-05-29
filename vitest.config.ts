@@ -4,6 +4,7 @@ import { workspaceProjects } from './vitest.workspace';
 
 export default defineConfig({
   test: {
+
     projects: workspaceProjects
   }
 });

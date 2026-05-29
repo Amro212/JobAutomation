@@ -3,7 +3,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, describe, expect, test } from 'vitest';
+import { afterAll, describe, expect, test, vi } from 'vitest';
 
 import { buildApp } from '../../../apps/api/src/app';
 
@@ -75,7 +75,31 @@ describe('API routes', () => {
         linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
         websiteUrl: 'https://example.com',
         baseResumeFileName: 'resume.tex',
-        baseResumeTex: '\\section{Experience}'
+        baseResumeTex: '\\section{Experience}',
+        emailVerification: {
+          enabled: true,
+          provider: 'gmail_oauth',
+          gmailUserEmail: 'amromousa8@gmail.com',
+          gmailClientId:
+            '465613848408-big0oa8sg0a77q3rclb65nudnquht2g3.apps.googleusercontent.com',
+          gmailClientSecret: 'secret',
+          gmailRefreshToken: 'refresh-token'
+        },
+        autofillProfile: {
+          currentCountryCode: 'CA',
+          primaryCitizenshipCountryCode: 'CA',
+          currentCountryResidenceStatus: 'citizen',
+          currentCountryResidenceStatusOther: '',
+          legallyAuthorizedInCurrentCountry: 'yes',
+          needsSponsorshipInCurrentCountry: 'no',
+          consentToInterviewRecording: 'yes',
+          acceptApplicationPrivacyNotices: 'yes',
+          consentToDemographicDataProcessing: 'yes',
+          lgbtqiaCommunityIdentification: 'no',
+          workAuthorizationCountriesCsv: 'CA, US',
+          requiresSponsorship: 'no',
+          requiresSponsorshipCountriesCsv: ''
+        }
       }
     });
 
@@ -84,7 +108,67 @@ describe('API routes', () => {
     expect(saveResponse.statusCode).toBe(200);
     expect(loadResponse.json().profile.baseResumeFileName).toBe('resume.tex');
     expect(loadResponse.json().profile.baseResumeTex).toContain('Experience');
+    expect(loadResponse.json().profile.emailVerification).toMatchObject({
+      enabled: true,
+      provider: 'gmail_oauth',
+      gmailUserEmail: 'amromousa8@gmail.com',
+      gmailClientId:
+        '465613848408-big0oa8sg0a77q3rclb65nudnquht2g3.apps.googleusercontent.com',
+      gmailClientSecret: 'secret',
+      gmailRefreshToken: 'refresh-token'
+    });
+    expect(loadResponse.json().profile.autofillProfile.currentCountryCode).toBe('CA');
+    expect(loadResponse.json().profile.autofillProfile.primaryCitizenshipCountryCode).toBe('CA');
+    expect(loadResponse.json().profile.autofillProfile.currentCountryResidenceStatus).toBe('citizen');
+    expect(loadResponse.json().profile.autofillProfile.legallyAuthorizedInCurrentCountry).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.needsSponsorshipInCurrentCountry).toBe('no');
+    expect(loadResponse.json().profile.autofillProfile.consentToInterviewRecording).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.acceptApplicationPrivacyNotices).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.consentToDemographicDataProcessing).toBe('yes');
+    expect(loadResponse.json().profile.autofillProfile.lgbtqiaCommunityIdentification).toBe('no');
     expect(loadResponse.json().readiness.readyForTailoring).toBe(true);
+  });
+
+  test('does not recompute all job prefilters when only preferred countries change', async () => {
+    const basePayload = {
+      id: 'default',
+      fullName: 'Taylor Example',
+      email: 'taylor@example.com',
+      phone: '555-0100',
+      location: 'Toronto, ON',
+      summary: 'TypeScript engineer',
+      reusableContext: 'Builds automation systems.',
+      linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+      websiteUrl: 'https://example.com',
+      baseResumeFileName: 'resume.tex',
+      baseResumeTex: '\\section{Experience}',
+      preferredCountries: ['CA']
+    };
+
+    await app.inject({
+      method: 'PUT',
+      url: '/applicant-profile',
+      payload: basePayload
+    });
+
+    const recomputeAllSpy = vi.spyOn(app.repositories.jobs, 'recomputePrefilterForAllJobs');
+    const clearSpy = vi.spyOn(app.repositories.jobs, 'clearAllPrefilterResults');
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/applicant-profile',
+      payload: {
+        ...basePayload,
+        preferredCountries: ['CA', 'US']
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(recomputeAllSpy).not.toHaveBeenCalled();
+    expect(clearSpy).not.toHaveBeenCalled();
+
+    recomputeAllSpy.mockRestore();
+    clearSpy.mockRestore();
   });
 
   test('filters jobs by repeated country query params', async () => {

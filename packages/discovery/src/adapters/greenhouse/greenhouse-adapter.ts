@@ -1,6 +1,7 @@
 import type { DiscoverySourceRecord } from '@jobautomation/core';
 
 import type { SourceAdapter, SourceAdapterContext } from '../../contracts/source-adapter';
+import { deriveCompanyName } from '../../normalization/derive-company-name';
 import { normalizeJob } from '../../normalization/normalize-job';
 import type { GreenhouseJob } from './greenhouse-types';
 
@@ -87,7 +88,11 @@ export function createGreenhouseAdapter(
           sourceKind: 'greenhouse',
           sourceId: String(sourceJob.id),
           sourceUrl: sourceJob.absolute_url,
-          companyName: source.label,
+          companyName: deriveCompanyName({
+            sourceUrl: sourceJob.absolute_url,
+            sourceKey: source.sourceKey,
+            fallbackLabel: source.label
+          }),
           title: sourceJob.title,
           location: sourceJob.location.name,
           remoteType: deriveRemoteType(sourceJob),

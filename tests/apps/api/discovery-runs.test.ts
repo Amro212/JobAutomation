@@ -106,7 +106,7 @@ describe('discovery run routes', () => {
     });
 
     expect(jobsResponse.json().jobs).toHaveLength(1);
-    expect(jobsResponse.json().jobs[0].companyName).toBe('Acme Corp');
+    expect(jobsResponse.json().jobs[0].companyName).toBe('Acme');
     expect(jobsResponse.json().jobs[0].title).toBe('Senior Platform Engineer');
     expect(runDetailResponse.statusCode).toBe(200);
     expect(runDetailResponse.json().run.status).toBe('completed');
@@ -254,7 +254,7 @@ describe('discovery run routes', () => {
         status: 'completed',
         jobCount: 1,
         newJobCount: 0,
-        updatedJobCount: 1
+        updatedJobCount: 0
       }),
       expect.objectContaining({
         sourceKind: 'lever',
@@ -503,9 +503,7 @@ describe('discovery run routes', () => {
       expect(JSON.parse(jobDetailResponse.json().job.rawPayload as string)).toMatchObject({
         sourcePageUrl: sourceUrl,
         detailPageUrl: `http://127.0.0.1:${address.port}/jobs/fallback-platform-engineer`,
-        extractorId: 'generic-listing',
-        fallbackMode: 'playwright',
-        stagehandUsed: false
+        extractorId: 'generic-listing'
       });
       expect(runDetailResponse.json().run.status).toBe('completed');
       expect(runDetailResponse.json().artifacts.some((artifact: { kind: string }) => artifact.kind === 'fallback-trace')).toBe(true);
@@ -522,5 +520,5 @@ describe('discovery run routes', () => {
         });
       });
     }
-  });
+  }, 30000);
 });

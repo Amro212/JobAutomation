@@ -8,17 +8,17 @@ JobAutomation is designed to streamline the entire job search process, from disc
 
 ## Core Features
 
-- **Automated Discovery**: Efficiently identifies job postings from structured sources (Greenhouse, Lever, Ashby) and fallback scraping.
+- **Automated Discovery**: Efficiently identifies job postings from structured sources (Greenhouse, Lever, Ashby) and Camoufox-backed scraping.
 - **Intelligent Tailoring**: Automatically generates job-specific resume and cover letter variants using LaTeX templates.
-- **Adaptive Browser Automation**: Uses Playwright and Stagehand (AI-powered) to navigate and complete diverse job application forms.
+- **Browser Automation Rewrite In Progress**: Uses Camoufox for browser-backed discovery and application automation while preserving Playwright-compatible control APIs.
 - **Local-First Architecture**: Runs entirely on your local machine with SQLite for persistence and Tectonic for LaTeX compilation.
 - **Management Dashboard**: A Next.js-based interface to monitor progress, track applications, and view generated artifacts.
 
 ## Tech Stack
 
 - **Runtime**: TypeScript / Node.js
-- **Automation**: [Playwright](https://playwright.dev/) & [Stagehand](https://stagehand.dev/)
-- **Models**: [OpenRouter](https://openrouter.ai/) (Low-cost logic) & [Gemini 2.5 Flash](https://ai.google.dev/) (Browser reasoning)
+- **Automation**: [Camoufox](https://camoufox.com/) with Playwright-compatible control APIs
+- **Models**: [OpenRouter](https://openrouter.ai/)
 - **Database**: [SQLite](https://www.sqlite.org/) with [Drizzle ORM](https://orm.drizzle.team/)
 - **Document Pipeline**: [LaTeX](https://www.latex-project.org/) compiled via [Tectonic](https://tectonic-typesetting.org/)
 - **Backend**: [Fastify](https://www.fastify.io/)
@@ -32,7 +32,48 @@ JobAutomation is designed to streamline the entire job search process, from disc
 
 ## Getting Started
 
-*(Instructions to be added as the implementation progresses)*
+Install dependencies, then fetch the Camoufox browser binary before running browser-backed discovery or application automation:
+
+```bash
+corepack enable
+corepack pnpm install
+corepack pnpm browser:install
+corepack pnpm playwright:install
+```
+
+Copy `.env.example` to `.env` on each machine and keep `.env` local. Relative paths in environment variables resolve from the repository root, so prefer `./data/...` over machine-specific absolute paths unless a local override is required.
+
+## Cross-Platform Development
+
+This repository is configured for development on both Windows and macOS:
+
+- Git normalizes text files to LF through `.gitattributes`; Windows-only scripts remain CRLF.
+- Editor defaults live in `.editorconfig`.
+- Generated output, browser profiles, local databases, logs, and local `.env` files are ignored.
+- Playwright dashboard E2E servers use Node wrapper scripts instead of PowerShell or hardcoded machine paths.
+
+Recommended workflow when switching machines:
+
+```bash
+git pull --rebase
+corepack enable
+corepack pnpm install
+corepack pnpm test
+```
+
+On Windows, WSL2 is the closest match to macOS/Linux tooling. Native Windows also works, but keep all project paths relative in code, config, and tests.
+
+### Authorized Browser Automation Scope
+
+Browser-backed discovery and apply flows support an explicit target-domain allowlist:
+
+- `JOBAUTOMATION_AUTHORIZED_DOMAIN_ALLOWLIST`: comma-separated domains (supports `*.wildcard` rules)
+- `JOBAUTOMATION_AUTHORIZED_DOMAIN_STRICT=1`: deny all runs when allowlist is not configured
+
+Optional polling jitter controls for form readiness checks:
+
+- `JOBAUTOMATION_APPLICATION_POLL_MIN_MS`
+- `JOBAUTOMATION_APPLICATION_POLL_MAX_MS`
 
 ---
 

@@ -4,8 +4,11 @@
   "type": "module",
   "packageManager": "pnpm@10.6.2",
   "scripts": {
+    "browser:install": "corepack pnpm --filter @jobautomation/automation exec camoufox-js fetch",
+    "playwright:install": "playwright install chromium",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts",
+    "test:live-job-boards": "vitest run --config vitest.config.ts --project automation tests/packages/automation/live-job-board-apply.test.ts",
     "test:e2e": "playwright test",
     "dev:api": "pnpm --filter @jobautomation/api dev",
     "dev:dashboard": "pnpm --filter @jobautomation/dashboard dev"

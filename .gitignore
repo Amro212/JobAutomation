@@ -3,19 +3,29 @@
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
+Desktop.ini
 .cursorignore
+.cursor/
+/scripts/
 
 ## Project Files
 
 AGENTS.md
 docs/
 .codex/
+stage-testing.txt
+research.txt
+.playwright-mcp/
 
 ## Generated Files
 
 # Artifact output (generated PDFs, LaTeX files, logs)
 output/
 apps/api/output/
+.github/
+.agents/
+.kilo/
 
 node_modules/
 .next/
@@ -32,3 +42,6 @@ pnpm-debug.log*
 *.log
 data/
 .env
+.env.local
+.env.*.local
+!.env.example

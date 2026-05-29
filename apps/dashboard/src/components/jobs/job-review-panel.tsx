@@ -51,7 +51,11 @@ export function JobReviewPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
-          {job.status === 'shortlisted' ? (
+          {job.status === 'applied' ? (
+            <div className="rounded-md border border-input bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              This job is already marked as applied.
+            </div>
+          ) : job.status === 'shortlisted' ? (
             <form action={removeFromShortlistAction}>
               <SubmitButton variant="outline" pendingText="Removing...">
                 Remove from shortlist
@@ -94,6 +98,7 @@ export function JobReviewPanel({
               <option value="discovered">Discovered</option>
               <option value="reviewing">Reviewing</option>
               <option value="shortlisted">Shortlisted</option>
+              <option value="applied">Applied</option>
               <option value="archived">Archived</option>
             </select>
           </label>

@@ -1,7 +1,10 @@
-import { defaultMinimalAutofillProfile, type ApplicantProfile } from '@jobautomation/core';
+import {
+  defaultEmailVerificationConfig,
+  defaultMinimalAutofillProfile,
+  type ApplicantProfile
+} from '@jobautomation/core';
 
 import { MinimalAutofillFields } from '@/components/setup/minimal-autofill-fields';
-import { LocationCountryCombobox } from '@/components/jobs/location-country-combobox';
 import { PhoneField } from '@/components/setup/phone-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -22,7 +25,8 @@ const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
   preferredCountries: [],
   jobKeywordProfile: null,
   jobKeywordProfileGeneratedAt: null,
-  autofillProfile: defaultMinimalAutofillProfile
+  autofillProfile: defaultMinimalAutofillProfile,
+  emailVerification: defaultEmailVerificationConfig
 };
 
 export function ApplicantProfileForm({
@@ -83,18 +87,6 @@ export function ApplicantProfileForm({
         <Textarea name="reusableContext" defaultValue={current.reusableContext} rows={6} />
       </label>
 
-      <div className="space-y-2 text-sm">
-        <span className="font-medium">Preferred countries for job automation</span>
-        <p className="text-xs text-muted-foreground">
-          Select the countries you want to target. The jobs filter will default to these when no explicit country filter is set.
-        </p>
-        <LocationCountryCombobox
-          name="preferredCountry"
-          defaultValue={current.preferredCountries}
-          aria-label="Preferred countries"
-        />
-      </div>
-
       <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
         <label className="space-y-2 text-sm">
           <span className="font-medium">Base resume file name</span>
@@ -122,6 +114,66 @@ export function ApplicantProfileForm({
       </label>
 
       <MinimalAutofillFields profile={current.autofillProfile} />
+
+      <section className="space-y-4 rounded-lg border bg-muted/20 p-4">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold">Greenhouse email verification</h3>
+          <p className="text-sm text-muted-foreground">
+            Optional. When enabled, Greenhouse can submit into email verification, read Gmail
+            security code, type it, then stop before final resubmit.
+          </p>
+        </div>
+
+        <label className="flex items-center gap-3 text-sm font-medium">
+          <input
+            type="checkbox"
+            name="emailVerificationEnabled"
+            value="yes"
+            defaultChecked={current.emailVerification.enabled}
+            className="h-4 w-4 rounded border"
+          />
+          Enable Gmail OAuth verification retrieval
+        </label>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Gmail address</span>
+            <Input
+              name="gmailUserEmail"
+              defaultValue={current.emailVerification.gmailUserEmail}
+              placeholder="amromousa8@gmail.com"
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Provider</span>
+            <Input name="emailVerificationProvider" defaultValue="gmail_oauth" readOnly />
+          </label>
+          <label className="space-y-2 text-sm md:col-span-2">
+            <span className="font-medium">OAuth client ID</span>
+            <Input
+              name="gmailClientId"
+              defaultValue={current.emailVerification.gmailClientId}
+              placeholder="Google OAuth desktop client id"
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">OAuth client secret</span>
+            <Input
+              name="gmailClientSecret"
+              type="password"
+              defaultValue={current.emailVerification.gmailClientSecret}
+            />
+          </label>
+          <label className="space-y-2 text-sm">
+            <span className="font-medium">Refresh token</span>
+            <Input
+              name="gmailRefreshToken"
+              type="password"
+              defaultValue={current.emailVerification.gmailRefreshToken}
+            />
+          </label>
+        </div>
+      </section>
 
       <input type="hidden" name="id" value={current.id} />
 

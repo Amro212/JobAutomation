@@ -18,7 +18,12 @@ const EMPTY_PROFILE: JobKeywordProfile = {
   target_titles: [],
   positive_keywords: [],
   negative_keywords: [],
-  seniority: 'mid'
+  seniority: 'mid',
+  allowed_role_families: ['engineering'],
+  must_have_keywords: [],
+  nice_to_have_keywords: [],
+  negative_role_terms: [],
+  max_required_years: null
 };
 
 const SENIORITY_OPTIONS: { value: JobKeywordSeniority; label: string }[] = [
@@ -43,7 +48,7 @@ function parseProfileJson(json: string): JobKeywordProfile {
       Array.isArray((data as JobKeywordProfile).negative_keywords) &&
       typeof (data as JobKeywordProfile).seniority === 'string'
     ) {
-      return data as JobKeywordProfile;
+      return { ...EMPTY_PROFILE, ...(data as JobKeywordProfile) };
     }
   } catch {
     /* fall through */
@@ -64,7 +69,15 @@ function KeywordRow({
   description: string;
   items: string[];
   setDraft: Dispatch<SetStateAction<JobKeywordProfile>>;
-  field: keyof Pick<JobKeywordProfile, 'target_titles' | 'positive_keywords' | 'negative_keywords'>;
+  field: keyof Pick<
+    JobKeywordProfile,
+    | 'target_titles'
+    | 'positive_keywords'
+    | 'negative_keywords'
+    | 'must_have_keywords'
+    | 'nice_to_have_keywords'
+    | 'negative_role_terms'
+  >;
   placeholder: string;
   disabled?: boolean;
 }) {
@@ -76,7 +89,7 @@ function KeywordRow({
       return;
     }
     setDraft((prev) => {
-      const list = prev[field];
+      const list = prev[field] ?? [];
       if (list.includes(next)) {
         return prev;
       }
@@ -88,7 +101,7 @@ function KeywordRow({
   function remove(index: number) {
     setDraft((prev) => ({
       ...prev,
-      [field]: prev[field].filter((_, i) => i !== index)
+      [field]: (prev[field] ?? []).filter((_, i) => i !== index)
     }));
   }
 
@@ -183,8 +196,8 @@ export function JobKeywordProfileEditor({
       <div className="space-y-1">
         <p className="text-sm font-medium">Titles and keywords</p>
         <p className="text-xs text-muted-foreground">
-          Matching uses case-insensitive substrings in the job title. Negative terms reject a job if they appear
-          in the title.
+          Matching requires engineering role-family/title fit, technical evidence, location fit,
+          and seniority/experience fit before autopilot can apply.
         </p>
       </div>
 
@@ -200,11 +213,31 @@ export function JobKeywordProfileEditor({
 
       <KeywordRow
         label="Positive keywords"
-        description="Skills, tools, or domains you want to see in titles. Entries of 1–3 characters (e.g. c, js) only match as whole tokens, not inside longer words."
+        description="Strong profile-defining skills, tools, or domains. Avoid generic tools unless they are central to this profile."
         items={draft.positive_keywords}
         setDraft={setDraft}
         field="positive_keywords"
         placeholder="Add a keyword…"
+        disabled={!hasApplicantRow}
+      />
+
+      <KeywordRow
+        label="Must-have match keywords"
+        description="Skills or domains that should usually appear in strong matches."
+        items={draft.must_have_keywords ?? []}
+        setDraft={setDraft}
+        field="must_have_keywords"
+        placeholder="Add a must-have keyword..."
+        disabled={!hasApplicantRow}
+      />
+
+      <KeywordRow
+        label="Nice-to-have keywords"
+        description="Supporting skills that improve score but are not required."
+        items={draft.nice_to_have_keywords ?? []}
+        setDraft={setDraft}
+        field="nice_to_have_keywords"
+        placeholder="Add a nice-to-have keyword..."
         disabled={!hasApplicantRow}
       />
 
@@ -218,12 +251,23 @@ export function JobKeywordProfileEditor({
         disabled={!hasApplicantRow}
       />
 
+      <KeywordRow
+        label="Negative role terms"
+        description="Wrong-track role families or title terms to reject before scoring."
+        items={draft.negative_role_terms ?? []}
+        setDraft={setDraft}
+        field="negative_role_terms"
+        placeholder="Add a role term to avoid..."
+        disabled={!hasApplicantRow}
+      />
+
       <div className="space-y-2">
         <label htmlFor="job-filter-seniority" className="text-sm font-medium">
-          Seniority (for experience parsing)
+          Seniority
         </label>
         <p className="text-xs text-muted-foreground">
-          Used with regex on the job description to drop roles that require more years than this level allows.
+          Controls title-level fit and experience parsing. New-grad and junior profiles reject
+          over-level titles unless the posting has clear early-career signals.
         </p>
         <select
           id="job-filter-seniority"
@@ -244,6 +288,39 @@ export function JobKeywordProfileEditor({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="job-filter-max-years" className="text-sm font-medium">
+          Max required years
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Optional override for explicit years in postings. Leave blank to infer from seniority.
+        </p>
+        <Input
+          id="job-filter-max-years"
+          type="number"
+          min={0}
+          max={20}
+          value={draft.max_required_years ?? ''}
+          onChange={(e) =>
+            setDraft((prev) => ({
+              ...prev,
+              max_required_years:
+                e.target.value.trim() === '' ? null : Number.parseInt(e.target.value, 10)
+            }))
+          }
+          disabled={!hasApplicantRow}
+          className="max-w-xs text-sm"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-sm font-medium">Allowed role families</p>
+        <p className="text-xs text-muted-foreground">
+          Engineering only: software, frontend, backend, automation/QA/SDET, devtools,
+          infrastructure, and implementation-heavy AI engineering roles.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

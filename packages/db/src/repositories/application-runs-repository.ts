@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import {
   applicationRunRecordSchema,
@@ -16,6 +16,7 @@ import { applicationRunsTable } from '../schema';
 
 export type CreateApplicationRunInput = {
   jobId: string;
+  autopilotRunId?: string | null;
   siteKey: ApplicationRunType;
   status: ApplicationRunStatus;
   currentStep: string;
@@ -37,6 +38,7 @@ export type UpdateApplicationRunInput = Partial<
     | 'siteKey'
     | 'status'
     | 'currentStep'
+    | 'autopilotRunId'
     | 'stopReason'
     | 'prefilterReasons'
     | 'reviewUrl'
@@ -66,6 +68,7 @@ function mapApplicationRun(record: typeof applicationRunsTable.$inferSelect): Ap
   return applicationRunRecordSchema.parse({
     id: record.id,
     jobId: record.jobId,
+    autopilotRunId: record.autopilotRunId ?? null,
     siteKey: record.siteKey,
     status: record.status,
     currentStep: record.currentStep,
@@ -82,12 +85,27 @@ function mapApplicationRun(record: typeof applicationRunsTable.$inferSelect): Ap
 }
 
 export class ApplicationRunsRepository {
-  constructor(private readonly db: JobAutomationDatabase) {}
+  constructor(private readonly db: JobAutomationDatabase) { }
 
   async list(): Promise<ApplicationRunRecord[]> {
     const records = await this.db
       .select()
       .from(applicationRunsTable)
+      .orderBy(desc(applicationRunsTable.updatedAt));
+
+    return records.map(mapApplicationRun);
+  }
+
+  /** Fetch runs filtered by status — avoids loading all runs for stale recovery. */
+  async listByStatus(statuses: string[]): Promise<ApplicationRunRecord[]> {
+    if (statuses.length === 0) {
+      return [];
+    }
+
+    const records = await this.db
+      .select()
+      .from(applicationRunsTable)
+      .where(inArray(applicationRunsTable.status, statuses))
       .orderBy(desc(applicationRunsTable.updatedAt));
 
     return records.map(mapApplicationRun);
@@ -103,6 +121,34 @@ export class ApplicationRunsRepository {
     return records.map(mapApplicationRun);
   }
 
+  async completedJobIds(jobIds: string[]): Promise<Set<string>> {
+    if (jobIds.length === 0) {
+      return new Set();
+    }
+
+    const records = await this.db
+      .select({ jobId: applicationRunsTable.jobId })
+      .from(applicationRunsTable)
+      .where(
+        and(
+          inArray(applicationRunsTable.jobId, jobIds),
+          eq(applicationRunsTable.status, 'completed')
+        )
+      );
+
+    return new Set(records.map((record) => record.jobId));
+  }
+
+  async listByAutopilotRun(autopilotRunId: string): Promise<ApplicationRunRecord[]> {
+    const records = await this.db
+      .select()
+      .from(applicationRunsTable)
+      .where(eq(applicationRunsTable.autopilotRunId, autopilotRunId))
+      .orderBy(desc(applicationRunsTable.updatedAt));
+
+    return records.map(mapApplicationRun);
+  }
+
   async findById(id: string): Promise<ApplicationRunRecord | null> {
     const record = await this.db.query.applicationRunsTable.findFirst({
       where: eq(applicationRunsTable.id, id)
@@ -111,10 +157,29 @@ export class ApplicationRunsRepository {
     return record ? mapApplicationRun(record) : null;
   }
 
+  /** Batch fetch by IDs — eliminates N+1 queries when resolving artifacts for run lists. */
+  async findByIds(ids: string[]): Promise<Map<string, ApplicationRunRecord>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const records = await this.db
+      .select()
+      .from(applicationRunsTable)
+      .where(inArray(applicationRunsTable.id, ids));
+
+    const map = new Map<string, ApplicationRunRecord>();
+    for (const record of records) {
+      map.set(record.id, mapApplicationRun(record));
+    }
+    return map;
+  }
+
   async create(input: CreateApplicationRunInput): Promise<ApplicationRunRecord> {
     const record = {
       id: input.id ?? randomUUID(),
       jobId: input.jobId,
+      autopilotRunId: input.autopilotRunId ?? null,
       siteKey: input.siteKey,
       status: input.status,
       currentStep: input.currentStep,
@@ -152,6 +217,7 @@ export class ApplicationRunsRepository {
       siteKey: record.siteKey,
       status: record.status,
       currentStep: record.currentStep,
+      autopilotRunId: record.autopilotRunId,
       stopReason: record.stopReason,
       prefilterReasonsJson: JSON.stringify(record.prefilterReasons),
       reviewUrl: record.reviewUrl,
@@ -164,6 +230,7 @@ export class ApplicationRunsRepository {
 
     await this.db.update(applicationRunsTable).set(updateSet).where(eq(applicationRunsTable.id, id));
 
-    return this.findById(id);
+    // Return the merged record directly instead of re-reading from DB
+    return applicationRunRecordSchema.parse(record);
   }
 }

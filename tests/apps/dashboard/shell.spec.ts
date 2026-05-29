@@ -7,6 +7,7 @@ test('navigates the dashboard shell against persisted API state', async ({ page 
   await expect(
     page
       .getByText('No jobs have been discovered yet.')
+      .or(page.getByText('No jobs matched the current filters.'))
       .or(page.getByRole('columnheader', { name: 'Title' }))
   ).toBeVisible();
 

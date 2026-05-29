@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import { LocalDateTime } from '@/components/local-datetime';
 import { getApplicationRuns } from '@/lib/api';
 
 function statusVariant(status: string) {
@@ -30,7 +31,31 @@ function statusVariant(status: string) {
 
 function statusSummary(status: string, stopReason: string | null): string {
   if (status === 'paused' && stopReason === 'manual_review_required') {
-    return 'Paused before submit for manual review.';
+    return 'Paused because required answers still need manual intervention.';
+  }
+  if (status === 'paused' && stopReason === 'not_configured') {
+    return 'Greenhouse reached email verification, but Gmail OAuth is incomplete.';
+  }
+  if (status === 'paused' && stopReason === 'submit_button_not_found') {
+    return 'Final submit button was not found.';
+  }
+  if (status === 'paused' && stopReason === 'challenge_not_visible') {
+    return 'Greenhouse submit ran, but the verification challenge did not appear.';
+  }
+  if (status === 'paused' && stopReason === 'code_input_not_found') {
+    return 'Greenhouse verification challenge appeared, but the code input was not found.';
+  }
+  if (status === 'paused' && stopReason === 'timeout') {
+    return 'Greenhouse verification email was not found before timeout.';
+  }
+  if (status === 'paused' && stopReason === 'auth_failed') {
+    return 'Greenhouse verification email retrieval failed during Gmail OAuth token exchange.';
+  }
+  if (status === 'paused' && stopReason === 'email_verification_code_entered') {
+    return 'Greenhouse verification code was entered and paused before final resubmit.';
+  }
+  if (status === 'paused' && stopReason === 'submission_confirmation_missing') {
+    return 'Submit clicked, but the success confirmation was not visible.';
   }
 
   switch (status) {
@@ -41,7 +66,7 @@ function statusSummary(status: string, stopReason: string | null): string {
     case 'running':
       return 'Automation is in progress.';
     case 'completed':
-      return 'Application completed.';
+      return 'Application submitted successfully.';
     case 'failed':
       return 'Application failed.';
     default:
@@ -60,8 +85,8 @@ export default async function ApplicationsPage() {
         </p>
         <h2 className="mt-2 text-2xl font-semibold text-foreground">Application run history</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Run-level visibility stays explicit for manual review and skipped outcomes so operator
-          state is always inspectable.
+          This stays as the full run-history and debugging surface, including blocked and skipped
+          outcomes after auto-submit attempts.
         </p>
       </div>
 
@@ -118,10 +143,10 @@ export default async function ApplicationsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="align-top text-muted-foreground">
-                    {entry.run.createdAt.toLocaleString()}
+                    <LocalDateTime value={entry.run.createdAt} />
                   </TableCell>
                   <TableCell className="align-top text-muted-foreground">
-                    {entry.run.updatedAt.toLocaleString()}
+                    <LocalDateTime value={entry.run.updatedAt} />
                   </TableCell>
                   <TableCell className="align-top">
                     <Button variant="link" size="sm" className="h-auto p-0" asChild>

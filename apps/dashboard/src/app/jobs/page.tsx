@@ -14,6 +14,7 @@ import { JobsPagination } from '@/components/jobs/jobs-pagination';
 import { JobsTable } from '@/components/jobs/jobs-table';
 import {
   createDiscoverySource,
+  type DiscoveryRunDetail,
   getApplicantProfile,
   getDiscoverySources,
   getDiscoveryRun,
@@ -26,6 +27,32 @@ import {
 
 const VALID_SOURCE_KINDS = ['greenhouse', 'lever', 'ashby', 'playwright'] as const;
 type ValidSourceKind = typeof VALID_SOURCE_KINDS[number];
+
+function getRemovedSourceLabels(detail: DiscoveryRunDetail | null | undefined): string[] {
+  if (!detail) return [];
+
+  return detail.logs.flatMap((log) => {
+    if (!log.message.startsWith('Removed invalid ')) return [];
+
+    try {
+      const details = log.detailsJson ? (JSON.parse(log.detailsJson) as { label?: unknown }) : null;
+      return typeof details?.label === 'string' && details.label.length > 0 ? [details.label] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function formatRemovedSourceNotice(labels: string[]): string | null {
+  if (labels.length === 0) return null;
+  if (labels.length === 1) return `Removed invalid source ${labels[0]}.`;
+  return `Removed ${labels.length} invalid sources: ${labels.join(', ')}.`;
+}
+
+function appendRemovedSourceNotice(message: string, labels: string[]): string {
+  const notice = formatRemovedSourceNotice(labels);
+  return notice ? `${message} ${notice}` : message;
+}
 
 async function addDiscoverySource(formData: FormData): Promise<void> {
   'use server';
@@ -71,8 +98,12 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
 
   const params = new URLSearchParams();
   const summary = detail?.sourceSummaries[0] ?? null;
+  const removedSourceLabels = getRemovedSourceLabels(detail);
+  const removedSourceNotice = formatRemovedSourceNotice(removedSourceLabels);
 
-  if (summary?.status === 'completed') {
+  if (removedSourceNotice) {
+    params.set('message', removedSourceNotice);
+  } else if (summary?.status === 'completed') {
     params.set(
       'message',
       `${summary.label}: scraped ${formatJobCount(summary.jobCount)} (${summary.newJobCount} new, ${summary.updatedJobCount} updated).`
@@ -108,7 +139,7 @@ async function runDiscoverySourceAction(formData: FormData): Promise<void> {
   redirect(query.length > 0 ? `/jobs?${query}` : '/jobs');
 }
 
-async function runAllDiscoverySourcesAction(_formData: FormData): Promise<void> {
+async function runAllDiscoverySourcesAction(): Promise<void> {
   'use server';
 
   const sources = await getDiscoverySources();
@@ -133,16 +164,23 @@ async function runAllDiscoverySourcesAction(_formData: FormData): Promise<void> 
   const params = new URLSearchParams();
   const latestDetail = detail ?? (await getDiscoveryRun(run.id));
   const sourceCount = enabledIds.length;
+  const removedSourceLabels = getRemovedSourceLabels(latestDetail);
 
   if (latestDetail?.run.status === 'completed') {
     params.set(
       'message',
-      `Ran ${sourceCount} sources: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated).`
+      appendRemovedSourceNotice(
+        `Ran ${sourceCount} sources: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated).`,
+        removedSourceLabels
+      )
     );
   } else if (latestDetail?.run.status === 'partial') {
     params.set(
       'message',
-      `Ran ${sourceCount} sources with some errors: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated). Open Runs to retry failed sources.`
+      appendRemovedSourceNotice(
+        `Ran ${sourceCount} sources with some errors: scraped ${formatJobCount(latestDetail.run.jobCount)} (${latestDetail.run.newJobCount} new, ${latestDetail.run.updatedJobCount} updated). Open Runs to retry failed sources.`,
+        removedSourceLabels
+      )
     );
   } else if (latestDetail?.run.status === 'failed') {
     params.set('error', latestDetail.run.errorMessage ?? 'Discovery run failed.');
@@ -263,9 +301,7 @@ export default async function JobsPage({
   const resolvedSearchParams = await searchParams;
   const { profile } = await getApplicantProfile();
 
-  const meaningfulMatchScope =
-    profile != null &&
-    (profile.jobKeywordProfile != null || profile.preferredCountries.length > 0);
+  const meaningfulMatchScope = profile != null && profile.jobKeywordProfile != null;
 
   const query = jobListQuerySchema.parse({
     sourceKind: getSearchParamValue(resolvedSearchParams.sourceKind),
@@ -302,13 +338,6 @@ export default async function JobsPage({
   const page = query.page ?? 1;
   const pageSize = query.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
 
-  const hasExplicitCountry = resolvedSearchParams.country !== undefined;
-  if (!hasExplicitCountry && (!filters.locationCountries || filters.locationCountries.length === 0)) {
-    if (profile && profile.preferredCountries.length > 0) {
-      filters = { ...filters, locationCountries: profile.preferredCountries };
-    }
-  }
-
   const listQuery: JobListQuery = {
     ...query,
     matchProfile,
@@ -329,9 +358,10 @@ export default async function JobsPage({
           Discovery review and intake
         </h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Structured discovery is live for Greenhouse, Lever, and Ashby, and browser fallback can
-          now onboard persisted Playwright sources when a public jobs page has no supported feed.
-          When you have a job filter profile or preferred countries on Setup, this list defaults to{' '}
+          Structured discovery is live for Greenhouse, Lever, and Ashby, and Camoufox fallback can
+          now onboard persisted browser sources when a public jobs page has no supported feed.
+          Applied jobs stay visible with their persisted status instead of falling back into the
+          review queue. When you have a job filter profile on Setup, this list defaults to{' '}
           <span className="font-medium text-foreground">My matches</span> so off-target roles stay
           out of the way—use <span className="font-medium text-foreground">All jobs</span> to see the
           full discovery pool.

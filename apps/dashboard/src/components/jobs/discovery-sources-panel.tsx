@@ -11,6 +11,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SubmitButton } from '@/components/submit-button';
+import {
+  DiscoverySourcesCsvAiPromptActions,
+  DiscoverySourcesCsvBulkImportLabel,
+  DiscoverySourcesCsvTemplateLink,
+} from '@/components/jobs/discovery-sources-csv-import-help';
 
 export function DiscoverySourcesPanel({
   sources,
@@ -38,7 +43,7 @@ export function DiscoverySourcesPanel({
           Structured and fallback source onboarding
         </h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Add Greenhouse, Lever, Ashby, or a persisted Playwright fallback source. Playwright
+          Add Greenhouse, Lever, Ashby, or a persisted Camoufox fallback source. Camoufox fallback
           sources use a canonical public jobs or listings URL and remain inspectable through the
           same runs, logs, and artifact views.
         </p>
@@ -59,7 +64,7 @@ export function DiscoverySourcesPanel({
             <option value="greenhouse">Greenhouse</option>
             <option value="lever">Lever</option>
             <option value="ashby">Ashby</option>
-            <option value="playwright">Playwright</option>
+            <option value="playwright">Camoufox fallback</option>
           </select>
         </label>
         <label className="space-y-2 text-sm text-foreground">
@@ -86,7 +91,7 @@ export function DiscoverySourcesPanel({
         className="flex flex-wrap items-end gap-3 rounded-lg border bg-muted/30 px-4 py-3"
       >
         <label className="flex flex-col gap-1 text-sm text-foreground">
-          <span className="font-medium">Bulk import via CSV</span>
+          <DiscoverySourcesCsvBulkImportLabel />
           <input
             type="file"
             name="csvFile"
@@ -95,18 +100,13 @@ export function DiscoverySourcesPanel({
             className="text-sm text-muted-foreground file:mr-3 file:rounded file:border file:border-input file:bg-background file:px-3 file:py-1 file:text-xs file:font-medium file:text-foreground"
           />
         </label>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <SubmitButton size="sm" pendingText="Importing...">
             Import CSV
           </SubmitButton>
-          <a
-            href="/discovery-sources-template.csv"
-            download
-            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          >
-            Download template
-          </a>
+          <DiscoverySourcesCsvTemplateLink />
         </div>
+        <DiscoverySourcesCsvAiPromptActions />
       </form>
 
       {sources.length === 0 ? (

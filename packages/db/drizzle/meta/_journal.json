@@ -71,6 +71,41 @@
       "when": 1774211404076,
       "tag": "0009_application_screening_answers",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1776980000000,
+      "tag": "0010_email_verification_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1778000000000,
+      "tag": "0011_job_prefilter_score",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1778100000000,
+      "tag": "0012_autopilot_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1779300800000,
+      "tag": "0013_autopilot_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1779900000000,
+      "tag": "0014_performance_indexes",
+      "breakpoints": true
     }
   ]
 }

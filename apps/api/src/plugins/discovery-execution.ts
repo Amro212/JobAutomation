@@ -1,9 +1,6 @@
 import fp from 'fastify-plugin';
 import { dirname, join } from 'node:path';
 
-import type { DiscoveryRunRecord, DiscoverySourceRecord } from '@jobautomation/core';
-import { logEventRecordSchema } from '@jobautomation/core';
-
 import { DiscoveryQueueService } from '../services/discovery-queue';
 import { DiscoverySchedulerService } from '../services/discovery-scheduler';
 import { recomputeJobPrefilterMatches } from '../services/job-prefilter-recompute';
@@ -20,6 +17,7 @@ export const registerDiscoveryExecutionPlugin = fp(async (app) => {
     artifactsRepository: app.repositories.artifacts,
     artifactsRootDir: join(dirname(app.config.JOB_AUTOMATION_DB_PATH), 'artifacts'),
     jobsRepository: app.repositories.jobs,
+    sourcesRepository: app.repositories.discoverySources,
     runsRepository: app.repositories.discoveryRuns,
     logEventsRepository: app.repositories.logEvents,
     greenhouseBaseUrl: app.config.GREENHOUSE_API_BASE_URL,
@@ -28,7 +26,9 @@ export const registerDiscoveryExecutionPlugin = fp(async (app) => {
     concurrency: app.config.DISCOVERY_QUEUE_CONCURRENCY,
     afterDiscoveryRun: async () => {
       const profile = await app.repositories.applicantProfile.get();
-      await recomputeJobPrefilterMatches(app.repositories.jobs, profile);
+      await recomputeJobPrefilterMatches(app.repositories.jobs, profile, {
+        mode: 'stale'
+      });
     }
   });
 

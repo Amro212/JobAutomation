@@ -1,4 +1,5 @@
 import { greenhouseJobsResponseSchema, type GreenhouseJob } from './greenhouse-types';
+import { InvalidDiscoverySourceError, isInvalidDiscoverySourceStatus } from '../../errors';
 
 export type FetchGreenhouseJobsInput = {
   boardToken: string;
@@ -14,9 +15,11 @@ export async function fetchGreenhouseJobs(
   const response = await fetchImpl(requestUrl);
 
   if (!response.ok) {
-    throw new Error(
-      `Greenhouse request failed for board ${input.boardToken} with status ${response.status}.`
-    );
+    const message = `Greenhouse request failed for board ${input.boardToken} with status ${response.status}.`;
+    if (isInvalidDiscoverySourceStatus(response.status)) {
+      throw new InvalidDiscoverySourceError(message, response.status);
+    }
+    throw new Error(message);
   }
 
   const payload = greenhouseJobsResponseSchema.parse(await response.json());

@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { LogEventRecord } from '@jobautomation/core';
 
+import { LocalDateTime } from '@/components/local-datetime';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -68,8 +69,7 @@ function renderLogDetails(log: LogEventRecord): string {
   const parts = [
     typeof details.label === 'string' ? details.label : null,
     typeof details.pageUrl === 'string' ? details.pageUrl : null,
-    typeof details.extractorId === 'string' ? `extractor ${details.extractorId}` : null,
-    typeof details.fallbackMode === 'string' ? `mode ${details.fallbackMode}` : null
+    typeof details.extractorId === 'string' ? `extractor ${details.extractorId}` : null
   ].filter((value): value is string => value !== null);
 
   return parts.length > 0 ? parts.join(' \u2022 ') : 'Structured run metadata';
@@ -215,7 +215,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ runI
                   {renderLogDetails(log)}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {log.createdAt.toLocaleString()}
+                  <LocalDateTime value={log.createdAt} />
                 </TableCell>
               </TableRow>
             ))}
