@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
-import { getApplicationRuns } from '@renderer/lib/api';
+import { getAutopilotRuns } from '@renderer/lib/api';
 
-export function ApplicationsPage() {
-  const [runs, setRuns] = useState<Array<{ id: string; title: string; status: string }>>([]);
+export function AutopilotRunsPage() {
+  const [runs, setRuns] = useState<Array<{ id: string; status: string; submitted: number }>>([]);
 
   useEffect(() => {
-    void getApplicationRuns().then((response) => {
+    void getAutopilotRuns().then((response) => {
       setRuns(
-        response.runs.slice(0, 12).map((entry) => ({
+        response.map((entry) => ({
           id: entry.run.id,
-          title: entry.job.title,
-          status: entry.run.status
+          status: entry.run.status,
+          submitted: entry.run.submittedCount
         }))
       );
     });
@@ -21,34 +21,34 @@ export function ApplicationsPage() {
   return (
     <div className="grid">
       <section className="hero">
-        <h1 className="section-title">Applications</h1>
+        <h1 className="section-title">Autopilot Runs</h1>
         <p className="section-copy">
-          Application runs and their artifacts stay attached to the same API records already used in production.
+          Batch history, statuses, and child application results stay available in the desktop shell.
         </p>
       </section>
 
       <section className="card">
         {runs.length === 0 ? (
-          <p className="section-copy">No application runs have been recorded yet.</p>
+          <p className="section-copy">No autopilot runs recorded yet.</p>
         ) : (
           <table className="table">
             <thead>
               <tr>
                 <th>Run</th>
-                <th>Job</th>
                 <th>Status</th>
+                <th>Submitted</th>
               </tr>
             </thead>
             <tbody>
               {runs.map((run) => (
                 <tr key={run.id}>
                   <td>
-                    <Link className="table-link" to={`/applications/${run.id}`}>
+                    <Link className="table-link" to={`/autopilot-runs/${run.id}`}>
                       {run.id.slice(0, 8)}
                     </Link>
                   </td>
-                  <td>{run.title}</td>
                   <td>{run.status}</td>
+                  <td>{run.submitted}</td>
                 </tr>
               ))}
             </tbody>

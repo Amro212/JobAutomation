@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 
 import { getDiscoveryRuns } from '@renderer/lib/api';
 
@@ -22,7 +23,7 @@ export function RunsPage() {
       <section className="hero">
         <h1 className="section-title">Runs</h1>
         <p className="section-copy">
-          Discovery run history remains visible while the Next dashboard is still retained for Phase 2 reference.
+          Discovery run history is now a first-class desktop route with direct links into run detail.
         </p>
       </section>
 
@@ -41,7 +42,11 @@ export function RunsPage() {
             <tbody>
               {runs.map((run) => (
                 <tr key={run.id}>
-                  <td>{run.id.slice(0, 8)}</td>
+                  <td>
+                    <Link className="table-link" to={`/runs/${run.id}`}>
+                      {run.id.slice(0, 8)}
+                    </Link>
+                  </td>
                   <td>{run.sourceKind}</td>
                   <td>{run.status}</td>
                 </tr>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 
 import { getJobs } from '@renderer/lib/api';
 
@@ -23,7 +24,7 @@ export function JobsPage() {
       <section className="hero">
         <h1 className="section-title">Jobs</h1>
         <p className="section-copy">
-          Phase 1 desktop page wired to `/jobs`. Filtering and detail actions port next.
+          Jobs now drill into their existing API detail records, so review context stays consistent between the desktop shell and the current web dashboard.
         </p>
       </section>
 
@@ -42,7 +43,11 @@ export function JobsPage() {
             <tbody>
               {jobs.map((job) => (
                 <tr key={job.id}>
-                  <td>{job.title}</td>
+                  <td>
+                    <Link className="table-link" to={`/jobs/${job.id}`}>
+                      {job.title}
+                    </Link>
+                  </td>
                   <td>{job.company}</td>
                   <td>{job.location || 'Unspecified'}</td>
                 </tr>

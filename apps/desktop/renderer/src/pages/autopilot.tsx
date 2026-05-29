@@ -1,35 +1,106 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 
-import { getAutopilotRuns, getAutopilotSettings } from '@renderer/lib/api';
+import {
+  cancelAutopilotRun,
+  createAutopilotRun,
+  getAutopilotRuns,
+  getAutopilotSettings
+} from '@renderer/lib/api';
 
 export function AutopilotPage() {
-  const [settings, setSettings] = useState<string>('Loading settings...');
+  const [settings, setSettings] = useState('Loading settings...');
   const [runs, setRuns] = useState<Array<{ id: string; status: string; step: string }>>([]);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const refresh = async () => {
+    const [settingsResponse, runsResponse] = await Promise.all([
+      getAutopilotSettings(),
+      getAutopilotRuns()
+    ]);
+
+    setSettings(
+      `Mode: ${settingsResponse.config.artifactMode} | Max jobs: ${settingsResponse.config.maxJobsPerRun ?? 'unbounded'} | Discovery cache: ${settingsResponse.config.discoveryCacheHours}h`
+    );
+    setRuns(
+      runsResponse.slice(0, 6).map((entry) => ({
+        id: entry.run.id,
+        status: entry.run.status,
+        step: entry.run.currentStep
+      }))
+    );
+    setActiveRunId(
+      runsResponse.find(
+        (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
+      )?.run.id ?? null
+    );
+  };
 
   useEffect(() => {
-    void Promise.all([getAutopilotSettings(), getAutopilotRuns()]).then(
-      ([settingsResponse, runsResponse]) => {
-        setSettings(
-          `Mode: ${settingsResponse.settings.config.artifactMode} · Max jobs: ${settingsResponse.settings.config.maxJobsPerRun ?? 'unbounded'}`
-        );
-        setRuns(
-          runsResponse.runs.slice(0, 6).map((entry) => ({
-            id: entry.run.id,
-            status: entry.run.status,
-            step: entry.run.currentStep
-          }))
-        );
-      }
-    );
+    void refresh().catch((error) => {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load autopilot.');
+    });
   }, []);
+
+  const handleStart = async () => {
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      await createAutopilotRun();
+      await refresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to start autopilot.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!activeRunId) {
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      await cancelAutopilotRun(activeRunId);
+      await refresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to stop autopilot.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="grid">
       <section className="hero">
         <h1 className="section-title">Autopilot</h1>
         <p className="section-copy">
-          Electron renderer shell is connected to the existing API surface. Full control and tray-aware actions land in follow-up commits.
+          Desktop controls now hit the same Fastify routes as the current dashboard. Start and stop remain attached to the existing run records.
         </p>
+        <div className="inline-actions">
+          <button
+            className="button primary"
+            onClick={handleStart}
+            disabled={submitting || Boolean(activeRunId)}
+          >
+            Start Autopilot
+          </button>
+          <button
+            className="button"
+            onClick={handleStop}
+            disabled={submitting || !activeRunId}
+          >
+            Stop Active Run
+          </button>
+          <Link className="button ghost" to="/autopilot-runs">
+            View History
+          </Link>
+        </div>
+        {errorMessage ? <p className="error-copy">{errorMessage}</p> : null}
       </section>
 
       <div className="grid two">
@@ -54,7 +125,11 @@ export function AutopilotPage() {
               <tbody>
                 {runs.map((run) => (
                   <tr key={run.id}>
-                    <td>{run.id.slice(0, 8)}</td>
+                    <td>
+                      <Link className="table-link" to={`/autopilot-runs/${run.id}`}>
+                        {run.id.slice(0, 8)}
+                      </Link>
+                    </td>
                     <td>{run.status}</td>
                     <td>{run.step}</td>
                   </tr>

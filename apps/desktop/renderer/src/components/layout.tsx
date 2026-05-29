@@ -1,9 +1,12 @@
 import { NavLink, Outlet } from 'react-router';
 
+import { ApiConnectionGuard } from '@renderer/components/api-connection-guard';
+
 const navItems = [
   { to: '/autopilot', label: 'Autopilot' },
   { to: '/jobs', label: 'Jobs' },
-  { to: '/runs', label: 'Runs' },
+  { to: '/autopilot-runs', label: 'Autopilot Runs' },
+  { to: '/runs', label: 'Discovery Runs' },
   { to: '/applications', label: 'Applications' }
 ];
 
@@ -38,6 +41,7 @@ export function DesktopLayout() {
       </aside>
 
       <main className="content">
+        <ApiConnectionGuard />
         <Outlet />
       </main>
     </div>
