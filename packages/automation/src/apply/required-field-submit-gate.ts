@@ -14,6 +14,7 @@ export async function guardRequiredFieldsBeforeSubmit(input: {
   executionResult: ExecuteApplicationFillPlanResult;
   preEntryWarmup: unknown;
   preFillWarmup: unknown;
+  stageTimings?: unknown;
 }) {
   const requiredFieldExecutionValidation = validateRequiredFieldExecution({
     fields: input.scrapedFields,
@@ -29,6 +30,7 @@ export async function guardRequiredFieldsBeforeSubmit(input: {
     requiredFieldExecutionValidation,
     preEntryWarmup: input.preEntryWarmup,
     preFillWarmup: input.preFillWarmup,
+    ...(input.stageTimings !== undefined ? { stageTimings: input.stageTimings } : {}),
     profileDirectory: input.context.session.identity.userDataDir ?? null,
   };
 

@@ -99,6 +99,64 @@ function createProvider(result: unknown): ApplicationAnswerProvider & {
 }
 
 describe('openrouter answer module', () => {
+  test('compacts high-cardinality selector options in the prompt while keeping profile matches', async () => {
+    const manySchools = Array.from({ length: 200 }, (_, index) => ({
+      value: `school-${index}`,
+      label: `School ${index}`
+    }));
+    manySchools.splice(150, 0, {
+      value: 'university-of-guelph',
+      label: 'University of Guelph'
+    });
+
+    const provider = createProvider({
+      items: [
+        {
+          fieldId: 'school',
+          action: 'select',
+          value: 'University of Guelph',
+          selectedOptionValue: 'university-of-guelph',
+          selectedOptionLabel: 'University of Guelph',
+          confidence: 0.95,
+          skipReason: ''
+        }
+      ]
+    });
+
+    const result = await generateApplicationFillPlan({
+      applicantProfile: baseApplicant(),
+      job: baseJob(),
+      fields: [
+        {
+          id: 'school',
+          label: 'Which university are you currently attending?',
+          type: 'select',
+          required: true,
+          visible: true,
+          enabled: true,
+          selectorCandidates: ['#school'],
+          options: manySchools
+        }
+      ],
+      provider
+    });
+
+    const promptField = result.promptPayload.fields[0]!;
+    expect(promptField.options.length).toBeLessThan(80);
+    expect(promptField.options).toEqual(
+      expect.arrayContaining([
+        { value: 'university-of-guelph', label: 'University of Guelph' }
+      ])
+    );
+    expect(result.fillPlan[0]).toEqual(
+      expect.objectContaining({
+        fieldId: 'school',
+        action: 'select',
+        value: 'university-of-guelph'
+      })
+    );
+  });
+
   test('normalizes provider output into a complete fill plan with safe skips', async () => {
     const fields: ScrapedApplicationField[] = [
       {

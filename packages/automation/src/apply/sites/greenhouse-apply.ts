@@ -18,6 +18,7 @@ import {
   warmApplicationFormBeforeFill,
   warmApplicationPageBeforeEntry,
 } from '../trust-runtime';
+import { createApplicationStageTimer } from './stage-timer';
 
 const GREENHOUSE_VERIFICATION_TIMEOUT_MS = 3 * 60_000;
 
@@ -44,27 +45,36 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
     return job.sourceKind === 'greenhouse';
   },
   async run(context) {
+    const stageTimer = createApplicationStageTimer();
     const greenhousePacing = resolveGreenhousePacing(context.session.pacing);
-    const preEntryWarmup = await warmApplicationPageBeforeEntry({
-      page: context.session.page,
-      board: 'greenhouse',
-      pacing: greenhousePacing,
-    });
-    const boardEntry = await reachApplicationForm({
-      page: context.session.page,
-      board: 'greenhouse',
-    });
-    const preFillWarmup = await warmApplicationFormBeforeFill({
-      page: context.session.page,
-      board: 'greenhouse',
-      boardEntry,
-      pacing: greenhousePacing,
-    });
-    const preFillChallenge = await detectApplicationChallenge({
-      page: context.session.page,
-      board: 'greenhouse',
-      phase: 'before_scrape',
-    });
+    const preEntryWarmup = await stageTimer.timePhase('warmup.before_entry', () =>
+      warmApplicationPageBeforeEntry({
+        page: context.session.page,
+        board: 'greenhouse',
+        pacing: greenhousePacing,
+      })
+    );
+    const boardEntry = await stageTimer.timePhase('entry.reach_application_form', () =>
+      reachApplicationForm({
+        page: context.session.page,
+        board: 'greenhouse',
+      })
+    );
+    const preFillWarmup = await stageTimer.timePhase('warmup.before_fill', () =>
+      warmApplicationFormBeforeFill({
+        page: context.session.page,
+        board: 'greenhouse',
+        boardEntry,
+        pacing: greenhousePacing,
+      })
+    );
+    const preFillChallenge = await stageTimer.timePhase('challenge.before_scrape', () =>
+      detectApplicationChallenge({
+        page: context.session.page,
+        board: 'greenhouse',
+        phase: 'before_scrape',
+      })
+    );
     if (preFillChallenge) {
       return context.pauseForManualReview({
         step: preFillChallenge.phase,
@@ -75,16 +85,19 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           boardEntry,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
           pageHtml: await context.session.page.content(),
         },
       });
     }
 
-    const scrapedFields = await scrapeApplicationFields({
-      page: context.session.page,
-      boardEntry,
-    });
+    const scrapedFields = await stageTimer.timePhase('stage3.scrape_fields', () =>
+      scrapeApplicationFields({
+        page: context.session.page,
+        boardEntry,
+      })
+    );
 
     if (!context.openRouter?.apiKey) {
       await context.logStep(
@@ -95,6 +108,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           scrapedFields,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         }
       );
@@ -108,18 +122,21 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           scrapedFields,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         },
       });
     }
 
-    const fillPlanResult = await generateApplicationFillPlan({
-      applicantProfile: context.applicantProfile,
-      job: context.job,
-      fields: scrapedFields,
-      artifacts: context.artifacts,
-      openRouter: context.openRouter ?? null,
-    });
+    const fillPlanResult = await stageTimer.timePhase('stage4.generate_fill_plan', () =>
+      generateApplicationFillPlan({
+        applicantProfile: context.applicantProfile,
+        job: context.job,
+        fields: scrapedFields,
+        artifacts: context.artifacts,
+        openRouter: context.openRouter ?? null,
+      })
+    );
     const fillPlanValidation = fillPlanResult.fillPlanValidation ?? {
       ok: true,
       missingRequiredFields: [],
@@ -150,24 +167,29 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           ...fillPlanDetails,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         },
       });
     }
 
-    const executionResult = await executeApplicationFillPlan({
-      page: context.session.page,
-      boardEntry,
-      artifacts: context.artifacts,
-      fields: scrapedFields,
-      fillPlan: fillPlanResult.fillPlan,
-      pacing: greenhousePacing,
-    });
-    const postFillChallenge = await detectApplicationChallenge({
-      page: context.session.page,
-      board: 'greenhouse',
-      phase: 'after_fill',
-    });
+    const executionResult = await stageTimer.timePhase('stage5.execute_fill_plan', () =>
+      executeApplicationFillPlan({
+        page: context.session.page,
+        boardEntry,
+        artifacts: context.artifacts,
+        fields: scrapedFields,
+        fillPlan: fillPlanResult.fillPlan,
+        pacing: greenhousePacing,
+      })
+    );
+    const postFillChallenge = await stageTimer.timePhase('challenge.after_fill', () =>
+      detectApplicationChallenge({
+        page: context.session.page,
+        board: 'greenhouse',
+        phase: 'after_fill',
+      })
+    );
     if (postFillChallenge) {
       return context.pauseForManualReview({
         step: postFillChallenge.phase,
@@ -181,22 +203,26 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           executionResult,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
           pageHtml: await context.session.page.content(),
         },
       });
     }
 
-    const requiredFieldGateResult = await guardRequiredFieldsBeforeSubmit({
-      context,
-      boardEntry,
-      scrapedFields,
-      fillPlan: fillPlanResult.fillPlan,
-      fillPlanDetails,
-      executionResult,
-      preEntryWarmup,
-      preFillWarmup,
-    });
+    const requiredFieldGateResult = await stageTimer.timePhase('required_field_gate', () =>
+      guardRequiredFieldsBeforeSubmit({
+        context,
+        boardEntry,
+        scrapedFields,
+        fillPlan: fillPlanResult.fillPlan,
+        fillPlanDetails,
+        executionResult,
+        preEntryWarmup,
+        preFillWarmup,
+        stageTimings: stageTimer.snapshot(),
+      })
+    );
     if (requiredFieldGateResult) {
       return requiredFieldGateResult;
     }
@@ -213,6 +239,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         `Greenhouse email verification debug: ${event}.`,
         {
           event,
+          stageTimings: stageTimer.snapshot(),
           ...(details ?? {})
         }
       );
@@ -227,10 +254,12 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
       hasRefreshToken: Boolean(emailVerificationConfig?.gmailRefreshToken.trim())
     });
     if (!isEnabledForGmailVerification(emailVerificationConfig)) {
-      const submissionResult = await submitApplicationAndConfirm({
-        page: context.session.page,
-        board: 'greenhouse',
-      });
+      const submissionResult = await stageTimer.timePhase('submit.confirm', () =>
+        submitApplicationAndConfirm({
+          page: context.session.page,
+          board: 'greenhouse',
+        })
+      );
 
       if (submissionResult.status !== 'submitted') {
         return context.pauseForManualReview({
@@ -245,6 +274,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
             confirmationStatus: submissionResult.status,
             preEntryWarmup,
             preFillWarmup,
+            stageTimings: stageTimer.snapshot(),
             profileDirectory: context.session.identity.userDataDir ?? null,
             pageHtml: await context.session.page.content(),
           },
@@ -264,6 +294,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           submitButtonSource: submissionResult.submitButtonSource,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         }
       );
@@ -281,6 +312,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           submitButtonSource: submissionResult.submitButtonSource,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         },
       });
@@ -293,33 +325,35 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         gmailVerificationConfig.gmailClientSecret.trim() &&
         gmailVerificationConfig.gmailRefreshToken.trim()
     );
-    const verificationResult = await submitGreenhouseApplicationAndEnterVerificationCode({
-      page: context.session.page,
-      debugLog: logVerificationDebug,
-      retrieveCode: async (submittedAt) => {
-        if (!isGmailConfigComplete) {
-          await logVerificationDebug('gmail_oauth_not_configured', {
-            gmailUserEmail: gmailVerificationConfig.gmailUserEmail || null,
-            hasClientId: Boolean(gmailVerificationConfig.gmailClientId.trim()),
-            hasClientSecret: Boolean(gmailVerificationConfig.gmailClientSecret.trim()),
-            hasRefreshToken: Boolean(gmailVerificationConfig.gmailRefreshToken.trim())
-          });
-          return {
-            status: 'not_configured' as const,
-            message:
-              'Greenhouse verification challenge triggered, but Gmail OAuth is incomplete. Add Gmail address, client ID, client secret, and refresh token in setup.'
-          };
-        }
+    const verificationResult = await stageTimer.timePhase('submit.email_verification', () =>
+      submitGreenhouseApplicationAndEnterVerificationCode({
+        page: context.session.page,
+        debugLog: logVerificationDebug,
+        retrieveCode: async (submittedAt) => {
+          if (!isGmailConfigComplete) {
+            await logVerificationDebug('gmail_oauth_not_configured', {
+              gmailUserEmail: gmailVerificationConfig.gmailUserEmail || null,
+              hasClientId: Boolean(gmailVerificationConfig.gmailClientId.trim()),
+              hasClientSecret: Boolean(gmailVerificationConfig.gmailClientSecret.trim()),
+              hasRefreshToken: Boolean(gmailVerificationConfig.gmailRefreshToken.trim())
+            });
+            return {
+              status: 'not_configured' as const,
+              message:
+                'Greenhouse verification challenge triggered, but Gmail OAuth is incomplete. Add Gmail address, client ID, client secret, and refresh token in setup.'
+            };
+          }
 
-        return pollGmailForGreenhouseVerificationCode({
-          gmail: createGmailApiClient(gmailVerificationConfig),
-          userEmail: gmailVerificationConfig.gmailUserEmail || 'me',
-          submittedAt,
-          timeoutMs: GREENHOUSE_VERIFICATION_TIMEOUT_MS,
-          debugLog: logVerificationDebug
-        });
-      }
-    });
+          return pollGmailForGreenhouseVerificationCode({
+            gmail: createGmailApiClient(gmailVerificationConfig),
+            userEmail: gmailVerificationConfig.gmailUserEmail || 'me',
+            submittedAt,
+            timeoutMs: GREENHOUSE_VERIFICATION_TIMEOUT_MS,
+            debugLog: logVerificationDebug
+          });
+        }
+      })
+    );
     const verificationMessage =
       'message' in verificationResult
         ? verificationResult.message
@@ -338,11 +372,13 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
     });
 
     if (verificationResult.status === 'challenge_not_visible') {
-      const submissionResult = await confirmApplicationSubmission({
-        page: context.session.page,
-        board: 'greenhouse',
-        submitButtonSource: 'greenhouse_email_verification_submit'
-      });
+      const submissionResult = await stageTimer.timePhase('submit.confirm_after_verification_probe', () =>
+        confirmApplicationSubmission({
+          page: context.session.page,
+          board: 'greenhouse',
+          submitButtonSource: 'greenhouse_email_verification_submit'
+        })
+      );
 
       if (submissionResult.status !== 'submitted') {
         return context.pauseForManualReview({
@@ -358,6 +394,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
             verificationStatus: verificationResult.status,
             preEntryWarmup,
             preFillWarmup,
+            stageTimings: stageTimer.snapshot(),
             profileDirectory: context.session.identity.userDataDir ?? null,
             pageHtml: await context.session.page.content(),
           },
@@ -378,6 +415,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           verificationStatus: verificationResult.status,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         }
       );
@@ -396,6 +434,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           verificationStatus: verificationResult.status,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         },
       });
@@ -415,16 +454,19 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           verificationStatus: verificationResult.status,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
           pageHtml: await context.session.page.content(),
         },
       });
     }
 
-    const submissionResult = await submitApplicationAndConfirm({
-      page: context.session.page,
-      board: 'greenhouse',
-    });
+    const submissionResult = await stageTimer.timePhase('submit.confirm_after_code', () =>
+      submitApplicationAndConfirm({
+        page: context.session.page,
+        board: 'greenhouse',
+      })
+    );
 
     if (submissionResult.status !== 'submitted') {
       return context.pauseForManualReview({
@@ -443,6 +485,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
           verificationCodeLength: verificationResult.codeLength,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
           pageHtml: await context.session.page.content(),
         },
@@ -466,6 +509,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         verificationCodeLength: verificationResult.codeLength,
         preEntryWarmup,
         preFillWarmup,
+        stageTimings: stageTimer.snapshot(),
         profileDirectory: context.session.identity.userDataDir ?? null,
       }
     );
@@ -487,6 +531,7 @@ export const greenhouseApplicationSite: SupportedApplicationSite = {
         verificationCodeLength: verificationResult.codeLength,
         preEntryWarmup,
         preFillWarmup,
+        stageTimings: stageTimer.snapshot(),
         profileDirectory: context.session.identity.userDataDir ?? null,
       },
     });

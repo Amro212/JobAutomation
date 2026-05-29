@@ -10,6 +10,7 @@ import {
   warmApplicationFormBeforeFill,
   warmApplicationPageBeforeEntry,
 } from '../trust-runtime';
+import { createApplicationStageTimer } from './stage-timer';
 
 export const leverApplicationSite: SupportedApplicationSite = {
   siteKey: 'lever',
@@ -17,26 +18,35 @@ export const leverApplicationSite: SupportedApplicationSite = {
     return job.sourceKind === 'lever';
   },
   async run(context) {
-    const preEntryWarmup = await warmApplicationPageBeforeEntry({
-      page: context.session.page,
-      board: 'lever',
-      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
-    });
-    const boardEntry = await reachApplicationForm({
-      page: context.session.page,
-      board: 'lever',
-    });
-    const preFillWarmup = await warmApplicationFormBeforeFill({
-      page: context.session.page,
-      board: 'lever',
-      boardEntry,
-      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
-    });
-    const preFillChallenge = await detectApplicationChallenge({
-      page: context.session.page,
-      board: 'lever',
-      phase: 'before_scrape',
-    });
+    const stageTimer = createApplicationStageTimer();
+    const preEntryWarmup = await stageTimer.timePhase('warmup.before_entry', () =>
+      warmApplicationPageBeforeEntry({
+        page: context.session.page,
+        board: 'lever',
+        ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
+      })
+    );
+    const boardEntry = await stageTimer.timePhase('entry.reach_application_form', () =>
+      reachApplicationForm({
+        page: context.session.page,
+        board: 'lever',
+      })
+    );
+    const preFillWarmup = await stageTimer.timePhase('warmup.before_fill', () =>
+      warmApplicationFormBeforeFill({
+        page: context.session.page,
+        board: 'lever',
+        boardEntry,
+        ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
+      })
+    );
+    const preFillChallenge = await stageTimer.timePhase('challenge.before_scrape', () =>
+      detectApplicationChallenge({
+        page: context.session.page,
+        board: 'lever',
+        phase: 'before_scrape',
+      })
+    );
     if (preFillChallenge) {
       return context.pauseForManualReview({
         step: preFillChallenge.phase,
@@ -47,16 +57,19 @@ export const leverApplicationSite: SupportedApplicationSite = {
           boardEntry,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
           pageHtml: await context.session.page.content(),
         },
       });
     }
 
-    const scrapedFields = await scrapeApplicationFields({
-      page: context.session.page,
-      boardEntry,
-    });
+    const scrapedFields = await stageTimer.timePhase('stage3.scrape_fields', () =>
+      scrapeApplicationFields({
+        page: context.session.page,
+        boardEntry,
+      })
+    );
 
     if (!context.openRouter?.apiKey) {
       await context.logStep(
@@ -67,6 +80,7 @@ export const leverApplicationSite: SupportedApplicationSite = {
           scrapedFields,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         }
       );
@@ -80,18 +94,21 @@ export const leverApplicationSite: SupportedApplicationSite = {
           scrapedFields,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         },
       });
     }
 
-    const fillPlanResult = await generateApplicationFillPlan({
-      applicantProfile: context.applicantProfile,
-      job: context.job,
-      fields: scrapedFields,
-      artifacts: context.artifacts,
-      openRouter: context.openRouter ?? null,
-    });
+    const fillPlanResult = await stageTimer.timePhase('stage4.generate_fill_plan', () =>
+      generateApplicationFillPlan({
+        applicantProfile: context.applicantProfile,
+        job: context.job,
+        fields: scrapedFields,
+        artifacts: context.artifacts,
+        openRouter: context.openRouter ?? null,
+      })
+    );
     const fillPlanValidation = fillPlanResult.fillPlanValidation ?? {
       ok: true,
       missingRequiredFields: [],
@@ -122,24 +139,29 @@ export const leverApplicationSite: SupportedApplicationSite = {
           ...fillPlanDetails,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
         },
       });
     }
 
-    const executionResult = await executeApplicationFillPlan({
-      page: context.session.page,
-      boardEntry,
-      artifacts: context.artifacts,
-      fields: scrapedFields,
-      fillPlan: fillPlanResult.fillPlan,
-      ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
-    });
-    const postFillChallenge = await detectApplicationChallenge({
-      page: context.session.page,
-      board: 'lever',
-      phase: 'after_fill',
-    });
+    const executionResult = await stageTimer.timePhase('stage5.execute_fill_plan', () =>
+      executeApplicationFillPlan({
+        page: context.session.page,
+        boardEntry,
+        artifacts: context.artifacts,
+        fields: scrapedFields,
+        fillPlan: fillPlanResult.fillPlan,
+        ...(context.session.pacing !== undefined ? { pacing: context.session.pacing } : {}),
+      })
+    );
+    const postFillChallenge = await stageTimer.timePhase('challenge.after_fill', () =>
+      detectApplicationChallenge({
+        page: context.session.page,
+        board: 'lever',
+        phase: 'after_fill',
+      })
+    );
     if (postFillChallenge) {
       return context.pauseForManualReview({
         step: postFillChallenge.phase,
@@ -153,30 +175,36 @@ export const leverApplicationSite: SupportedApplicationSite = {
           executionResult,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
           pageHtml: await context.session.page.content(),
         },
       });
     }
 
-    const requiredFieldGateResult = await guardRequiredFieldsBeforeSubmit({
-      context,
-      boardEntry,
-      scrapedFields,
-      fillPlan: fillPlanResult.fillPlan,
-      fillPlanDetails,
-      executionResult,
-      preEntryWarmup,
-      preFillWarmup,
-    });
+    const requiredFieldGateResult = await stageTimer.timePhase('required_field_gate', () =>
+      guardRequiredFieldsBeforeSubmit({
+        context,
+        boardEntry,
+        scrapedFields,
+        fillPlan: fillPlanResult.fillPlan,
+        fillPlanDetails,
+        executionResult,
+        preEntryWarmup,
+        preFillWarmup,
+        stageTimings: stageTimer.snapshot(),
+      })
+    );
     if (requiredFieldGateResult) {
       return requiredFieldGateResult;
     }
 
-    const submissionResult = await submitApplicationAndConfirm({
-      page: context.session.page,
-      board: 'lever',
-    });
+    const submissionResult = await stageTimer.timePhase('submit.confirm', () =>
+      submitApplicationAndConfirm({
+        page: context.session.page,
+        board: 'lever',
+      })
+    );
 
     if (submissionResult.status !== 'submitted') {
       return context.pauseForManualReview({
@@ -191,6 +219,7 @@ export const leverApplicationSite: SupportedApplicationSite = {
           confirmationStatus: submissionResult.status,
           preEntryWarmup,
           preFillWarmup,
+          stageTimings: stageTimer.snapshot(),
           profileDirectory: context.session.identity.userDataDir ?? null,
           pageHtml: await context.session.page.content(),
         },
@@ -210,6 +239,7 @@ export const leverApplicationSite: SupportedApplicationSite = {
         submitButtonSource: submissionResult.submitButtonSource,
         preEntryWarmup,
         preFillWarmup,
+        stageTimings: stageTimer.snapshot(),
         profileDirectory: context.session.identity.userDataDir ?? null,
       }
     );
@@ -227,6 +257,7 @@ export const leverApplicationSite: SupportedApplicationSite = {
         submitButtonSource: submissionResult.submitButtonSource,
         preEntryWarmup,
         preFillWarmup,
+        stageTimings: stageTimer.snapshot(),
         profileDirectory: context.session.identity.userDataDir ?? null,
       },
     });

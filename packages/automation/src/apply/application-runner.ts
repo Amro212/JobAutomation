@@ -24,6 +24,7 @@ import { pauseApplicationRun } from './pause-application-run';
 import { assessPostCompletionStatus } from './post-completion-safeguard';
 import { createApplicationSession } from './session-manager';
 import { stopBeforeSubmit } from './stop-before-submit';
+import { summarizeApplicationEvidenceDetails } from './evidence-details';
 import { createApplicationBrowserRuntime } from '../playwright/browser';
 import { evaluateAuthorizedDomainPolicy } from '../playwright/authorized-domain-policy';
 
@@ -84,6 +85,11 @@ type LogEventsRepository = {
   }) => Promise<unknown>;
 };
 
+type ApplicationRunTiming = {
+  name: string;
+  durationMs: number;
+};
+
 export type RunApplicationInput = {
   jobId: string;
   runId?: string;
@@ -101,6 +107,32 @@ export type RunApplicationInput = {
   createBrowser?: () => Promise<ApplicationSessionRuntime>;
   createSession?: typeof createApplicationSession;
 };
+
+function createRunTimer(): {
+  timings: ApplicationRunTiming[];
+  timePhase: <T>(name: string, operation: () => Promise<T>) => Promise<T>;
+  snapshot: () => ApplicationRunTiming[];
+} {
+  const timings: ApplicationRunTiming[] = [];
+
+  return {
+    timings,
+    async timePhase<T>(name: string, operation: () => Promise<T>): Promise<T> {
+      const startedAt = Date.now();
+      try {
+        return await operation();
+      } finally {
+        timings.push({
+          name,
+          durationMs: Date.now() - startedAt
+        });
+      }
+    },
+    snapshot() {
+      return timings.slice();
+    }
+  };
+}
 
 function resolveApplyHeadless(): boolean {
   const headedOverride = process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED;
@@ -177,17 +209,23 @@ async function logRunEvent(
     details?: Record<string, unknown>;
   }
 ): Promise<void> {
+  const details = input.details
+    ? summarizeApplicationEvidenceDetails(input.details)
+    : null;
   await repository.create({
     applicationRunId: input.applicationRunId,
     jobId: input.jobId,
     level: input.level,
     message: input.message,
-    detailsJson: input.details ? JSON.stringify(input.details) : null
+    detailsJson: details ? JSON.stringify(details) : null
   });
 }
 
 export async function runApplication(input: RunApplicationInput): Promise<ApplicationRunRecordLike> {
-  const job = await input.jobsRepository.findById(input.jobId);
+  const runTimer = createRunTimer();
+  const job = await runTimer.timePhase('db.jobs.findById', () =>
+    input.jobsRepository.findById(input.jobId)
+  );
   if (!job) {
     throw new Error(`Job ${input.jobId} was not found.`);
   }
@@ -197,20 +235,26 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     throw new Error(`No supported application flow matched job ${job.id}.`);
   }
 
-  const applicantProfile = await input.applicantProfileRepository.get();
+  const applicantProfile = await runTimer.timePhase('db.applicantProfile.get', () =>
+    input.applicantProfileRepository.get()
+  );
   const existingRun =
     input.runId && input.applicationRunsRepository.findById
-      ? await input.applicationRunsRepository.findById(input.runId)
+      ? await runTimer.timePhase('db.applicationRuns.findById', () =>
+          input.applicationRunsRepository.findById?.(input.runId ?? '') ?? Promise.resolve(null)
+        )
       : null;
   const run =
     existingRun ??
-    (await input.applicationRunsRepository.create({
-      jobId: job.id,
-      siteKey: siteFlow.siteKey,
-      status: 'pending',
-      currentStep: 'queued',
-      prefilterReasons: []
-    }));
+    (await runTimer.timePhase('db.applicationRuns.create', () =>
+      input.applicationRunsRepository.create({
+        jobId: job.id,
+        siteKey: siteFlow.siteKey,
+        status: 'pending',
+        currentStep: 'queued',
+        prefilterReasons: []
+      })
+    ));
 
   const prefilter = prefilterJob(job, prefilterContextFromApplicant(applicantProfile));
 
@@ -224,18 +268,21 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         applicationRunId: run.id,
         siteKey: siteFlow.siteKey,
         step: 'prefilter',
-        prefilterReasons: prefilter.reasons
+        prefilterReasons: prefilter.reasons,
+        runTimings: runTimer.snapshot()
       }
     });
 
-    const skippedRun = await input.applicationRunsRepository.update(run.id, {
-      status: 'skipped',
-      currentStep: 'prefilter_rejected',
-      stopReason: 'prefilter_rejected',
-      prefilterReasons: prefilter.reasons,
-      completedAt: new Date(),
-      updatedAt: new Date()
-    });
+    const skippedRun = await runTimer.timePhase('db.applicationRuns.update.prefilterSkipped', () =>
+      input.applicationRunsRepository.update(run.id, {
+        status: 'skipped',
+        currentStep: 'prefilter_rejected',
+        stopReason: 'prefilter_rejected',
+        prefilterReasons: prefilter.reasons,
+        completedAt: new Date(),
+        updatedAt: new Date()
+      })
+    );
     if (!skippedRun) {
       throw new Error(`Application run ${run.id} was not found for skip update.`);
     }
@@ -257,17 +304,20 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         targetUrl: job.sourceUrl,
         targetHost: scopeDecision.host,
         authorizedAllowlist: scopeDecision.allowlist,
-        strictScopeMode: scopeDecision.strict
+        strictScopeMode: scopeDecision.strict,
+        runTimings: runTimer.snapshot()
       }
     });
 
-    const skippedRun = await input.applicationRunsRepository.update(run.id, {
-      status: 'skipped',
-      currentStep: 'scope_denied',
-      stopReason: 'domain_not_authorized',
-      completedAt: new Date(),
-      updatedAt: new Date()
-    });
+    const skippedRun = await runTimer.timePhase('db.applicationRuns.update.scopeDenied', () =>
+      input.applicationRunsRepository.update(run.id, {
+        status: 'skipped',
+        currentStep: 'scope_denied',
+        stopReason: 'domain_not_authorized',
+        completedAt: new Date(),
+        updatedAt: new Date()
+      })
+    );
     if (!skippedRun) {
       throw new Error(`Application run ${run.id} was not found for scope-denied update.`);
     }
@@ -286,24 +336,29 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
       targetUrl: job.sourceUrl,
       targetHost: scopeDecision.host,
       authorizedAllowlist: scopeDecision.allowlist,
-      strictScopeMode: scopeDecision.strict
+      strictScopeMode: scopeDecision.strict,
+      runTimings: runTimer.snapshot()
     }
   });
 
-  const artifacts = await resolveArtifacts({
-    jobId: job.id,
-    run: existingRun,
-    artifactsRepository: input.artifactsRepository
-  });
+  const artifacts = await runTimer.timePhase('artifacts.resolve', () =>
+    resolveArtifacts({
+      jobId: job.id,
+      run: existingRun,
+      artifactsRepository: input.artifactsRepository
+    })
+  );
 
-  const runningRun = await input.applicationRunsRepository.update(run.id, {
-    status: 'running',
-    currentStep: existingRun?.currentStep ?? 'starting',
-    resumeArtifactId: artifacts.resume?.id ?? null,
-    coverLetterArtifactId: artifacts.coverLetter?.id ?? null,
-    startedAt: existingRun?.startedAt ?? new Date(),
-    updatedAt: new Date()
-  });
+  const runningRun = await runTimer.timePhase('db.applicationRuns.update.running', () =>
+    input.applicationRunsRepository.update(run.id, {
+      status: 'running',
+      currentStep: existingRun?.currentStep ?? 'starting',
+      resumeArtifactId: artifacts.resume?.id ?? null,
+      coverLetterArtifactId: artifacts.coverLetter?.id ?? null,
+      startedAt: existingRun?.startedAt ?? new Date(),
+      updatedAt: new Date()
+    })
+  );
   if (!runningRun) {
     throw new Error(`Application run ${run.id} was not found for start update.`);
   }
@@ -316,40 +371,46 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
     details: {
       applicationRunId: runningRun.id,
       siteKey: siteFlow.siteKey,
-      step: runningRun.currentStep
+      step: runningRun.currentStep,
+      runTimings: runTimer.snapshot()
     }
   });
 
-  const browserRuntime = await (
-    input.createBrowser ??
-    (() =>
-      createApplicationBrowserRuntime({
-        board: siteFlow.siteKey,
-        identity: {
-          headless: resolveApplyHeadless()
-        }
-      }))
-  )();
-  const session = await (input.createSession ?? createApplicationSession)({
-    runtime: browserRuntime,
-    runId: runningRun.id,
-    artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
-    startUrl: job.sourceUrl,
-    identity: browserRuntime.identity
-  });
+  const browserRuntime = await runTimer.timePhase('browser.launch', () =>
+    (
+      input.createBrowser ??
+      (() =>
+        createApplicationBrowserRuntime({
+          board: siteFlow.siteKey,
+          identity: {
+            headless: resolveApplyHeadless()
+          }
+        }))
+    )()
+  );
+  const session = await runTimer.timePhase('session.create', () =>
+    (input.createSession ?? createApplicationSession)({
+      runtime: browserRuntime,
+      runId: runningRun.id,
+      artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
+      startUrl: job.sourceUrl,
+      identity: browserRuntime.identity
+    })
+  );
 
   let finalTraceStopped = false;
   let leaveBrowserOpenForManualReview = false;
 
   try {
-    let result = await siteFlow.run({
-      applicantProfile,
-      artifacts,
-      job,
-      run: runningRun,
-      session,
-      openRouter: input.openRouter ?? null,
-      logStep: async (step, message, details = {}) => {
+    let result = await runTimer.timePhase('siteFlow.run', () =>
+      siteFlow.run({
+        applicantProfile,
+        artifacts,
+        job,
+        run: runningRun,
+        session,
+        openRouter: input.openRouter ?? null,
+        logStep: async (step, message, details = {}) => {
         await logRunEvent(input.logEventsRepository, {
           applicationRunId: runningRun.id,
           jobId: job.id,
@@ -360,11 +421,12 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
             siteKey: siteFlow.siteKey,
             step,
             pageUrl: session.page.url(),
+            runTimings: runTimer.snapshot(),
             ...details
           }
         });
-      },
-      captureScreenshot: async ({ step, message, details = {} }) => {
+        },
+        captureScreenshot: async ({ step, message, details = {} }) => {
         if (!input.artifactsRepository.create) {
           throw new Error('Artifacts repository does not support application evidence persistence.');
         }
@@ -400,6 +462,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
             step,
             pageUrl: session.page.url(),
             artifactId: artifact.id,
+            runTimings: runTimer.snapshot(),
             ...details
           }
         });
@@ -408,10 +471,11 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           artifactId: artifact.id,
           storagePath
         };
-      },
-      stopBeforeSubmit: async ({ step, reviewUrl, details }) => {
+        },
+        stopBeforeSubmit: async ({ step, reviewUrl, details }) => {
         finalTraceStopped = true;
-        return stopBeforeSubmit({
+        return runTimer.timePhase('application.pause.stopBeforeSubmit', () =>
+          stopBeforeSubmit({
           run: runningRun,
           page: {
             screenshot: session.page.screenshot.bind(session.page),
@@ -419,7 +483,10 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           },
           step,
           siteKey: siteFlow.siteKey,
-          ...(details !== undefined ? { details } : {}),
+          details: {
+            ...(details ?? {}),
+            runTimings: runTimer.snapshot()
+          },
           artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
           applicationRunsRepository: {
             update: async (id, patch) => {
@@ -441,15 +508,19 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           },
           logEventsRepository: input.logEventsRepository,
           finalizeTrace: async (tracePath) => {
-            await session.context.tracing.stop({
-              path: tracePath
-            });
+            await runTimer.timePhase('trace.finalize.pause', () =>
+              session.context.tracing.stop({
+                path: tracePath
+              })
+            );
           }
-        });
-      },
-      completeRun: async ({ step, message, reviewUrl, details }) => {
+          })
+        );
+        },
+        completeRun: async ({ step, message, reviewUrl, details }) => {
         finalTraceStopped = true;
-        return completeApplicationRun({
+        return runTimer.timePhase('application.complete', () =>
+          completeApplicationRun({
           run: runningRun,
           page: {
             screenshot: session.page.screenshot.bind(session.page),
@@ -459,7 +530,10 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           siteKey: siteFlow.siteKey,
           message,
           ...(reviewUrl !== undefined ? { reviewUrl } : {}),
-          ...(details !== undefined ? { details } : {}),
+          details: {
+            ...(details ?? {}),
+            runTimings: runTimer.snapshot()
+          },
           artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
           applicationRunsRepository: {
             update: async (id, patch) => {
@@ -481,15 +555,19 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           },
           logEventsRepository: input.logEventsRepository,
           finalizeTrace: async (tracePath) => {
-            await session.context.tracing.stop({
-              path: tracePath
-            });
+            await runTimer.timePhase('trace.finalize.complete', () =>
+              session.context.tracing.stop({
+                path: tracePath
+              })
+            );
           }
-        });
-      },
-      pauseForManualReview: async ({ step, message, reviewUrl, details, stopReason }) => {
+          })
+        );
+        },
+        pauseForManualReview: async ({ step, message, reviewUrl, details, stopReason }) => {
         finalTraceStopped = true;
-        return pauseApplicationRun({
+        return runTimer.timePhase('application.pause.manualReview', () =>
+          pauseApplicationRun({
           run: runningRun,
           page: {
             screenshot: session.page.screenshot.bind(session.page),
@@ -499,7 +577,10 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           siteKey: siteFlow.siteKey,
           message,
           ...(stopReason !== undefined ? { stopReason } : {}),
-          ...(details !== undefined ? { details } : {}),
+          details: {
+            ...(details ?? {}),
+            runTimings: runTimer.snapshot()
+          },
           artifactsRootDir: input.artifactsRootDir ?? 'output/artifacts',
           applicationRunsRepository: {
             update: async (id, patch) => {
@@ -521,19 +602,25 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           },
           logEventsRepository: input.logEventsRepository,
           finalizeTrace: async (tracePath) => {
-            await session.context.tracing.stop({
-              path: tracePath
-            });
+            await runTimer.timePhase('trace.finalize.pause', () =>
+              session.context.tracing.stop({
+                path: tracePath
+              })
+            );
           }
-        });
-      }
-    });
+          })
+        );
+        }
+      })
+    );
 
     if (result.status === 'completed') {
-      const assessment = await assessPostCompletionStatus({
-        page: session.page,
-        board: siteFlow.siteKey
-      });
+      const assessment = await runTimer.timePhase('postCompletion.assess', () =>
+        assessPostCompletionStatus({
+          page: session.page,
+          board: siteFlow.siteKey
+        })
+      );
       await logRunEvent(input.logEventsRepository, {
         applicationRunId: runningRun.id,
         jobId: job.id,
@@ -546,19 +633,24 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           siteKey: siteFlow.siteKey,
           step: 'post_completion_safeguard',
           pageUrl: session.page.url(),
-          assessment
+          assessment,
+          runTimings: runTimer.snapshot()
         }
       });
 
       if (!assessment.ok) {
-        const guardedRun = await input.applicationRunsRepository.update(runningRun.id, {
-          status: assessment.status,
-          currentStep: 'post_completion_safeguard',
-          stopReason: assessment.stopReason,
-          reviewUrl: session.page.url(),
-          completedAt: new Date(),
-          updatedAt: new Date()
-        });
+        const guardedRun = await runTimer.timePhase(
+          'db.applicationRuns.update.postCompletionGuard',
+          () =>
+            input.applicationRunsRepository.update(runningRun.id, {
+              status: assessment.status,
+              currentStep: 'post_completion_safeguard',
+              stopReason: assessment.stopReason,
+              reviewUrl: session.page.url(),
+              completedAt: new Date(),
+              updatedAt: new Date()
+            })
+        );
         if (!guardedRun) {
           throw new Error(`Application run ${runningRun.id} was not found for post-completion safeguard update.`);
         }
@@ -592,6 +684,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         step: runningRun.currentStep,
         pageUrl: session.page.url(),
         errorMessage: message,
+        runTimings: runTimer.snapshot(),
         ...(isExpiredLink
           ? {
               expiredSignal: (error as ApplicationLinkExpiredError).signal,
@@ -601,13 +694,15 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
       }
     });
 
-    const failedRun = await input.applicationRunsRepository.update(runningRun.id, {
-      status: 'failed',
-      currentStep: isExpiredLink ? 'expired_link' : runningRun.currentStep,
-      stopReason,
-      completedAt: new Date(),
-      updatedAt: new Date()
-    });
+    const failedRun = await runTimer.timePhase('db.applicationRuns.update.failed', () =>
+      input.applicationRunsRepository.update(runningRun.id, {
+        status: 'failed',
+        currentStep: isExpiredLink ? 'expired_link' : runningRun.currentStep,
+        stopReason,
+        completedAt: new Date(),
+        updatedAt: new Date()
+      })
+    );
     if (!failedRun) {
       throw new Error(`Application run ${runningRun.id} was not found for failure update.`);
     }
@@ -615,14 +710,16 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
   } finally {
     if (!finalTraceStopped) {
       try {
-        await session.finalizeTrace();
+        await runTimer.timePhase('trace.finalize', () => session.finalizeTrace());
       } catch {
         // Preserve the original failure path; trace persistence is best-effort unless we pause.
       }
     }
 
     if (leaveBrowserOpenForManualReview) {
-      await session.closeSurplusBlankPages();
+      await runTimer.timePhase('browser.closeSurplusBlankPages', () =>
+        session.closeSurplusBlankPages()
+      );
       await logRunEvent(input.logEventsRepository, {
         applicationRunId: runningRun.id,
         jobId: job.id,
@@ -634,11 +731,12 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
           siteKey: siteFlow.siteKey,
           step: 'browser_left_open_for_review',
           pageUrl: session.page.url(),
-          reviewUrlBehavior: 'session_local_until_submit'
+          reviewUrlBehavior: 'session_local_until_submit',
+          runTimings: runTimer.snapshot()
         }
       });
     } else {
-      await session.close();
+      await runTimer.timePhase('session.close', () => session.close());
     }
   }
 }

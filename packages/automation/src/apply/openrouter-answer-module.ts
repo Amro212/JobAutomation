@@ -42,6 +42,7 @@ const MAX_CONTEXT_CHARS = 4_000;
 const MAX_RESUME_LATEX_CHARS = 20_000;
 const MAX_RESUME_EXCERPT_CHARS = 2_500;
 const MAX_RESUME_LINES = 12;
+const MAX_PROMPT_OPTIONS_PER_FIELD = 72;
 
 const RESUME_TECHNOLOGY_KEYWORDS = [
   'TypeScript',
@@ -822,12 +823,12 @@ function isLgbtqiaIdentificationPrompt(fingerprint: string): boolean {
 function detectFieldIntent(field: ScrapedApplicationField): PromptFieldIntent | null {
   const fingerprint = `${field.id} ${field.label}`;
 
-  if (isProfessionalExperienceBinaryPrompt(fingerprint)) {
-    return 'professional_experience_yes_no';
-  }
-
   if (isCompanyRelationshipPrompt(fingerprint)) {
     return 'company_relationship_yes_no';
+  }
+
+  if (isProfessionalExperienceBinaryPrompt(fingerprint)) {
+    return 'professional_experience_yes_no';
   }
 
   if (isConsentOrNoticePrompt(fingerprint)) {
@@ -1043,7 +1044,69 @@ function guidanceForAnswerability(
   }
 }
 
-function toPromptField(field: ScrapedApplicationField): PromptField {
+function addPromptOption(
+  output: ScrapedApplicationFieldOption[],
+  seen: Set<string>,
+  option: ScrapedApplicationFieldOption
+): void {
+  const key = `${option.value}\u0000${option.label}`;
+  if (seen.has(key)) {
+    return;
+  }
+
+  seen.add(key);
+  output.push(option);
+}
+
+function compactOptionsForPrompt(
+  field: ScrapedApplicationField,
+  serializedProfile?: SerializedApplicantProfile
+): ScrapedApplicationFieldOption[] {
+  if (field.options.length <= MAX_PROMPT_OPTIONS_PER_FIELD) {
+    return field.options;
+  }
+
+  const profileCorpus = serializedProfile
+    ? buildPromptOptionEvidenceCorpus(serializedProfile)
+    : '';
+  const output: ScrapedApplicationFieldOption[] = [];
+  const seen = new Set<string>();
+  const safeFallbackPattern =
+    /\b(?:other|not listed|prefer not|decline|none|no|yes|canada|united states|linkedin)\b/i;
+
+  for (const option of field.options) {
+    const label = normalizeTextForMatching(option.label);
+    const value = normalizeTextForMatching(String(option.value ?? ''));
+    const matchedByProfile =
+      profileCorpus.length > 0 &&
+      ((label.length >= 3 && profileCorpus.includes(label)) ||
+        (value.length >= 3 && profileCorpus.includes(value)));
+    const safeFallback =
+      safeFallbackPattern.test(option.label) ||
+      safeFallbackPattern.test(String(option.value ?? ''));
+
+    if (matchedByProfile || safeFallback) {
+      addPromptOption(output, seen, option);
+      if (output.length >= MAX_PROMPT_OPTIONS_PER_FIELD) {
+        return output;
+      }
+    }
+  }
+
+  for (const option of field.options) {
+    addPromptOption(output, seen, option);
+    if (output.length >= MAX_PROMPT_OPTIONS_PER_FIELD) {
+      return output;
+    }
+  }
+
+  return output;
+}
+
+function toPromptField(
+  field: ScrapedApplicationField,
+  serializedProfile?: SerializedApplicantProfile
+): PromptField {
   const answerability = classifyFieldAnswerability(field);
   const intent = detectFieldIntent(field);
   const targetCountryCode = inferCountryCodeFromText(`${field.id} ${field.label}`);
@@ -1056,7 +1119,7 @@ function toPromptField(field: ScrapedApplicationField): PromptField {
     required,
     requiredSources: field.requiredSources ?? [],
     enabled: field.enabled,
-    options: field.options,
+    options: compactOptionsForPrompt(field, serializedProfile),
     optionMode: field.optionMode ?? (field.options.length > 0 ? 'static' : 'none'),
     answerability,
     guidance: guidanceForAnswerability(answerability, intent, targetCountryCode),
@@ -1140,7 +1203,7 @@ function createPromptPayload(input: {
       normalizedJobCountryCode: inferCountryCodeFromText(input.job.location)
     },
     applicantProfile: input.serializedProfile,
-    fields: input.fields.map(toPromptField)
+    fields: input.fields.map((field) => toPromptField(field, input.serializedProfile))
   };
 }
 
@@ -1691,6 +1754,32 @@ function buildProfileEvidenceCorpus(serializedProfile: SerializedApplicantProfil
       serializedProfile.resumeContext.projectSignals.join('\n'),
       serializedProfile.resumeContext.achievementSignals.join('\n'),
       serializedProfile.resumeContext.stakeholderSignals.join('\n')
+    ].join('\n')
+  );
+}
+
+function buildPromptOptionEvidenceCorpus(serializedProfile: SerializedApplicantProfile): string {
+  return normalizeTextForMatching(
+    [
+      buildProfileEvidenceCorpus(serializedProfile),
+      Object.values(serializedProfile.identity).join('\n'),
+      serializedProfile.preferredCountries.join('\n'),
+      Object.values(serializedProfile.workAuthorization)
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .filter(
+          (value): value is string | boolean =>
+            typeof value === 'string' || typeof value === 'boolean'
+        )
+        .join('\n'),
+      Object.values(serializedProfile.preferences)
+        .filter((value): value is string => typeof value === 'string')
+        .join('\n'),
+      Object.values(serializedProfile.qualifications)
+        .filter((value): value is string => typeof value === 'string')
+        .join('\n'),
+      Object.values(serializedProfile.equalEmployment)
+        .filter((value): value is string => typeof value === 'string')
+        .join('\n')
     ].join('\n')
   );
 }
@@ -3287,7 +3376,7 @@ function normalizeFillPlan(
   const normalized = fields.map((field) =>
     normalizeEntryForField(
       field,
-      promptFieldById.get(field.id) ?? toPromptField(field),
+      promptFieldById.get(field.id) ?? toPromptField(field, serializedProfile),
       serializedProfile,
       job,
       firstEntryByFieldId.get(field.id)

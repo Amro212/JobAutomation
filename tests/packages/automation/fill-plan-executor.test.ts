@@ -2126,7 +2126,7 @@ describe('application fill plan executor', () => {
     });
   });
 
-  test('types text character-by-character instead of writing the full value at once', async () => {
+  test('types Lever text with one field-level typing action instead of per-character section pauses', async () => {
     await startServer(`
       <html>
         <body>
@@ -2148,9 +2148,9 @@ describe('application fill plan executor', () => {
     const result = await withPage(async (page) => {
       await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
 
-      await executeApplicationFillPlan({
+      const executionResult = await executeApplicationFillPlan({
         page,
-        boardEntry: boardEntry(),
+        boardEntry: boardEntry('lever'),
         fields: [
           {
             id: 'first_name',
@@ -2172,9 +2172,17 @@ describe('application fill plan executor', () => {
             skipReason: '',
           },
         ],
+        pacing: {
+          preFieldDelayMs: [1, 1],
+          postFieldDelayMs: [1, 1],
+          typingDelayMs: [1, 1],
+          preApplyReadDelayMs: [1, 1],
+          sectionReadDelayMs: [1, 1],
+        },
       });
 
       return {
+        executionResult,
         keys: await page.locator('#first_name').getAttribute('data-keys'),
         value: await page.locator('#first_name').inputValue(),
       };
@@ -2185,6 +2193,7 @@ describe('application fill plan executor', () => {
     );
     expect(printableKeys.slice(-6)).toEqual(['T', 'a', 'y', 'l', 'o', 'r']);
     expect(result.value).toBe('Taylor');
+    expect(result.executionResult.telemetry.totalTypingDurationMs).toBe(6);
   });
 
   test('selects all and backspaces before typing into prefilled text fields', async () => {

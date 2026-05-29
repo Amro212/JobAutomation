@@ -38,9 +38,13 @@ export function createDatabaseClient(explicitPath?: string): JobAutomationDataba
     url: resolveDatabaseUrl(databasePath)
   });
 
-  return drizzle(client, {
+  const db = drizzle(client, {
     schema
   });
+
+  void configureDatabaseClient(db).catch(() => null);
+
+  return db;
 }
 
 export async function configureDatabaseClient(db: JobAutomationDatabase): Promise<void> {

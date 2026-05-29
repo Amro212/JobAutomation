@@ -56,6 +56,16 @@ const CHALLENGE_PROBES: Record<SupportedApplicationBoard, ChallengeProbe[]> = {
   ],
   lever: [
     {
+      kind: 'captcha_detected',
+      message: 'Lever exposed an hCaptcha challenge.',
+      selectors: [
+        'iframe[src*="hcaptcha"]',
+        'iframe[title*="hCaptcha"]',
+        '[data-hcaptcha-widget-id]'
+      ],
+      textPattern: /hcaptcha|verify you are human|complete the security check/i
+    },
+    {
       kind: 'cloudflare_interstitial_detected',
       message: 'Lever exposed a Cloudflare or Turnstile interstitial.',
       selectors: [
