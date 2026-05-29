@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-const validReceiveChannels = new Set(['update-available', 'update-downloaded', 'camoufox-download-progress']);
+const validReceiveChannels = new Set([
+  'update-available',
+  'update-downloaded',
+  'update-error',
+  'update-status',
+  'backend-status',
+  'camoufox-download-progress'
+]);
 
 function onChannel<T>(channel: string, callback: (payload: T) => void): () => void {
   if (!validReceiveChannels.has(channel)) {
@@ -18,11 +25,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installUpdate: () => ipcRenderer.invoke('install-update'),
   getApiPort: () => ipcRenderer.invoke('get-api-port'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
+  getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
   minimizeToTray: () => ipcRenderer.send('minimize-to-tray'),
   onUpdateAvailable: (callback: (payload: unknown) => void) =>
     onChannel('update-available', callback),
   onUpdateDownloaded: (callback: (payload: unknown) => void) =>
     onChannel('update-downloaded', callback),
+  onUpdateError: (callback: (payload: unknown) => void) =>
+    onChannel('update-error', callback),
+  onUpdateStatus: (callback: (payload: unknown) => void) =>
+    onChannel('update-status', callback),
+  onBackendStatus: (callback: (payload: unknown) => void) =>
+    onChannel('backend-status', callback),
   onCamoufoxProgress: (callback: (payload: unknown) => void) =>
     onChannel('camoufox-download-progress', callback)
 });

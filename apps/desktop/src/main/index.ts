@@ -6,6 +6,7 @@ import {
   BrowserWindow,
   ipcMain,
   Notification,
+  dialog,
   type BrowserWindowConstructorOptions
 } from 'electron';
 import type Store from 'electron-store';
@@ -24,9 +25,20 @@ let mainWindow: BrowserWindow | null = null;
 let trayController: TrayController | null = null;
 let isQuitting = false;
 let autopilotStatus = 'Idle';
+let backendStatus: import('./api-process.js').ApiProcessState = { status: 'stopped' };
 const autoUpdater = new DesktopAutoUpdater();
 let configStore: Store<DesktopConfig>;
 let camoufoxManager: CamoufoxManager;
+let backendStatusBroadcastUnsubscribe: (() => void) | null = null;
+
+function broadcastToRenderer(channel: string, payload: unknown): void {
+  mainWindow?.webContents.send(channel, payload);
+}
+
+function refreshDesktopStatus(): void {
+  trayController?.refreshMenu();
+  broadcastToRenderer('backend-status', backendStatus);
+}
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -151,13 +163,40 @@ async function bootstrap(): Promise<void> {
     apiPort,
     dbPath: configStore.get('dbPath'),
     desktopRoot: app.getAppPath(),
-    packaged: app.isPackaged
+    packaged: app.isPackaged,
+    onStateChange: (state) => {
+      backendStatus = state;
+      refreshDesktopStatus();
+
+      if (state.status === 'restarting' && Notification.isSupported()) {
+        new Notification({
+          title: 'JobAutomation',
+          body: 'Backend restarting...'
+        }).show();
+      }
+
+      if (state.status === 'error') {
+        void dialog.showErrorBox('Backend Error', state.message);
+      }
+    }
+  });
+
+  backendStatusBroadcastUnsubscribe = autoUpdater.onStatusChange((status) => {
+    broadcastToRenderer('update-status', status);
+    if (status.state === 'available') {
+      broadcastToRenderer('update-available', status);
+    } else if (status.state === 'downloaded') {
+      broadcastToRenderer('update-downloaded', status);
+    } else if (status.state === 'error') {
+      broadcastToRenderer('update-error', status);
+    }
   });
 
   ipcMain.handle('get-app-version', () => app.getVersion());
   ipcMain.handle('get-api-port', () => apiPort);
   ipcMain.handle('get-platform', () => process.platform);
   ipcMain.handle('get-update-status', () => autoUpdater.getStatus());
+  ipcMain.handle('get-backend-status', () => backendStatus);
   ipcMain.handle('install-update', () => {
     autoUpdater.install();
   });
@@ -170,7 +209,7 @@ async function bootstrap(): Promise<void> {
   mainWindow = await createMainWindow();
   trayController = new TrayController({
     getWindow: () => mainWindow,
-    getAutopilotStatus: () => autopilotStatus,
+    getAutopilotStatus: () => `${autopilotStatus} | ${backendStatus.status}`,
     onStopAutopilot: async () => {
       await stopActiveAutopilot(apiProcess.apiBaseUrl);
       autopilotStatus = 'Stopping';
@@ -202,6 +241,8 @@ async function bootstrap(): Promise<void> {
 
   app.on('before-quit', async () => {
     isQuitting = true;
+    backendStatusBroadcastUnsubscribe?.();
+    autoUpdater.dispose();
     await apiProcess.stop();
   });
 

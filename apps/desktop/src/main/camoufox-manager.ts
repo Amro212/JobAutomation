@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
 import type Store from 'electron-store';
@@ -21,6 +22,17 @@ export class CamoufoxManager {
   }
 
   async ensureBinaryReady(): Promise<string | null> {
-    return this.getBinaryPath();
+    mkdirSync(this.getInstallDir(), { recursive: true });
+    const binaryPath = this.getBinaryPath();
+    if (!binaryPath) {
+      return null;
+    }
+
+    if (existsSync(binaryPath)) {
+      return binaryPath;
+    }
+
+    this.store.set('camoufoxBinaryPath', null);
+    return null;
   }
 }

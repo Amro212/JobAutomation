@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
 import { ApiConnectionGuard } from '@renderer/components/api-connection-guard';
@@ -11,6 +12,24 @@ const navItems = [
 ];
 
 export function DesktopLayout() {
+  const [backendStatus, setBackendStatus] = useState('Connecting backend...');
+
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api) {
+      setBackendStatus('Browser mode');
+      return;
+    }
+
+    void api.getBackendStatus().then((status) => {
+      setBackendStatus(formatBackendStatus(status));
+    });
+
+    return api.onBackendStatus((status) => {
+      setBackendStatus(formatBackendStatus(status));
+    });
+  }, []);
+
   return (
     <div className="desktop-shell">
       <aside className="sidebar">
@@ -36,7 +55,7 @@ export function DesktopLayout() {
 
         <div className="sidebar-footer">
           <div className="status-pill">Renderer online</div>
-          <p className="muted">API process status will surface here as the migration continues.</p>
+          <p className="muted">{backendStatus}</p>
         </div>
       </aside>
 
@@ -46,4 +65,29 @@ export function DesktopLayout() {
       </main>
     </div>
   );
+}
+
+function formatBackendStatus(
+  status:
+    | { status: 'stopped' }
+    | { status: 'starting' }
+    | { status: 'running' }
+    | { status: 'stopping' }
+    | { status: 'restarting'; attempt: number; delayMs: number }
+    | { status: 'error'; message: string }
+): string {
+  switch (status.status) {
+    case 'running':
+      return 'Backend connected';
+    case 'starting':
+      return 'Backend starting';
+    case 'stopping':
+      return 'Backend stopping';
+    case 'stopped':
+      return 'Backend stopped';
+    case 'restarting':
+      return `Backend restarting (attempt ${status.attempt})`;
+    case 'error':
+      return `Backend error: ${status.message}`;
+  }
 }

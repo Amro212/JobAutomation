@@ -1,9 +1,26 @@
-import { fork, type ChildProcess } from 'node:child_process';
+import {
+  fork,
+  type ChildProcess,
+  type ForkOptions
+} from 'node:child_process';
 import path from 'node:path';
 
 type ApiProcessMessage = {
   type?: string;
 };
+
+type ChildProcessLike = Pick<
+  ChildProcess,
+  'send' | 'kill' | 'on' | 'once' | 'off' | 'stdout' | 'stderr'
+>;
+
+export type ApiProcessState =
+  | { status: 'stopped' }
+  | { status: 'starting' }
+  | { status: 'running' }
+  | { status: 'stopping' }
+  | { status: 'restarting'; attempt: number; delayMs: number }
+  | { status: 'error'; message: string };
 
 export type ApiProcessOptions = {
   apiHost: string;
@@ -12,6 +29,11 @@ export type ApiProcessOptions = {
   desktopRoot: string;
   packaged: boolean;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
+  onStateChange?: (state: ApiProcessState) => void;
+  maxRestartAttempts?: number;
+  restartBaseDelayMs?: number;
+  childFactory?: (entry: string, options: ForkOptions) => ChildProcessLike;
+  healthCheck?: (apiBaseUrl: string) => Promise<void>;
 };
 
 function resolveApiEntry(options: Pick<ApiProcessOptions, 'desktopRoot' | 'packaged'>): string {
@@ -47,8 +69,11 @@ async function waitForHealth(apiBaseUrl: string, timeoutMs = 15000): Promise<voi
 }
 
 export class ApiProcessManager {
-  private child: ChildProcess | null = null;
+  private child: ChildProcessLike | null = null;
   private stopping = false;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private restartAttempts = 0;
+  private state: ApiProcessState = { status: 'stopped' };
   private readonly options: ApiProcessOptions;
 
   constructor(options: ApiProcessOptions) {
@@ -59,14 +84,22 @@ export class ApiProcessManager {
     return `http://${this.options.apiHost}:${this.options.apiPort}`;
   }
 
+  getState(): ApiProcessState {
+    return this.state;
+  }
+
   async start(): Promise<void> {
     if (this.child) {
       return;
     }
 
+    this.clearRestartTimer();
     this.stopping = false;
+    this.setState({ status: 'starting' });
     const entry = resolveApiEntry(this.options);
-    const child = fork(entry, {
+    const childFactory = this.options.childFactory ?? ((childEntry, childOptions) =>
+      fork(childEntry, childOptions));
+    const child = childFactory(entry, {
       cwd: this.options.desktopRoot,
       env: {
         ...process.env,
@@ -84,54 +117,75 @@ export class ApiProcessManager {
     child.once('exit', (code, signal) => {
       this.child = null;
       this.options.onExit?.(code, signal);
+      if (this.stopping) {
+        this.setState({ status: 'stopped' });
+        return;
+      }
+
+      void this.handleUnexpectedExit(code, signal);
     });
 
     this.child = child;
 
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error('API process did not report ready in time.'));
-      }, 15000);
-
-      const messageHandler = (message: ApiProcessMessage | string) => {
-        const type =
-          typeof message === 'string'
-            ? message
-            : typeof message === 'object' && message !== null
-              ? message.type
-              : undefined;
-
-        if (type === 'ready') {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
           cleanup();
-          resolve();
-        }
-      };
+          reject(new Error('API process did not report ready in time.'));
+        }, 15000);
 
-      const exitHandler = (code: number | null) => {
-        cleanup();
-        reject(new Error(`API process exited before ready (code=${String(code)}).`));
-      };
+        const messageHandler = (message: ApiProcessMessage | string) => {
+          const type =
+            typeof message === 'string'
+              ? message
+              : typeof message === 'object' && message !== null
+                ? message.type
+                : undefined;
 
-      const cleanup = () => {
-        clearTimeout(timeout);
-        child.off('message', messageHandler);
-        child.off('exit', exitHandler);
-      };
+          if (type === 'ready') {
+            cleanup();
+            resolve();
+          }
+        };
 
-      child.on('message', messageHandler);
-      child.on('exit', exitHandler);
-    });
+        const exitHandler = (code: number | null) => {
+          cleanup();
+          reject(new Error(`API process exited before ready (code=${String(code)}).`));
+        };
 
-    await waitForHealth(this.apiBaseUrl);
+        const cleanup = () => {
+          clearTimeout(timeout);
+          child.off('message', messageHandler);
+          child.off('exit', exitHandler);
+        };
+
+        child.on('message', messageHandler);
+        child.on('exit', exitHandler);
+      });
+
+      await (this.options.healthCheck ?? waitForHealth)(this.apiBaseUrl);
+      this.restartAttempts = 0;
+      this.setState({ status: 'running' });
+    } catch (error) {
+      this.child = null;
+      this.setState({
+        status: 'error',
+        message: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
+    this.clearRestartTimer();
     if (!this.child) {
+      this.stopping = true;
+      this.setState({ status: 'stopped' });
       return;
     }
 
     this.stopping = true;
+    this.setState({ status: 'stopping' });
     const child = this.child;
 
     await new Promise<void>((resolve) => {
@@ -146,5 +200,66 @@ export class ApiProcessManager {
 
       child.send({ type: 'shutdown' });
     });
+  }
+
+  private async handleUnexpectedExit(
+    code: number | null,
+    signal: NodeJS.Signals | null
+  ): Promise<void> {
+    if (this.stopping) {
+      return;
+    }
+
+    const maxRestartAttempts = this.options.maxRestartAttempts ?? 3;
+    if (this.restartAttempts >= maxRestartAttempts) {
+      this.setState({
+        status: 'error',
+        message: `API process exited unexpectedly (code=${String(code)}, signal=${String(signal)}).`
+      });
+      return;
+    }
+
+    this.restartAttempts += 1;
+    const delayMs = (this.options.restartBaseDelayMs ?? 1000) * 2 ** (this.restartAttempts - 1);
+    this.setState({
+      status: 'restarting',
+      attempt: this.restartAttempts,
+      delayMs
+    });
+
+    await new Promise<void>((resolve) => {
+      this.restartTimer = setTimeout(() => {
+        this.restartTimer = null;
+        resolve();
+      }, delayMs);
+    });
+
+    if (this.stopping || this.child) {
+      return;
+    }
+
+    try {
+      await this.start();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setState({
+        status: 'error',
+        message
+      });
+    }
+  }
+
+  private clearRestartTimer(): void {
+    if (!this.restartTimer) {
+      return;
+    }
+
+    clearTimeout(this.restartTimer);
+    this.restartTimer = null;
+  }
+
+  private setState(state: ApiProcessState): void {
+    this.state = state;
+    this.options.onStateChange?.(state);
   }
 }
