@@ -211,6 +211,26 @@ export async function getAutopilotSettings(): Promise<AutopilotSettingsRecord> {
   )).settings;
 }
 
+export async function updateAutopilotSettings(
+  payload: AutopilotConfigInput
+): Promise<AutopilotSettingsRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/autopilot-settings`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { settings: AutopilotSettingsRecord }).settings;
+}
+
 export async function createAutopilotRun(
   payload: AutopilotConfigInput = {}
 ): Promise<{ run: AutopilotRunRecord }> {
