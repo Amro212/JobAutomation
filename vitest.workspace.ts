@@ -22,6 +22,13 @@ export const workspaceProjects = [
   },
   {
     test: {
+      name: 'config',
+      environment: 'node',
+      include: ['tests/packages/config/**/*.test.ts']
+    }
+  },
+  {
+    test: {
       name: 'db',
       environment: 'node',
       include: ['tests/packages/db/**/*.test.ts']
