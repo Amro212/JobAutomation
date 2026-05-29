@@ -1,0 +1,42 @@
+{
+  "name": "@jobautomation/desktop",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
+    "dev:renderer": "vite --config vite.config.ts",
+    "dev:main": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
+    "dev:electron": "wait-on tcp:5173 file:dist/main/index.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build": "pnpm build:renderer && pnpm build:main && electron-builder --config electron-builder.yml",
+    "build:renderer": "vite build --config vite.config.ts",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:win": "pnpm build -- --win",
+    "build:mac": "pnpm build -- --mac"
+  },
+  "dependencies": {
+    "@jobautomation/core": "workspace:*",
+    "clsx": "^2.1.1",
+    "electron-store": "^10.1.0",
+    "electron-updater": "^6.6.2",
+    "lucide-react": "^0.577.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router": "^7.9.4",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.12",
+    "wait-on": "^8.0.5"
+  }
+}
