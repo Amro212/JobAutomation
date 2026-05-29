@@ -8,6 +8,7 @@
     "playwright:install": "playwright install chromium",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts",
+    "test:desktop-integration": "playwright test --config playwright.desktop.config.ts",
     "test:live-job-boards": "vitest run --config vitest.config.ts --project automation tests/packages/automation/live-job-board-apply.test.ts",
     "test:e2e": "playwright test",
     "dev:api": "pnpm --filter @jobautomation/api dev",

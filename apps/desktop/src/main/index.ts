@@ -31,6 +31,12 @@ let configStore: Store<DesktopConfig>;
 let camoufoxManager: CamoufoxManager;
 let backendStatusBroadcastUnsubscribe: (() => void) | null = null;
 
+function debugLog(message: string): void {
+  if (process.env.JOB_AUTOMATION_DESKTOP_DEBUG === '1') {
+    console.error(`[desktop-debug] ${message}`);
+  }
+}
+
 function broadcastToRenderer(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload);
 }
@@ -129,8 +135,10 @@ async function stopActiveAutopilot(apiBaseUrl: string): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  debugLog('bootstrap:start');
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
+    debugLog('bootstrap:no-lock');
     app.quit();
     return;
   }
@@ -149,10 +157,12 @@ async function bootstrap(): Promise<void> {
   });
 
   await app.whenReady();
+  debugLog('bootstrap:ready');
   autoUpdater.init();
   configStore = createDesktopConfigStore();
   camoufoxManager = new CamoufoxManager(configStore);
   await camoufoxManager.ensureBinaryReady();
+  debugLog('bootstrap:config-ready');
 
   const apiHost = configStore.get('apiHost');
   const apiPort = await findAvailableApiPort(apiHost, configStore.get('apiPort'));
@@ -176,7 +186,10 @@ async function bootstrap(): Promise<void> {
       }
 
       if (state.status === 'error') {
-        void dialog.showErrorBox('Backend Error', state.message);
+        console.error(`Desktop backend error: ${state.message}`);
+        if (process.env.JOB_AUTOMATION_DESKTOP_TEST !== '1') {
+          void dialog.showErrorBox('Backend Error', state.message);
+        }
       }
     }
   });
@@ -204,9 +217,12 @@ async function bootstrap(): Promise<void> {
     mainWindow?.hide();
   });
 
+  debugLog('bootstrap:api-starting');
   await apiProcess.start();
+  debugLog('bootstrap:api-running');
 
   mainWindow = await createMainWindow();
+  debugLog('bootstrap:window-created');
   trayController = new TrayController({
     getWindow: () => mainWindow,
     getAutopilotStatus: () => `${autopilotStatus} | ${backendStatus.status}`,
@@ -225,6 +241,7 @@ async function bootstrap(): Promise<void> {
     }
   });
   trayController.create();
+  debugLog('bootstrap:tray-created');
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();

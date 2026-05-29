@@ -132,6 +132,7 @@ export class ApiProcessManager {
             }
           : {})
       },
+      execPath: this.options.packaged ? process.execPath : 'node',
       execArgv: this.options.packaged ? [] : ['--import', 'tsx'],
       stdio: ['pipe', 'pipe', 'pipe', 'ipc']
     });

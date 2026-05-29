@@ -35,6 +35,10 @@ export class DesktopAutoUpdater {
   }
 
   init(): void {
+    if (process.env.JOB_AUTOMATION_DISABLE_AUTO_UPDATES === '1') {
+      return;
+    }
+
     this.updater.autoDownload = true;
 
     this.updater.on('checking-for-update', () => {
