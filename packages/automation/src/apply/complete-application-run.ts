@@ -4,6 +4,7 @@ import { basename, join } from 'node:path';
 import type { Page } from 'playwright';
 
 import type { ApplicationRunRecordLike } from './contracts';
+import { summarizeApplicationEvidenceDetails } from './evidence-details';
 
 function sanitizeSegment(value: string): string {
   return value
@@ -117,11 +118,10 @@ export async function completeApplicationRun(input: {
     level: 'info',
     message: input.message,
     detailsJson: JSON.stringify({
-      ...evidenceDetails,
+      ...summarizeApplicationEvidenceDetails(evidenceDetails),
       artifactId: screenshotArtifact.id,
       traceArtifactId: traceArtifact.id,
-      ...(detailsArtifact ? { detailsArtifactId: detailsArtifact.id } : {}),
-      ...(input.details ?? {})
+      ...(detailsArtifact ? { detailsArtifactId: detailsArtifact.id } : {})
     })
   });
 

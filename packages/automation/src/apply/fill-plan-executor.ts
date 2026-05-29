@@ -218,7 +218,7 @@ function createHumanActionEngine(input: {
         }
       }
 
-      if (input.board === 'greenhouse') {
+      if (input.board === 'greenhouse' || input.board === 'lever') {
         const keyDelay = randomBetween(pacing.typingDelayMs);
         await input.page.keyboard.type(value, { delay: keyDelay });
         metrics.typingDurationMs += Array.from(value).length * keyDelay;

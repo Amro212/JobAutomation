@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, max } from 'drizzle-orm';
+import { and, desc, eq, inArray, max } from 'drizzle-orm';
 
 import { artifactRecordSchema, type ArtifactRecord } from '@jobautomation/core';
 
@@ -51,6 +51,23 @@ export class ArtifactsRepository {
     const [record] = await this.db.select().from(artifactsTable).where(eq(artifactsTable.id, id));
 
     return record ? mapArtifactRecord(record) : null;
+  }
+
+  async findByIds(ids: string[]): Promise<Map<string, ArtifactRecord>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const records = await this.db
+      .select()
+      .from(artifactsTable)
+      .where(inArray(artifactsTable.id, ids));
+
+    const map = new Map<string, ArtifactRecord>();
+    for (const record of records) {
+      map.set(record.id, mapArtifactRecord(record));
+    }
+    return map;
   }
 
   async listByJob(jobId: string): Promise<ArtifactRecord[]> {

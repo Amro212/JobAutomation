@@ -5,8 +5,7 @@ import {
   autopilotRunRecordSchema,
   discoveryRunRecordSchema,
   type AutopilotConfig,
-  type AutopilotConfigInput,
-  jobRecordSchema
+  type AutopilotConfigInput
 } from '@jobautomation/core';
 import type { FastifyPluginAsync } from 'fastify';
 
@@ -38,20 +37,22 @@ function resolveAutopilotConfig(
 export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
   app.get('/autopilot-runs', async () => {
     const runs = await app.repositories.autopilotRuns.list();
-    const summaries = await Promise.all(
-      runs.map(async (run) => ({
-        run: autopilotRunRecordSchema.parse(run),
-        discoveryRun: run.discoveryRunId
-          ? await app.repositories.discoveryRuns.findById(run.discoveryRunId)
-          : null
-      }))
+
+    // Batch-fetch all referenced discovery runs instead of N individual findById calls
+    const discoveryRunIds = runs
+      .map((run) => run.discoveryRunId)
+      .filter((id): id is string => id != null);
+    const discoveryRunsMap = await app.repositories.discoveryRuns.findByIds(
+      [...new Set(discoveryRunIds)]
     );
 
     return {
-      runs: summaries.map((entry) => ({
-        run: entry.run,
-        discoveryRun: entry.discoveryRun
-          ? discoveryRunRecordSchema.parse(entry.discoveryRun)
+      runs: runs.map((run) => ({
+        run: autopilotRunRecordSchema.parse(run),
+        discoveryRun: run.discoveryRunId
+          ? discoveryRunsMap.get(run.discoveryRunId)
+            ? discoveryRunRecordSchema.parse(discoveryRunsMap.get(run.discoveryRunId)!)
+            : null
           : null
       }))
     };
@@ -68,26 +69,36 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
       ? await app.repositories.discoveryRuns.findById(run.discoveryRunId)
       : null;
     const childRuns = await app.repositories.applicationRuns.listByAutopilotRun(run.id);
-    const applications = await Promise.all(
-      childRuns.map(async (childRun) => {
-        const job = await app.repositories.jobs.findById(childRun.jobId);
+
+    // Batch-fetch only the fields the UI needs (title, companyName, location)
+    // instead of full JobRecord objects with descriptionText, rawPayload, etc.
+    // This keeps the response payload small even when there are many child runs.
+    const uniqueJobIds = [...new Set(childRuns.map((r) => r.jobId))];
+    const jobsMap = await app.repositories.jobs.findSummariesByIds(uniqueJobIds);
+
+    const applications = childRuns
+      .map((childRun) => {
+        const job = jobsMap.get(childRun.jobId);
         if (!job) {
           return null;
         }
 
         return {
           run: applicationRunRecordSchema.parse(childRun),
-          job: jobRecordSchema.parse(job)
+          job
         };
       })
-    );
+      .filter(
+        (value): value is NonNullable<typeof value> => value !== null
+      );
 
     return {
       run: autopilotRunRecordSchema.parse(run),
-      discoveryRun: discoveryRun ? discoveryRunRecordSchema.parse(discoveryRun) : null,
-      applications: applications.filter(
-        (value): value is NonNullable<typeof value> => value !== null
-      )
+      // Return only the id from discoveryRun — the UI uses it solely to render
+      // the "Open discovery run" button. The full record can contain megabyte-sized
+      // error_message blobs from Zod validation dumps that bloat the response.
+      discoveryRun: discoveryRun ? { id: discoveryRun.id } : null,
+      applications
     };
   });
 
@@ -155,26 +166,16 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/autopilot-runs/:runId/cancel', async (request, reply) => {
     const { runId } = request.params as { runId: string };
-    const existing = await app.repositories.autopilotRuns.findById(runId);
-    if (!existing) {
-      return reply.code(404).send({ message: 'Autopilot run not found.' });
-    }
 
-    if (existing.status !== 'pending' && existing.status !== 'running') {
-      return reply.code(409).send({ message: 'Run is not active.' });
-    }
-
-    const cancelled = await app.autopilotQueue.cancelRun(runId);
-    if (!cancelled) {
-      // Run exists but no active controller — update DB directly
-      await app.repositories.autopilotRuns.update(runId, {
+    const active = app.autopilotQueue.requestCancelRun(runId);
+    if (!active) {
+      void app.repositories.autopilotRuns.update(runId, {
         status: 'cancelled',
         currentStep: 'cancelled',
         completedAt: new Date()
-      });
+      }).catch(() => null);
     }
 
-    const updated = await app.repositories.autopilotRuns.findById(runId);
-    return { run: autopilotRunRecordSchema.parse(updated!) };
+    return { accepted: true, active };
   });
 };

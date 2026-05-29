@@ -57,6 +57,27 @@ describe('application trust runtime challenge detection', () => {
       })
     );
   });
+
+  test('treats Lever hCaptcha frames as a blocking challenge', async () => {
+    const page = createProbePage({
+      visibleSelectors: new Set(['iframe[src*="hcaptcha"]']),
+      visibleText: []
+    });
+
+    await expect(
+      detectApplicationChallenge({
+        page,
+        board: 'lever',
+        phase: 'before_scrape'
+      })
+    ).resolves.toEqual(
+      expect.objectContaining({
+        kind: 'captcha_detected',
+        phase: 'before_scrape',
+        selectors: expect.arrayContaining(['iframe[src*="hcaptcha"]'])
+      })
+    );
+  });
 });
 
 function createProbePage(input: {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import {
   discoverySourceInputSchema,
@@ -57,9 +57,18 @@ export class DiscoverySourcesRepository {
     return record ? mapDiscoverySource(record) : null;
   }
 
+  /** Batch fetch by IDs — single query instead of N individual findById calls. */
   async listByIds(ids: readonly string[]): Promise<DiscoverySourceRecord[]> {
-    const records = await Promise.all(ids.map((id) => this.findById(id)));
-    return records.filter((record): record is DiscoverySourceRecord => record !== null);
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const records = await this.db
+      .select()
+      .from(discoverySourcesTable)
+      .where(inArray(discoverySourcesTable.id, [...ids]));
+
+    return records.map(mapDiscoverySource);
   }
 
   async upsert(input: DiscoverySourceInput): Promise<DiscoverySourceRecord> {

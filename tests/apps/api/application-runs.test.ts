@@ -265,14 +265,17 @@ describe('application run routes', () => {
       );
     expect(pauseLog).toBeDefined();
     expect(pauseLog.detailsJson).toContain('"entryAction":"direct_form"');
-    expect(pauseLog.detailsJson).toContain('"label":"First Name"');
+    expect(pauseLog.detailsJson).toContain('"scrapedFieldCount"');
+    expect(pauseLog.detailsJson).toContain('"detailsArtifactId"');
+    expect(pauseLog.detailsJson).not.toContain('"label":"First Name"');
     expect(detailResponse.json().artifacts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'application-screenshot' }),
         expect.objectContaining({ kind: 'application-trace' }),
+        expect.objectContaining({ kind: 'application-evidence-json' }),
       ])
     );
-  }, 30000);
+  }, 60000);
 
   test('rejects starting an application run before job artifacts are generated', async () => {
     const job = await app.repositories.jobs.upsert({

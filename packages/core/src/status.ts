@@ -23,7 +23,8 @@ export const applicationRunStatusSchema = z.enum([
   'paused',
   'skipped',
   'completed',
-  'failed'
+  'failed',
+  'cancelled'
 ]);
 
 export const applicationRunTypeSchema = z.enum([

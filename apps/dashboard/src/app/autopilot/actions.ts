@@ -18,10 +18,18 @@ function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function stringArraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 async function updateAutopilotPreferredCountries(formData: FormData): Promise<void> {
   const preferredCountries = parseAutopilotPreferredCountries(formData);
   const { profile } = await getApplicantProfile();
   if (!profile) {
+    return;
+  }
+
+  if (stringArraysEqual(profile.preferredCountries, preferredCountries)) {
     return;
   }
 
@@ -36,8 +44,11 @@ export async function saveAutopilotSettingsAction(
   formData: FormData
 ): Promise<void> {
   try {
-    await updateAutopilotPreferredCountries(formData);
-    await updateAutopilotSettings(parseAutopilotSettingsFormData(formData));
+    const settings = parseAutopilotSettingsFormData(formData);
+    await Promise.all([
+      updateAutopilotPreferredCountries(formData),
+      updateAutopilotSettings(settings)
+    ]);
   } catch (error) {
     redirect(
       `/autopilot?error=${encodeURIComponent(
@@ -56,8 +67,9 @@ export async function launchAutopilotAction(formData: FormData): Promise<void> {
   let result: Awaited<ReturnType<typeof createAutopilotRun>>;
 
   try {
+    const settings = parseAutopilotSettingsFormData(formData);
     await updateAutopilotPreferredCountries(formData);
-    result = await createAutopilotRun(parseAutopilotSettingsFormData(formData));
+    result = await createAutopilotRun(settings);
   } catch (error) {
     redirect(
       `/autopilot?error=${encodeURIComponent(

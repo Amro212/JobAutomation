@@ -31,20 +31,17 @@ export default async function AutopilotPage({
 }) {
   const resolvedSearchParams = await searchParams;
 
-  async function cancelAutopilotAction(): Promise<void> {
+  async function cancelAutopilotAction(formData: FormData): Promise<void> {
     'use server';
 
-    const allRuns = await getAutopilotRuns();
-    const activeRun = allRuns.find(
-      (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
-    );
+    const selectedRunId = String(formData.get('runId') ?? '');
 
-    if (!activeRun) {
+    if (!selectedRunId) {
       redirect(`/autopilot?error=${encodeURIComponent('No active autopilot run to cancel.')}`);
     }
 
     try {
-      await cancelAutopilotRun(activeRun.run.id);
+      await cancelAutopilotRun(selectedRunId);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to stop autopilot.';
@@ -115,6 +112,7 @@ export default async function AutopilotPage({
           <div className="flex items-center gap-2">
             {hasActiveRun ? (
               <form action={cancelAutopilotAction}>
+                <input type="hidden" name="runId" value={activeRunEntry!.run.id} />
                 <SubmitButton variant="destructive" pendingText="Stopping...">
                   Stop autopilot
                 </SubmitButton>
