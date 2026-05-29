@@ -1,22 +1,32 @@
 import fp from 'fastify-plugin';
 
-import { AutopilotQueueService } from '../services/autopilot-queue';
+import type { AutopilotQueue } from '../services/autopilot-queue';
+import { WorkerAutopilotQueueService } from '../services/autopilot-queue';
+import { AutopilotWorkerThreadClient } from '../services/autopilot-worker-client';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    autopilotQueue: AutopilotQueueService;
+    autopilotQueue: AutopilotQueue;
   }
 }
 
 export const registerAutopilotExecutionPlugin = fp(async (app) => {
-  const queue = new AutopilotQueueService({
+  const workerClient = new AutopilotWorkerThreadClient({
+    config: app.config,
     repositories: app.repositories,
-    config: app.config
+    logger: {
+      error: (error) => app.log.error(error)
+    }
+  });
+  const queue = new WorkerAutopilotQueueService({
+    repositories: app.repositories,
+    workerClient
   });
 
   app.decorate('autopilotQueue', queue);
 
   app.addHook('onClose', async () => {
     await queue.onIdle();
+    await workerClient.dispose();
   });
 });

@@ -71,6 +71,18 @@ export type QueueAutopilotRunInput = {
   config: AutopilotConfig;
 };
 
+export interface AutopilotQueue {
+  enqueueRun(input: QueueAutopilotRunInput): void;
+  requestCancelRun(runId: string): boolean;
+  cancelRun(runId: string): Promise<boolean>;
+  onIdle(): Promise<void>;
+}
+
+export interface AutopilotWorkerClient {
+  executeRun(input: QueueAutopilotRunInput): Promise<void>;
+  cancelRun(runId: string): Promise<boolean>;
+}
+
 function allApplicationSites() {
   return [greenhouseApplicationSite, leverApplicationSite, ashbyApplicationSite];
 }
@@ -213,7 +225,7 @@ async function collectAutopilotJobIds(input: {
   return selectedIds;
 }
 
-export class AutopilotQueueService {
+export class AutopilotQueueService implements AutopilotQueue {
   private readonly queue: PQueue;
   private readonly runStructuredDiscoveryImpl: typeof runStructuredDiscovery;
   private readonly runPlaywrightDiscoveryImpl: typeof runPlaywrightDiscovery;
@@ -273,6 +285,17 @@ export class AutopilotQueueService {
       .catch(() => {
         // execution handles its own failure state
       });
+  }
+
+  async runNow(input: QueueAutopilotRunInput): Promise<void> {
+    const controller = new AbortController();
+    this.abortControllers.set(input.run.id, controller);
+
+    try {
+      await this.executeRun(input, controller.signal);
+    } finally {
+      this.abortControllers.delete(input.run.id);
+    }
   }
 
   requestCancelRun(runId: string): boolean {
@@ -911,5 +934,72 @@ export class AutopilotQueueService {
     } catch {
       // Best-effort process cleanup only.
     }
+  }
+}
+
+export class WorkerAutopilotQueueService implements AutopilotQueue {
+  private readonly queue = new PQueue({ concurrency: 1 });
+  private readonly pendingRunIds = new Set<string>();
+  private activeRunId: string | null = null;
+
+  constructor(
+    private readonly input: {
+      repositories: ApiRepositories;
+      workerClient: AutopilotWorkerClient;
+    }
+  ) {}
+
+  enqueueRun(input: QueueAutopilotRunInput): void {
+    this.pendingRunIds.add(input.run.id);
+
+    void this.queue
+      .add(async () => {
+        if (!this.pendingRunIds.delete(input.run.id)) {
+          return;
+        }
+
+        this.activeRunId = input.run.id;
+        try {
+          await this.input.workerClient.executeRun(input);
+        } finally {
+          if (this.activeRunId === input.run.id) {
+            this.activeRunId = null;
+          }
+        }
+      })
+      .catch(() => {
+        // Worker-side execution persists its own failure state.
+      });
+  }
+
+  requestCancelRun(runId: string): boolean {
+    if (this.activeRunId === runId) {
+      void this.input.workerClient.cancelRun(runId).catch(() => null);
+      return true;
+    }
+
+    this.pendingRunIds.delete(runId);
+    return false;
+  }
+
+  async cancelRun(runId: string): Promise<boolean> {
+    if (this.activeRunId === runId) {
+      return this.input.workerClient.cancelRun(runId);
+    }
+
+    const removed = this.pendingRunIds.delete(runId);
+    if (removed) {
+      await this.input.repositories.autopilotRuns.update(runId, {
+        status: 'cancelled',
+        currentStep: 'cancelled',
+        completedAt: new Date()
+      });
+    }
+
+    return removed;
+  }
+
+  async onIdle(): Promise<void> {
+    await this.queue.onIdle();
   }
 }

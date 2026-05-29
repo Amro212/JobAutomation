@@ -29,6 +29,21 @@ export interface ApiRepositories {
   logEvents: LogEventsRepository;
 }
 
+export function createApiRepositories(db: JobAutomationDatabase): ApiRepositories {
+  return {
+    applicationRuns: new ApplicationRunsRepository(db),
+    applicantProfile: new ApplicantProfileRepository(db),
+    autopilotSettings: new AutopilotSettingsRepository(db),
+    autopilotRuns: new AutopilotRunsRepository(db),
+    artifacts: new ArtifactsRepository(db),
+    discoveryRuns: new DiscoveryRunsRepository(db),
+    discoverySchedules: new DiscoverySchedulesRepository(db),
+    discoverySources: new DiscoverySourcesRepository(db),
+    jobs: new JobsRepository(db),
+    logEvents: new LogEventsRepository(db)
+  };
+}
+
 const STARTUP_STALE_APPLICATION_RUN_THRESHOLD_MS = 10 * 60 * 1000;
 
 async function recoverStaleApplicationRunsOnStartup(
@@ -73,18 +88,7 @@ export const registerDatabasePlugin = fp(async (app) => {
   const db = createDatabaseClient();
   await migrateDatabase(db);
 
-  const repositories = {
-    applicationRuns: new ApplicationRunsRepository(db),
-    applicantProfile: new ApplicantProfileRepository(db),
-    autopilotSettings: new AutopilotSettingsRepository(db),
-    autopilotRuns: new AutopilotRunsRepository(db),
-    artifacts: new ArtifactsRepository(db),
-    discoveryRuns: new DiscoveryRunsRepository(db),
-    discoverySchedules: new DiscoverySchedulesRepository(db),
-    discoverySources: new DiscoverySourcesRepository(db),
-    jobs: new JobsRepository(db),
-    logEvents: new LogEventsRepository(db)
-  };
+  const repositories = createApiRepositories(db);
 
   await recoverStaleApplicationRunsOnStartup(repositories);
 
