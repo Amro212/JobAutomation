@@ -10,6 +10,7 @@ export const JOB_MATCHER_VERSION = 'hybrid-v2';
 export const prefilterReasonSchema = z.enum([
   'title_negative',
   'title_no_match',
+  'location',
   'role_family_mismatch',
   'experience_min_years',
   'seniority_title_mismatch',
@@ -47,6 +48,7 @@ export type DeterministicMatchProfile = {
 
 export type PrefilterContext = {
   jobKeywordProfile: JobKeywordProfile | null;
+  preferredCountries: string[];
   matchProfile?: DeterministicMatchProfile;
 };
 
@@ -57,6 +59,7 @@ export function prefilterContextFromApplicant(profile: ApplicantProfile | null):
 
   return {
     jobKeywordProfile: profile?.jobKeywordProfile ?? null,
+    preferredCountries: profile?.preferredCountries ?? [],
     matchProfile: buildDeterministicMatchProfile(profile?.jobKeywordProfile ?? null, text)
   };
 }
@@ -65,6 +68,7 @@ export function prefilterContextFromApplicant(profile: ApplicantProfile | null):
 export function prefilterMatchesMeaningful(ctx: PrefilterContext): boolean {
   const profile = normalizeMatchProfile(ctx);
   return (
+    ctx.preferredCountries.length > 0 ||
     ctx.jobKeywordProfile != null ||
     profile.skills.length > 0 ||
     profile.titleTerms.length > 0 ||
@@ -472,6 +476,30 @@ function passesSeniorityTitleFilter(
 
 export type PrefilterJobInput = Pick<JobRecord, 'title' | 'location' | 'remoteType' | 'descriptionText'>;
 
+function isGenericRemoteLocation(location: string): boolean {
+  if (!location) {
+    return true;
+  }
+
+  return /^(remote|anywhere|worldwide|global|distributed|work from home|wfh)$/i.test(location);
+}
+
+function passesLocationFilter(job: PrefilterJobInput, preferredCountries: string[]): boolean {
+  if (preferredCountries.length === 0) {
+    return true;
+  }
+
+  const location = normalizeComparable(job.location);
+
+  if (job.remoteType === 'remote' && isGenericRemoteLocation(location)) {
+    return true;
+  }
+
+  return preferredCountries.some((code) =>
+    getCountrySearchTokens(code).some((token) => location.includes(token))
+  );
+}
+
 function scoreJobMatch(
   job: PrefilterJobInput,
   ctx: PrefilterContext,
@@ -526,12 +554,12 @@ function scoreJobMatch(
   if (targetTitleMatch) {
     score += 30;
     signals.push('target_title');
-  } else if (titleOverlap.length > 0) {
-    score += Math.min(30, titleOverlap.length * 10);
-    signals.push('profile_title_overlap');
   } else if (keywordTitleMatch) {
     score += 20;
     signals.push('target_title');
+  } else if (titleOverlap.length > 0) {
+    score += Math.min(30, titleOverlap.length * 10);
+    signals.push('profile_title_overlap');
   }
 
   if (profileTermOverlap.length > 0) {
@@ -584,6 +612,10 @@ export function prefilterJob(job: PrefilterJobInput, ctx: PrefilterContext): Pre
   const roleFamily = passesRoleFamilyFilter(job.title, profile);
   if (!roleFamily.pass) {
     reasons.push('role_family_mismatch');
+  }
+
+  if (!passesLocationFilter(job, ctx.preferredCountries)) {
+    reasons.push('location');
   }
 
   const expReason = passesExperienceFilter(job.descriptionText, profile);

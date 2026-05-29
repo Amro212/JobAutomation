@@ -7,6 +7,7 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${dashboard
 
 export default defineConfig({
   testDir: './tests/apps/dashboard',
+  testMatch: '**/*.spec.ts',
   fullyParallel: false,
   workers: 1,
   reporter: 'list',
