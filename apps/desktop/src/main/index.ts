@@ -13,7 +13,10 @@ import type Store from 'electron-store';
 
 import { DesktopAutoUpdater } from './auto-updater.js';
 import { ApiProcessManager } from './api-process.js';
-import { CamoufoxManager } from './camoufox-manager.js';
+import {
+  CamoufoxManager,
+  type CamoufoxDownloadStatus
+} from './camoufox-manager.js';
 import {
   createDesktopConfigStore,
   findAvailableApiPort,
@@ -30,6 +33,10 @@ const autoUpdater = new DesktopAutoUpdater();
 let configStore: Store<DesktopConfig>;
 let camoufoxManager: CamoufoxManager;
 let backendStatusBroadcastUnsubscribe: (() => void) | null = null;
+let camoufoxStatus: CamoufoxDownloadStatus = {
+  state: 'idle',
+  message: 'Camoufox setup pending.'
+};
 
 function debugLog(message: string): void {
   if (process.env.JOB_AUTOMATION_DESKTOP_DEBUG === '1') {
@@ -44,6 +51,7 @@ function broadcastToRenderer(channel: string, payload: unknown): void {
 function refreshDesktopStatus(): void {
   trayController?.refreshMenu();
   broadcastToRenderer('backend-status', backendStatus);
+  broadcastToRenderer('camoufox-download-progress', camoufoxStatus);
 }
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -160,8 +168,13 @@ async function bootstrap(): Promise<void> {
   debugLog('bootstrap:ready');
   autoUpdater.init();
   configStore = createDesktopConfigStore();
-  camoufoxManager = new CamoufoxManager(configStore);
-  await camoufoxManager.ensureBinaryReady();
+  camoufoxManager = new CamoufoxManager(configStore, {
+    onStatusChange: (status) => {
+      camoufoxStatus = status;
+      broadcastToRenderer('camoufox-download-progress', status);
+    }
+  });
+  camoufoxStatus = camoufoxManager.getStatus();
   debugLog('bootstrap:config-ready');
 
   const apiHost = configStore.get('apiHost');
@@ -210,8 +223,13 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle('get-platform', () => process.platform);
   ipcMain.handle('get-update-status', () => autoUpdater.getStatus());
   ipcMain.handle('get-backend-status', () => backendStatus);
+  ipcMain.handle('get-camoufox-status', () => camoufoxStatus);
   ipcMain.handle('install-update', () => {
     autoUpdater.install();
+  });
+  ipcMain.handle('retry-camoufox-download', async () => {
+    await camoufoxManager.retryDownload();
+    return camoufoxManager.getStatus();
   });
   ipcMain.on('minimize-to-tray', () => {
     mainWindow?.hide();
@@ -242,6 +260,11 @@ async function bootstrap(): Promise<void> {
   });
   trayController.create();
   debugLog('bootstrap:tray-created');
+  refreshDesktopStatus();
+
+  void camoufoxManager.ensureBinaryReady().catch((error) => {
+    console.error('Camoufox setup failed:', error);
+  });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();

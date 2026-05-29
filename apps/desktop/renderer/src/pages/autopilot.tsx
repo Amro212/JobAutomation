@@ -9,6 +9,7 @@ import {
   getAutopilotSettings,
   updateAutopilotSettings
 } from '@renderer/lib/api';
+import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
 
 type AutopilotFormState = {
   artifactMode: 'both' | 'resume' | 'cover-letter';
@@ -29,6 +30,7 @@ function formStateFromSettings(settings: AutopilotSettingsRecord): AutopilotForm
 }
 
 export function AutopilotPage() {
+  const { status: camoufoxStatus } = useCamoufoxStatus();
   const [settings, setSettings] = useState<AutopilotSettingsRecord | null>(null);
   const [formState, setFormState] = useState<AutopilotFormState>({
     artifactMode: 'both',
@@ -168,6 +170,9 @@ export function AutopilotPage() {
     }
   };
 
+  const camoufoxReady = camoufoxStatus.state === 'ready';
+  const startDisabled = submitting || Boolean(activeRun) || !camoufoxReady;
+
   return (
     <div className="grid">
       <section className="hero">
@@ -179,7 +184,7 @@ export function AutopilotPage() {
           <button
             className="button primary"
             onClick={handleStart}
-            disabled={submitting || Boolean(activeRun)}
+            disabled={startDisabled}
           >
             Start Autopilot
           </button>
@@ -197,6 +202,11 @@ export function AutopilotPage() {
             View History
           </Link>
         </div>
+        {!camoufoxReady ? (
+          <p className="section-copy">
+            Autopilot stays locked until Camoufox finishes setup.
+          </p>
+        ) : null}
         {errorMessage ? <p className="error-copy">{errorMessage}</p> : null}
       </section>
 

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
 import { ApiConnectionGuard } from '@renderer/components/api-connection-guard';
+import { CamoufoxSetupBanner } from '@renderer/components/camoufox-setup-banner';
+import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
 
 const navItems = [
   { to: '/autopilot', label: 'Autopilot' },
@@ -13,6 +15,7 @@ const navItems = [
 
 export function DesktopLayout() {
   const [backendStatus, setBackendStatus] = useState('Connecting backend...');
+  const { status: camoufoxStatus } = useCamoufoxStatus();
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -54,13 +57,21 @@ export function DesktopLayout() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="status-pill">Renderer online</div>
+          <div className="status-pill">
+            {camoufoxStatus.state === 'ready' ? 'Runtime ready' : 'Runtime setup'}
+          </div>
           <p className="muted">{backendStatus}</p>
+          <p className="muted">
+            {camoufoxStatus.state === 'ready'
+              ? 'Camoufox downloaded'
+              : camoufoxStatus.message}
+          </p>
         </div>
       </aside>
 
       <main className="content">
         <ApiConnectionGuard />
+        <CamoufoxSetupBanner />
         <Outlet />
       </main>
     </div>

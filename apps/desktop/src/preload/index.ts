@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getApiPort: () => ipcRenderer.invoke('get-api-port'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   getBackendStatus: () => ipcRenderer.invoke('get-backend-status'),
+  getCamoufoxStatus: () => ipcRenderer.invoke('get-camoufox-status'),
+  retryCamoufoxDownload: () => ipcRenderer.invoke('retry-camoufox-download'),
   minimizeToTray: () => ipcRenderer.send('minimize-to-tray'),
   onUpdateAvailable: (callback: (payload: unknown) => void) =>
     onChannel('update-available', callback),
