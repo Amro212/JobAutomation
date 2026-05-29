@@ -1,19 +1,22 @@
 {
   "name": "@jobautomation/desktop",
   "private": true,
+  "version": "0.1.0",
+  "description": "Electron desktop shell for JobAutomation",
+  "author": "Amro212",
   "type": "module",
-  "main": "dist/main/index.js",
+  "main": "dist/main/main/index.js",
   "scripts": {
-    "dev": "concurrently -k \"pnpm dev:renderer\" \"pnpm dev:main\" \"pnpm dev:electron\"",
+    "dev": "concurrently -k \"corepack pnpm dev:renderer\" \"corepack pnpm dev:main\" \"corepack pnpm dev:electron\"",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
-    "dev:electron": "wait-on tcp:5173 file:dist/main/index.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
-    "build": "pnpm build:renderer && pnpm build:main && pnpm build:api && electron-builder --config electron-builder.yml",
+    "dev:electron": "wait-on tcp:5173 file:dist/main/main/index.js && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build": "corepack pnpm build:renderer && corepack pnpm build:main && corepack pnpm build:api && node scripts/run-electron-builder.mjs",
     "build:api": "node scripts/build-api.mjs",
     "build:renderer": "vite build --config vite.config.ts",
     "build:main": "tsc -p tsconfig.main.json",
-    "build:win": "pnpm build -- --win",
-    "build:mac": "pnpm build -- --mac"
+    "build:win": "corepack pnpm build -- --win",
+    "build:mac": "corepack pnpm build -- --mac"
   },
   "dependencies": {
     "@libsql/client": "^0.15.15",

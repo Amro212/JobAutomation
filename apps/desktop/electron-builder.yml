@@ -13,6 +13,8 @@ extraResources:
     to: api
 win:
   target: nsis
+  signAndEditExecutable: false
+  verifyUpdateCodeSignature: false
 mac:
   target:
     - target: dmg

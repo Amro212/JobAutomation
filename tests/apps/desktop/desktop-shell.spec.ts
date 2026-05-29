@@ -11,7 +11,7 @@ const workspaceRoot = path.resolve(
   '..'
 );
 const desktopRoot = path.join(workspaceRoot, 'apps', 'desktop');
-const desktopMainEntry = path.join(desktopRoot, 'dist', 'main', 'index.js');
+const desktopMainEntry = path.join(desktopRoot, 'dist', 'main', 'main', 'index.js');
 const requireFromDesktop = createRequire(path.join(desktopRoot, 'package.json'));
 const electronExecutable = requireFromDesktop('electron');
 
