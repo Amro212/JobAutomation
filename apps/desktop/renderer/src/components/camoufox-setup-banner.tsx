@@ -32,7 +32,7 @@ export function CamoufoxSetupBanner() {
       <div className="runtime-banner-card">
         <div className="runtime-banner-copy">
           <strong>Camoufox setup</strong>
-          <p className="section-copy">{status.message}</p>
+          <p className="text-sm text-muted-foreground mb-6">{status.message}</p>
           {status.state === 'downloading' ? (
             <div className="progress-block">
               <div className="progress-track" aria-hidden="true">
@@ -50,7 +50,7 @@ export function CamoufoxSetupBanner() {
         </div>
 
         {status.state === 'error' ? (
-          <button className="button" onClick={handleRetry} disabled={retrying}>
+          <button className="inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium transition-colors bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-white/5 h-10 px-4 py-2" onClick={handleRetry} disabled={retrying}>
             {retrying ? 'Retrying...' : 'Retry Download'}
           </button>
         ) : null}

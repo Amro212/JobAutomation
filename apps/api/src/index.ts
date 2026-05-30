@@ -16,6 +16,7 @@ async function start(): Promise<void> {
     childLifecycle.notifyReady();
   } catch (error) {
     childLifecycle.dispose();
+    console.error('API START ERROR:', error);
     app.log.error(error);
     process.exitCode = 1;
   }

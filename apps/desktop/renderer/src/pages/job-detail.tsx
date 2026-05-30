@@ -13,23 +13,23 @@ export function JobDetailPage() {
 
   if (!job) {
     return (
-      <section className="card">
-        <p className="section-copy">Job not found.</p>
+      <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
+        <p className="text-sm text-muted-foreground mb-6">Job not found.</p>
       </section>
     );
   }
 
   return (
     <div className="grid">
-      <section className="hero">
-        <h1 className="section-title">{job.title}</h1>
-        <p className="section-copy">
+      <section className="p-8 rounded-[2rem] border border-border bg-card/60 backdrop-blur-3xl shadow-[0_20px_60px_rgba(2,6,23,0.32)]">
+        <h1 className="text-xl font-semibold mb-2">{job.title}</h1>
+        <p className="text-sm text-muted-foreground mb-6">
           {job.companyName} | {job.location || 'Unspecified'} | {job.status}
         </p>
       </section>
 
-      <section className="card">
-        <h2 className="section-title">Description</h2>
+      <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
+        <h2 className="text-xl font-semibold mb-2">Description</h2>
         <p className="preformatted-copy">{job.descriptionText || 'No description captured.'}</p>
       </section>
     </div>

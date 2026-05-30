@@ -20,18 +20,18 @@ export function ApplicationsPage() {
 
   return (
     <div className="grid">
-      <section className="hero">
-        <h1 className="section-title">Applications</h1>
-        <p className="section-copy">
+      <section className="p-8 rounded-[2rem] border border-border bg-card/60 backdrop-blur-3xl shadow-[0_20px_60px_rgba(2,6,23,0.32)]">
+        <h1 className="text-xl font-semibold mb-2">Applications</h1>
+        <p className="text-sm text-muted-foreground mb-6">
           Application runs and their artifacts stay attached to the same API records already used in production.
         </p>
       </section>
 
-      <section className="card">
+      <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
         {runs.length === 0 ? (
-          <p className="section-copy">No application runs have been recorded yet.</p>
+          <p className="text-sm text-muted-foreground mb-6">No application runs have been recorded yet.</p>
         ) : (
-          <table className="table">
+          <table className="w-full text-sm text-left">
             <thead>
               <tr>
                 <th>Run</th>
@@ -43,7 +43,7 @@ export function ApplicationsPage() {
               {runs.map((run) => (
                 <tr key={run.id}>
                   <td>
-                    <Link className="table-link" to={`/applications/${run.id}`}>
+                    <Link className="text-sky-400 hover:text-sky-300 transition-colors font-medium" to={`/applications/${run.id}`}>
                       {run.id.slice(0, 8)}
                     </Link>
                   </td>

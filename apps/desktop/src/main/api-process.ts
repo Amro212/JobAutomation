@@ -27,6 +27,8 @@ export type ApiProcessOptions = {
   apiPort: number;
   dbPath: string;
   desktopRoot: string;
+  /** Monorepo workspace root (apps/desktop/../..) — used in dev to locate the API source. */
+  workspaceRoot?: string;
   packaged: boolean;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
   onStateChange?: (state: ApiProcessState) => void;
@@ -36,12 +38,15 @@ export type ApiProcessOptions = {
   healthCheck?: (apiBaseUrl: string) => Promise<void>;
 };
 
-function resolveApiEntry(options: Pick<ApiProcessOptions, 'desktopRoot' | 'packaged'>): string {
+function resolveApiEntry(options: Pick<ApiProcessOptions, 'desktopRoot' | 'packaged' | 'workspaceRoot'>): string {
   if (options.packaged) {
     return path.join(process.resourcesPath, 'api', 'index.js');
   }
 
-  return path.resolve(options.desktopRoot, '../api/src/index.ts');
+  // In dev the API source lives at <workspaceRoot>/apps/api/src/index.ts.
+  // If workspaceRoot is not provided, fall back to navigating from desktopRoot.
+  const base = options.workspaceRoot ?? path.resolve(options.desktopRoot, '..', '..');
+  return path.join(base, 'apps', 'api', 'src', 'index.ts');
 }
 
 async function waitForHealth(apiBaseUrl: string, timeoutMs = 15000): Promise<void> {
@@ -116,6 +121,7 @@ export class ApiProcessManager {
         ),
         ...(this.options.packaged
           ? {
+              ELECTRON_RUN_AS_NODE: '1',
               JOB_AUTOMATION_AUTOPILOT_WORKER_ENTRY: path.join(
                 process.resourcesPath,
                 'api',

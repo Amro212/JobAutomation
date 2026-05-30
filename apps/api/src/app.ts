@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import fastifyCors from '@fastify/cors';
+
 import { registerApplicantProfileRoutes } from './routes/applicant-profile';
 import { registerArtifactsRoutes } from './routes/artifacts';
 import { registerApplicationRunRoutes } from './routes/application-runs.ts';
@@ -18,7 +20,12 @@ import { registerDiscoveryExecutionPlugin } from './plugins/discovery-execution'
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
-    logger: false
+    logger: true
+  });
+
+  app.register(fastifyCors, {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
   });
 
   app.register(registerConfigPlugin);

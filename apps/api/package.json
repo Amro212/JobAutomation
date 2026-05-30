@@ -7,6 +7,7 @@
     "test": "vitest run --root ../.. --config vitest.config.ts --project api"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@jobautomation/automation": "workspace:*",
     "@jobautomation/config": "workspace:*",
     "@jobautomation/core": "workspace:*",

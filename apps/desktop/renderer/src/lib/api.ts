@@ -47,17 +47,83 @@ export type AutopilotRunDetail = AutopilotRunSummary & {
   applications: AutopilotApplicationSummary[];
 };
 
-let apiBaseUrlPromise: Promise<string> | null = null;
+let cachedApiBaseUrl: string | null = null;
 
 export async function getApiBaseUrl(): Promise<string> {
-  if (!apiBaseUrlPromise) {
-    apiBaseUrlPromise = (async () => {
-      const port = (await window.electronAPI?.getApiPort?.()) ?? 3001;
-      return `http://127.0.0.1:${port}`;
-    })();
+  if (cachedApiBaseUrl) {
+    return cachedApiBaseUrl;
   }
 
-  return apiBaseUrlPromise;
+  // 1. Try to get port from Electron API if available
+  let port: number | undefined;
+  if (window.electronAPI?.getApiPort) {
+    try {
+      port = await window.electronAPI.getApiPort();
+      console.log(`[api-client] Electron-provided API port candidate: ${port}`);
+    } catch (err) {
+      console.warn('[api-client] Failed to fetch port from window.electronAPI:', err);
+    }
+  }
+
+  // 2. If we got a port from Electron, verify if it is healthy
+  if (port) {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 1000);
+      const res = await fetch(`http://127.0.0.1:${port}/health`, {
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(id);
+      if (res.ok) {
+        const url = `http://127.0.0.1:${port}`;
+        cachedApiBaseUrl = url;
+        console.log(`[api-client] Connected to Electron API at ${url}`);
+        return url;
+      }
+    } catch {
+      console.warn(`[api-client] API on Electron port ${port} is not online yet.`);
+      // If the Electron-provided port is not online yet, don't cache it,
+      // but return it as a temporary candidate so we don't scan needlessly.
+      return `http://127.0.0.1:${port}`;
+    }
+  }
+
+  // 3. Fallback/Scan: Try scanning local ports 3001-3010 (useful in browser mode)
+  console.log('[api-client] Scanning local ports 3001-3010 for API...');
+  const ports = Array.from({ length: 10 }, (_, i) => 3001 + i);
+  const checkPort = async (p: number): Promise<number> => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 800);
+    try {
+      const res = await fetch(`http://127.0.0.1:${p}/health`, {
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(id);
+      if (res.ok) {
+        const data = (await res.json()) as { ok?: boolean };
+        if (data && (data.ok === true || typeof data.ok === 'boolean')) {
+          return p;
+        }
+      }
+      throw new Error('Not ok');
+    } catch (e) {
+      clearTimeout(id);
+      throw e;
+    }
+  };
+
+  try {
+    const scannedPort = await Promise.any(ports.map(checkPort));
+    const url = `http://127.0.0.1:${scannedPort}`;
+    cachedApiBaseUrl = url;
+    console.log(`[api-client] Discovered healthy local API at ${url} via port scan`);
+    return url;
+  } catch {
+    // If all fail, return default but do NOT cache it, so we retry scanning next time
+    return 'http://127.0.0.1:3001';
+  }
 }
 
 export async function buildArtifactFileUrl(
@@ -109,8 +175,13 @@ async function fetchFromApi<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function getHealth(): Promise<{ ok: boolean }> {
-  return fetchFromApi('/health');
+export async function getHealth(): Promise<{ ok: boolean }> {
+  try {
+    return await fetchFromApi('/health');
+  } catch (error) {
+    const url = await getApiBaseUrl();
+    throw new Error(`Failed fetching ${url}/health: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export function getJobs(

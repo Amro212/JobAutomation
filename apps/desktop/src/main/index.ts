@@ -58,6 +58,10 @@ function refreshDesktopStatus(): void {
 }
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
+// currentDir = dist/main/main — navigate up to the desktop package root
+const desktopRoot = path.resolve(currentDir, '..', '..', '..');
+// The workspace root (two more levels up from apps/desktop)
+const workspaceRoot = path.resolve(desktopRoot, '..', '..');
 
 function getWindowOptions(store: { get: <K extends keyof DesktopConfig>(key: K) => DesktopConfig[K] }): BrowserWindowConstructorOptions {
   const bounds = store.get('windowBounds');
@@ -84,7 +88,11 @@ function getRendererEntry(): string {
     return devServerUrl;
   }
 
-  return `file://${path.resolve(app.getAppPath(), 'dist/renderer/index.html')}`;
+  // currentDir is dist/main/main — go up 3 levels to the desktop root,
+  // then into dist/renderer. (app.getAppPath() returns the entry-point dir
+  // in dev, not the package root, so we cannot use it here.)
+  const desktopRoot = path.resolve(currentDir, '..', '..', '..');
+  return `file://${path.join(desktopRoot, 'dist', 'renderer', 'index.html')}`;
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
@@ -252,7 +260,8 @@ async function bootstrap(): Promise<void> {
     apiHost,
     apiPort,
     dbPath: configStore.get('dbPath'),
-    desktopRoot: app.getAppPath(),
+    desktopRoot,
+    workspaceRoot,
     packaged: app.isPackaged,
     onStateChange: (state) => {
       backendStatus = state;

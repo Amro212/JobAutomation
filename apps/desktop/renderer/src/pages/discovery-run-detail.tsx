@@ -13,27 +13,27 @@ export function DiscoveryRunDetailPage() {
 
   if (!detail) {
     return (
-      <section className="card">
-        <p className="section-copy">Discovery run not found.</p>
+      <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
+        <p className="text-sm text-muted-foreground mb-6">Discovery run not found.</p>
       </section>
     );
   }
 
   return (
     <div className="grid">
-      <section className="hero">
-        <h1 className="section-title">Discovery Run {detail.run.id.slice(0, 8)}</h1>
-        <p className="section-copy">
+      <section className="p-8 rounded-[2rem] border border-border bg-card/60 backdrop-blur-3xl shadow-[0_20px_60px_rgba(2,6,23,0.32)]">
+        <h1 className="text-xl font-semibold mb-2">Discovery Run {detail.run.id.slice(0, 8)}</h1>
+        <p className="text-sm text-muted-foreground mb-6">
           Status: {detail.run.status} | Source: {detail.run.sourceKind} | Logs: {detail.logs.length}
         </p>
       </section>
 
-      <section className="card">
-        <h2 className="section-title">Source summaries</h2>
+      <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
+        <h2 className="text-xl font-semibold mb-2">Source summaries</h2>
         {detail.sourceSummaries.length === 0 ? (
-          <p className="section-copy">No source summary rows recorded.</p>
+          <p className="text-sm text-muted-foreground mb-6">No source summary rows recorded.</p>
         ) : (
-          <table className="table">
+          <table className="w-full text-sm text-left">
             <thead>
               <tr>
                 <th>Source</th>
