@@ -97,6 +97,9 @@ export class ApiProcessManager {
     this.stopping = false;
     this.setState({ status: 'starting' });
     const entry = resolveApiEntry(this.options);
+    console.error(`[api-process] Forking API from: ${entry}`);
+    console.error(`[api-process] CWD: ${this.options.desktopRoot}`);
+    console.error(`[api-process] Packaged: ${String(this.options.packaged)}`);
     const childFactory = this.options.childFactory ?? ((childEntry, childOptions) =>
       fork(childEntry, childOptions));
     const child = childFactory(entry, {
@@ -137,9 +140,19 @@ export class ApiProcessManager {
       stdio: ['pipe', 'pipe', 'pipe', 'ipc']
     });
 
-    child.stdout?.on('data', (chunk) => process.stdout.write(chunk));
-    child.stderr?.on('data', (chunk) => process.stderr.write(chunk));
+    child.stdout?.on('data', (chunk) => {
+      console.error(`[api-stdout] ${chunk.toString().trimEnd()}`);
+      process.stdout.write(chunk);
+    });
+    child.stderr?.on('data', (chunk) => {
+      console.error(`[api-stderr] ${chunk.toString().trimEnd()}`);
+      process.stderr.write(chunk);
+    });
+    child.on('error', (error) => {
+      console.error(`[api-process] Fork error:`, error);
+    });
     child.once('exit', (code, signal) => {
+      console.error(`[api-process] Child exited: code=${String(code)}, signal=${String(signal)}`);
       this.child = null;
       this.options.onExit?.(code, signal);
       if (this.stopping) {

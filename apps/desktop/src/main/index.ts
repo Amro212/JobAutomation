@@ -313,10 +313,8 @@ async function bootstrap(): Promise<void> {
     mainWindow?.hide();
   });
 
-  debugLog('bootstrap:api-starting');
-  await apiProcess.start();
-  debugLog('bootstrap:api-running');
-
+  // Create window and tray FIRST so the user always sees the app,
+  // even while the backend is still starting up.
   mainWindow = await createMainWindow();
   debugLog('bootstrap:window-created');
   trayController = new TrayController({
@@ -342,12 +340,20 @@ async function bootstrap(): Promise<void> {
   debugLog('bootstrap:tray-created');
   refreshDesktopStatus();
 
-  void camoufoxManager.ensureBinaryReady().catch((error) => {
-    console.error('Camoufox setup failed:', error);
-  });
-
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+  });
+
+  // Start the API in the background so the window appears immediately.
+  debugLog('bootstrap:api-starting');
+  apiProcess.start().then(() => {
+    debugLog('bootstrap:api-running');
+  }).catch((error) => {
+    console.error('API process failed to start:', error);
+  });
+
+  void camoufoxManager.ensureBinaryReady().catch((error) => {
+    console.error('Camoufox setup failed:', error);
   });
 
   app.on('activate', async () => {
@@ -374,4 +380,6 @@ async function bootstrap(): Promise<void> {
   });
 }
 
-void bootstrap();
+bootstrap().catch((error) => {
+  console.error('Bootstrap failed:', error);
+});
