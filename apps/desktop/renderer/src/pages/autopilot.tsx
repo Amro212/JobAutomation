@@ -234,7 +234,7 @@ export function AutopilotPage() {
       {!camoufoxReady && (
         <div
           role="status"
-          className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-400"
+          className="flex items-center gap-3 rounded-lg border border-amber-600/40 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-950 dark:text-amber-300"
         >
           <AlertCircle className="h-4 w-4 shrink-0" />
           Camoufox browser is not ready.{' '}
@@ -531,8 +531,8 @@ function MetricPill({
       <span
         className={cn(
           'font-headline text-xl font-bold',
-          positive && 'text-emerald-600 dark:text-emerald-400',
-          negative && 'text-red-600 dark:text-red-400'
+          positive && 'text-emerald-800 dark:text-emerald-400',
+          negative && 'text-red-800 dark:text-red-400'
         )}
       >
         {value}
@@ -545,13 +545,13 @@ function MetricPill({
 function RunStatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />;
+      return <CheckCircle2 className="h-4 w-4 text-emerald-700 dark:text-emerald-500 shrink-0" />;
     case 'failed':
     case 'cancelled':
-      return <XCircle className="h-4 w-4 text-red-500 shrink-0" />;
+      return <XCircle className="h-4 w-4 text-red-700 dark:text-red-500 shrink-0" />;
     case 'running':
     case 'pending':
-      return <RefreshCw className="h-4 w-4 text-amber-500 shrink-0 animate-spin" />;
+      return <RefreshCw className="h-4 w-4 text-amber-700 dark:text-amber-500 shrink-0 animate-spin" />;
     default:
       return <Clock className="h-4 w-4 text-muted-foreground shrink-0" />;
   }

@@ -457,7 +457,7 @@ export function SetupPage() {
           <div className="mt-6 grid gap-4 grid-cols-1 md:grid-cols-3">
             <div className="rounded-2xl border border-border bg-background/50 p-4 flex items-center justify-between shadow-sm">
               <div>
-                <p className="text-[10px] font-bold text-muted-foreground/75 uppercase tracking-wide font-label">Base Resume</p>
+                <p className="text-[10px] font-medium text-muted-foreground/75 uppercase tracking-wide font-label">Base Resume</p>
                 <p className="text-xs font-semibold text-foreground mt-1">{baseResumeFileName || 'None uploaded'}</p>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${readiness.hasBaseResume ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/20'}`}>
@@ -467,7 +467,7 @@ export function SetupPage() {
 
             <div className="rounded-2xl border border-border bg-background/50 p-4 flex items-center justify-between shadow-sm">
               <div>
-                <p className="text-[10px] font-bold text-muted-foreground/75 uppercase tracking-wide font-label">Context Block</p>
+                <p className="text-[10px] font-medium text-muted-foreground/75 uppercase tracking-wide font-label">Context Block</p>
                 <p className="text-xs font-semibold text-foreground mt-1">{summary.trim() ? 'Stored context' : 'No context'}</p>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${readiness.hasReusableContext ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/20'}`}>
@@ -477,7 +477,7 @@ export function SetupPage() {
 
             <div className="rounded-2xl border border-border bg-background/50 p-4 flex items-center justify-between shadow-sm">
               <div>
-                <p className="text-[10px] font-bold text-muted-foreground/75 uppercase tracking-wide font-label">Automation Readiness</p>
+                <p className="text-[10px] font-medium text-muted-foreground/75 uppercase tracking-wide font-label">Automation Readiness</p>
                 <p className="text-xs font-semibold text-foreground mt-1">{readiness.readyForTailoring ? 'Document generator operational' : 'Incomplete context'}</p>
               </div>
               <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${readiness.readyForTailoring ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'}`}>
@@ -496,33 +496,33 @@ export function SetupPage() {
         </h2>
 
         <div className="grid gap-6 md:grid-cols-2">
-          <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
             Full Name
             <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
           </label>
-          <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
             Email Address
             <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane.doe@example.com" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
           </label>
-          <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
             Phone Number
             <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 (555) 019-2834" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
           </label>
-          <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
             Location
             <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="San Francisco, CA" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
           </label>
-          <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
             LinkedIn Profile URL
             <Input value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="linkedin.com/in/janedoe" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
           </label>
-          <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
             Personal Website / Portfolio
             <Input value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} placeholder="janedoe.dev" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
           </label>
         </div>
 
-        <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+        <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
           Professional Bio Summary
           <textarea
             value={summary}
@@ -533,7 +533,7 @@ export function SetupPage() {
           />
         </label>
 
-        <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+        <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
           Reusable Document context Block
           <textarea
             value={reusableContext}
@@ -546,27 +546,27 @@ export function SetupPage() {
 
         {/* LaTeX Resume block */}
         <div className="space-y-4 pt-4 border-t border-border">
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2 font-label">
+          <h3 className="text-sm font-medium text-foreground flex items-center gap-2 font-label">
             <FileText className="size-4 text-primary" />
             LaTeX Resume Framework
           </h3>
           <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Canonical TeX Filename
               <Input value={baseResumeFileName} onChange={(e) => setBaseResumeFileName(e.target.value)} placeholder="resume.tex" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
             </label>
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Parse Local LaTeX File
               <input
                 type="file"
                 accept=".tex,text/plain"
                 onChange={handleFileUpload}
-                className="flex h-10 w-full rounded-xl border border-dashed border-border bg-background/20 px-3 py-1.5 text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-[10px] file:font-bold file:text-primary file:uppercase hover:file:bg-primary/20 cursor-pointer"
+                className="flex h-10 w-full rounded-xl border border-dashed border-border bg-background/20 px-3 py-1.5 text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1 file:text-[10px] file:font-medium file:text-primary file:uppercase hover:file:bg-primary/20 cursor-pointer"
               />
             </label>
           </div>
 
-          <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
             Raw TeX Source
             <textarea
               value={baseResumeTex}
@@ -581,12 +581,12 @@ export function SetupPage() {
         {/* Application Autofill Parameters */}
         <div className="space-y-6 pt-6 border-t border-border">
           <div className="space-y-1">
-            <h3 className="text-sm font-bold text-foreground font-label">Default Application Responses</h3>
+            <h3 className="text-sm font-medium text-foreground font-label">Default Application Responses</h3>
             <p className="text-muted-foreground/75 text-xs font-semibold uppercase tracking-wider">Configure recurring answers for rapid forms auto-filling</p>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Current Residence Country
               <select value={currentCountryCode} onChange={(e) => setCurrentCountryCode(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -596,7 +596,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Citizenship Country
               <select value={primaryCitizenshipCountryCode} onChange={(e) => setPrimaryCitizenshipCountryCode(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -606,7 +606,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Visa Status In Residence Country
               <select value={currentCountryResidenceStatus} onChange={(e) => setCurrentCountryResidenceStatus(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -621,13 +621,13 @@ export function SetupPage() {
             </label>
 
             {currentCountryResidenceStatus === 'other' ? (
-              <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+              <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                 Visa Description
                 <Input value={currentCountryResidenceStatusOther} onChange={(e) => setCurrentCountryResidenceStatusOther(e.target.value)} placeholder="Specify visa details" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
               </label>
             ) : null}
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Authorized To Work In Residence Country?
               <select value={legallyAuthorizedInCurrentCountry} onChange={(e) => setLegallyAuthorizedInCurrentCountry(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -636,7 +636,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Requires Sponsorship In Residence Country?
               <select value={needsSponsorshipInCurrentCountry} onChange={(e) => setNeedsSponsorshipInCurrentCountry(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -645,7 +645,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Requires Global Sponsorship?
               <select value={requiresSponsorship} onChange={(e) => setRequiresSponsorship(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -655,13 +655,13 @@ export function SetupPage() {
             </label>
 
             {requiresSponsorship === 'yes' ? (
-              <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+              <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                 Target Countries for Sponsorship (CSV)
                 <Input value={requiresSponsorshipCountriesCsv} onChange={(e) => setRequiresSponsorshipCountriesCsv(e.target.value)} placeholder="US, CA, GB" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
               </label>
             ) : null}
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Clearance Level
               <select value={clearanceStatus} onChange={(e) => setClearanceStatus(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -671,7 +671,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Relocation Preference
               <select value={relocation} onChange={(e) => setRelocation(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -680,7 +680,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Work Location Style
               <select value={workPreference} onChange={(e) => setWorkPreference(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -691,12 +691,12 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Available Start Date
               <Input value={startDate} onChange={(e) => setStartDate(e.target.value)} placeholder="ASAP / 2 weeks notice" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Notice Period
               <select value={noticePeriod} onChange={(e) => setNoticePeriod(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -707,7 +707,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Pronouns
               <select value={genderPronouns} onChange={(e) => setGenderPronouns(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -720,13 +720,13 @@ export function SetupPage() {
             </label>
 
             {genderPronouns === 'custom' ? (
-              <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+              <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                 Custom Pronouns Wording
                 <Input value={genderPronounsCustom} onChange={(e) => setGenderPronounsCustom(e.target.value)} placeholder="e.g. Ze/Zir" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
               </label>
             ) : null}
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Education Level
               <select value={highestEducation} onChange={(e) => setHighestEducation(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -741,26 +741,26 @@ export function SetupPage() {
 
             {highestEducation ? (
               <>
-                <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+                <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                   School Name
                   <Input value={highestEducationSchool} onChange={(e) => setHighestEducationSchool(e.target.value)} placeholder="MIT" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
                 </label>
-                <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+                <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                   Degree Program
                   <Input value={highestEducationProgram} onChange={(e) => setHighestEducationProgram(e.target.value)} placeholder="B.S. Computer Science" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
                 </label>
-                <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+                <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                   Start Year
                   <Input value={highestEducationStartYear} onChange={(e) => setHighestEducationStartYear(e.target.value)} placeholder="2020" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
                 </label>
-                <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+                <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                   End Year / Target Graduation
                   <Input value={highestEducationEndYear} onChange={(e) => setHighestEducationEndYear(e.target.value)} placeholder="2024" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
                 </label>
               </>
             ) : null}
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Years of Professional Experience
               <select value={yearsOfExperience} onChange={(e) => setYearsOfExperience(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -772,7 +772,7 @@ export function SetupPage() {
               </select>
             </label>
 
-            <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+            <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Employment Status
               <select value={currentlyEmployed} onChange={(e) => setCurrentlyEmployed(e.target.value)} className={selectClassName}>
                 <option value="">Not set</option>
@@ -785,7 +785,7 @@ export function SetupPage() {
           {/* Salary Expectation slider */}
           <div className="space-y-4 rounded-2xl border border-border bg-background/30 p-5 mt-4">
             <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs font-bold text-foreground uppercase tracking-wide font-label">
+              <label className="flex items-center gap-2 text-xs font-medium text-foreground uppercase tracking-wide font-label">
                 <input type="checkbox" checked={salaryEnabled} onChange={(e) => setSalaryEnabled(e.target.checked)} className="h-4 w-4 rounded border border-border bg-background text-primary focus:ring-primary" />
                 Declare Compensation Target
               </label>
@@ -797,13 +797,13 @@ export function SetupPage() {
             {salaryEnabled ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <label className="flex flex-col gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wide font-label">
+                  <label className="flex flex-col gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide font-label">
                     Currency
                     <select value={salaryCurrency} onChange={(e) => setSalaryCurrency(e.target.value)} className={selectClassName}>
                       {salaryCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </label>
-                  <label className="flex flex-col gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wide font-label">
+                  <label className="flex flex-col gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide font-label">
                     Period
                     <select value={salaryPeriod} onChange={(e) => {
                       const next = e.target.value as 'hourly' | 'yearly';
@@ -815,7 +815,7 @@ export function SetupPage() {
                     </select>
                   </label>
                 </div>
-                <label className="flex flex-col gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wide font-label">
+                <label className="flex flex-col gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide font-label">
                   Expectation Amount
                   <input type="range" min={salaryBounds.min} max={salaryBounds.max} step={salaryBounds.step} value={salaryAmount} onChange={(e) => setSalaryAmount(e.target.value)} className="w-full h-1.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary" />
                   <div className="flex justify-between text-[10px] text-muted-foreground/75 font-bold font-label">
@@ -831,7 +831,7 @@ export function SetupPage() {
         {/* Gmail OAuth Verification */}
         <section className="space-y-4 rounded-2xl border border-border bg-background/30 p-5 mt-4">
           <div className="space-y-1">
-            <h3 className="text-sm font-bold text-foreground font-label">Gmail OAuth Verification Retrieval</h3>
+            <h3 className="text-sm font-medium text-foreground font-label">Gmail OAuth Verification Retrieval</h3>
             <p className="text-muted-foreground/75 text-[10px] font-bold uppercase tracking-wide font-label">
               Optional. Enable when Greenhouse requires real-time email security codes check.
             </p>
@@ -844,19 +844,19 @@ export function SetupPage() {
 
           {emailVerificationEnabled ? (
             <div className="grid gap-4 md:grid-cols-2 mt-2">
-              <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+              <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                 Gmail Address
                 <Input value={gmailUserEmail} onChange={(e) => setGmailUserEmail(e.target.value)} placeholder="user@gmail.com" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
               </label>
-              <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+              <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                 Google OAuth Client ID
                 <Input value={gmailClientId} onChange={(e) => setGmailClientId(e.target.value)} placeholder="client-id..." className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
               </label>
-              <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+              <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                 Client Secret
                 <Input type="password" value={gmailClientSecret} onChange={(e) => setGmailClientSecret(e.target.value)} placeholder="••••••••" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
               </label>
-              <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+              <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                 Refresh Token
                 <Input type="password" value={gmailRefreshToken} onChange={(e) => setGmailRefreshToken(e.target.value)} placeholder="••••••••" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
               </label>
@@ -908,14 +908,14 @@ export function SetupPage() {
 
               {/* Seniority */}
               <div className="grid gap-6 md:grid-cols-2">
-                <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+                <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                   Target Career Seniority
                   <select value={keywordProfile.seniority} onChange={(e) => setKeywordProfile({ ...keywordProfile, seniority: e.target.value as JobKeywordSeniority })} className={selectClassName}>
                     {SENIORITY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
                 </label>
 
-                <label className="flex flex-col gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+                <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
                   Max Required Experience Years
                   <Input type="number" min={0} max={20} value={keywordProfile.max_required_years ?? ''} onChange={(e) => setKeywordProfile({ ...keywordProfile, max_required_years: e.target.value.trim() === '' ? null : Number(e.target.value) })} className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
                 </label>

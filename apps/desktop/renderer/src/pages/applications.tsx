@@ -86,7 +86,7 @@ export function ApplicationsPage() {
               <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">
                 Success Rate
               </p>
-              <p className="font-headline text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+              <p className="font-headline text-2xl font-bold text-emerald-800 dark:text-emerald-400">
                 {successRate}%
               </p>
               <Progress value={successRate} className="h-1.5 mt-2" />
@@ -97,7 +97,7 @@ export function ApplicationsPage() {
               <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">
                 Blocked
               </p>
-              <p className="font-headline text-2xl font-bold text-red-600 dark:text-red-400">
+              <p className="font-headline text-2xl font-bold text-red-800 dark:text-red-400">
                 {blockedCount}
               </p>
             </CardContent>

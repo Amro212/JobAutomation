@@ -120,7 +120,7 @@ export function ShortlistPage() {
               {jobs.map((job) => (
                 <TableRow key={job.id}>
                   <TableCell className="font-medium max-w-[260px] truncate">{job.title}</TableCell>
-                  <TableCell className="text-muted-foreground">{job.company}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{job.company}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">{job.location}</TableCell>
                   <TableCell>
                     <Badge variant="info" className="capitalize">

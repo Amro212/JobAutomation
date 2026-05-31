@@ -155,7 +155,7 @@ export function DiscoveryRunDetailPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs">{s.jobCount}</TableCell>
-                    <TableCell className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
+                    <TableCell className="text-xs text-emerald-800 dark:text-emerald-400 font-medium">
                       +{s.newJobCount}
                     </TableCell>
                   </TableRow>
