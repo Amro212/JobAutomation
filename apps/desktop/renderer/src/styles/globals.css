@@ -151,13 +151,17 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased min-h-screen;
+    @apply bg-background text-foreground font-sans antialiased h-screen overflow-hidden;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
 
   a {
     @apply text-inherit no-underline;
