@@ -38,8 +38,8 @@ export function DashboardPage() {
     async function loadMetrics() {
       try {
         const [jobsRes, appRuns, autopilotRuns] = await Promise.allSettled([
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          getJobs({} as any),
+          // Optimize by querying 1 item since we only need the total count for the metric
+          getJobs({ page: 1, pageSize: 1 } as any),
           getApplicationRuns(),
           getAutopilotRuns()
         ]);

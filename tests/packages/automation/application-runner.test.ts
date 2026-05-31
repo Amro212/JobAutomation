@@ -236,7 +236,10 @@ describe('application runner', () => {
     });
 
     expect(result.status).toBe('skipped');
-    expect(result.prefilterReasons).toEqual(['title_negative']);
+    expect(result.prefilterReasons).toEqual([
+      'title_negative',
+      'role_family_mismatch'
+    ]);
     expect(browserFactory).not.toHaveBeenCalled();
     expect(siteFlowRun).not.toHaveBeenCalled();
   });

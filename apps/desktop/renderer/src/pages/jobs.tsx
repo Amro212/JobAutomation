@@ -35,7 +35,7 @@ const STATUS_OPTIONS = [
 ];
 
 const MATCH_OPTIONS = [
-  { value: '', label: 'All Profiles' },
+  { value: 'all', label: 'All Jobs' },
   { value: 'me', label: 'Matching Me' }
 ];
 
@@ -62,7 +62,7 @@ export function JobsPage() {
     companyName: '',
     location: '',
     status: '',
-    matchProfile: ''
+    matchProfile: 'me' // Default to "Matching Me" for instant, relevant load times
   });
   const [jobs, setJobs] = useState<
     Array<{ id: string; title: string; company: string; location: string; status: string }>
@@ -71,15 +71,23 @@ export function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async (nextFilters: Partial<JobListFilters> = {}) => {
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(50); // Fetch 50 items per page
+
+  const refresh = async (nextFilters: Partial<JobListFilters> = {}, targetPage = page) => {
     setLoading(true);
     setError(null);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const response = await getJobs(nextFilters as any);
+      const response = await getJobs({
+        ...nextFilters,
+        page: targetPage,
+        pageSize
+      } as any);
       setTotal(response.total);
       setJobs(
-        response.jobs.slice(0, 50).map((job) => ({
+        response.jobs.map((job) => ({
           id: job.id,
           title: job.title,
           company: job.companyName,
@@ -95,17 +103,18 @@ export function JobsPage() {
   };
 
   useEffect(() => {
-    void refresh();
+    void refresh({ matchProfile: 'me' }, 1);
   }, []);
 
   const applyFilters = async () => {
+    setPage(1);
     const next: Partial<JobListFilters> = {};
     if (filters.title) next.title = filters.title;
     if (filters.companyName) next.companyName = filters.companyName;
     if (filters.location) next.location = filters.location;
     if (filters.status) next.status = filters.status as JobListFilters['status'];
     if (filters.matchProfile === 'me') next.matchProfile = 'me';
-    await refresh(next as JobListFilters);
+    await refresh(next as JobListFilters, 1);
   };
 
   return (
@@ -129,7 +138,7 @@ export function JobsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
@@ -164,6 +173,22 @@ export function JobsPage() {
               </SelectTrigger>
               <SelectContent>
                 {STATUS_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select
+              value={filters.matchProfile || 'all'}
+              onValueChange={(v) => setFilters({ ...filters, matchProfile: v === 'all' ? '' : v })}
+            >
+              <SelectTrigger id="jobs-filter-profile" aria-label="Filter by match profile">
+                <SelectValue placeholder="Profile Match" />
+              </SelectTrigger>
+              <SelectContent>
+                {MATCH_OPTIONS.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
                   </SelectItem>
@@ -225,43 +250,96 @@ export function JobsPage() {
               </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-[60px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {jobs.map((job) => (
-                  <TableRow key={job.id}>
-                    <TableCell className="font-medium max-w-[260px] truncate">
-                      {job.title}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{job.company}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{job.location}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(job.status)} className="capitalize">
-                        {job.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                        <Link
-                          to={`/jobs/${job.id}`}
-                          aria-label={`View details for ${job.title}`}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
-                      </Button>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[60px]" />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {jobs.map((job) => (
+                    <TableRow key={job.id}>
+                      <TableCell className="font-medium max-w-[260px] truncate">
+                        {job.title}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{job.company}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{job.location}</TableCell>
+                      <TableCell>
+                        <Badge variant={statusVariant(job.status)} className="capitalize">
+                          {job.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                          <Link
+                            to={`/jobs/${job.id}`}
+                            aria-label={`View details for ${job.title}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {/* Pagination Footer */}
+              <div className="flex items-center justify-between p-4 border-t border-border bg-card/30">
+                <span className="text-xs text-muted-foreground">
+                  Showing page {page} of {Math.max(1, Math.ceil(total / pageSize))} ({total} total jobs)
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={async () => {
+                      const prevPage = Math.max(1, page - 1);
+                      if (prevPage !== page) {
+                        setPage(prevPage);
+                        const next: Partial<JobListFilters> = {};
+                        if (filters.title) next.title = filters.title;
+                        if (filters.companyName) next.companyName = filters.companyName;
+                        if (filters.location) next.location = filters.location;
+                        if (filters.status) next.status = filters.status as JobListFilters['status'];
+                        if (filters.matchProfile === 'me') next.matchProfile = 'me';
+                        await refresh(next as JobListFilters, prevPage);
+                      }
+                    }}
+                    disabled={page === 1 || loading}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={async () => {
+                      const nextPage = Math.min(Math.ceil(total / pageSize), page + 1);
+                      if (nextPage !== page) {
+                        setPage(nextPage);
+                        const next: Partial<JobListFilters> = {};
+                        if (filters.title) next.title = filters.title;
+                        if (filters.companyName) next.companyName = filters.companyName;
+                        if (filters.location) next.location = filters.location;
+                        if (filters.status) next.status = filters.status as JobListFilters['status'];
+                        if (filters.matchProfile === 'me') next.matchProfile = 'me';
+                        await refresh(next as JobListFilters, nextPage);
+                      }
+                    }}
+                    disabled={page >= Math.ceil(total / pageSize) || loading}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

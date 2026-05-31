@@ -62,23 +62,15 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
       matchProfile
     });
 
-    const usePagination = parsed.page !== undefined || parsed.pageSize !== undefined;
+    // Pillar 1: Enforce server-side pagination by default to prevent large unpaginated dumps
+    const usePagination = true; 
     const page = parsed.page ?? 1;
     const pageSize = parsed.pageSize ?? JOB_LIST_DEFAULT_PAGE_SIZE;
 
-    if (matchProfile === 'me' && meaningful) {
-      const { jobCount, nullPrefilterCount, stalePrefilterCount } =
-        await app.repositories.jobs.prefilterCacheStats();
-      if (jobCount > 0 && (nullPrefilterCount > 0 || stalePrefilterCount > 0)) {
-        await recomputeJobPrefilterMatches(app.repositories.jobs, applicant, {
-          mode: 'stale'
-        });
-      }
-    }
+    // Pillar 3: Decouple prefilter match recomputation from GET requests to avoid HTTP request timeouts.
+    // Stale matches should be computed in the background, not synchronously on jobs fetch.
 
-    const { jobs, total } = usePagination
-      ? await app.repositories.jobs.listSummary(filters, { page, pageSize })
-      : await app.repositories.jobs.listSummary(filters);
+    const { jobs, total } = await app.repositories.jobs.listSummary(filters, { page, pageSize });
 
     return { jobs, total };
   });
