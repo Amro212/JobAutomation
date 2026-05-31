@@ -255,7 +255,7 @@ export function AutopilotPage() {
                 <Zap className="h-5 w-5 text-primary" />
                 Autopilot Control
               </CardTitle>
-              <CardDescription>{settingsSummary}</CardDescription>
+              <CardDescription className="text-foreground/80 font-semibold">{settingsSummary}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-3">
@@ -482,14 +482,14 @@ export function AutopilotPage() {
                             <p className="text-xs font-mono text-muted-foreground">
                               {run.id.slice(0, 10)}…
                             </p>
-                            {run.step && (
-                              <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate max-w-[160px]">
+                             {run.step && (
+                              <p className="text-xs font-semibold text-muted-foreground mt-0.5 truncate max-w-[160px]">
                                 {run.step}
                               </p>
-                            )}
+                             )}
                           </div>
                         </div>
-                        <Badge variant={statusVariant(run.status)} className="text-[10px] py-0.5">
+                        <Badge variant={statusVariant(run.status)} className="text-[11px] font-bold py-0.5">
                           {run.status}
                         </Badge>
                       </Link>
@@ -537,7 +537,7 @@ function MetricPill({
       >
         {value}
       </span>
-      <span className="text-[10px] text-muted-foreground mt-0.5">{label}</span>
+      <span className="text-xs font-bold text-muted-foreground/90 mt-0.5">{label}</span>
     </div>
   );
 }

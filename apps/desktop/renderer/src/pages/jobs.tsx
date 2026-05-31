@@ -254,23 +254,23 @@ export function JobsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="font-bold text-xs uppercase tracking-wider text-foreground">Title</TableHead>
+                    <TableHead className="font-bold text-xs uppercase tracking-wider text-foreground">Company</TableHead>
+                    <TableHead className="font-bold text-xs uppercase tracking-wider text-foreground">Location</TableHead>
+                    <TableHead className="font-bold text-xs uppercase tracking-wider text-foreground">Status</TableHead>
                     <TableHead className="w-[60px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {jobs.map((job) => (
                     <TableRow key={job.id}>
-                      <TableCell className="font-medium max-w-[260px] truncate">
+                      <TableCell className="font-bold text-foreground max-w-[260px] truncate">
                         {job.title}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{job.company}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{job.location}</TableCell>
+                      <TableCell className="text-foreground/90 font-medium">{job.company}</TableCell>
+                      <TableCell className="text-foreground/80 text-xs font-semibold">{job.location}</TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant(job.status)} className="capitalize">
+                        <Badge variant={statusVariant(job.status)} className="capitalize font-semibold">
                           {job.status}
                         </Badge>
                       </TableCell>

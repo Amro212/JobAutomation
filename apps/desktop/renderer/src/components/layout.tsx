@@ -153,7 +153,7 @@ export function DesktopLayout() {
                 <span className="font-headline text-lg font-bold text-foreground tracking-tight truncate">
                   Sahara AI
                 </span>
-                <span className="text-[11px] text-muted-foreground font-medium truncate">
+                <span className="text-xs text-muted-foreground font-semibold truncate">
                   Automation Suite
                 </span>
               </div>
@@ -166,7 +166,7 @@ export function DesktopLayout() {
               {navSections.map((section) => (
                 <div key={section.label} className="mb-2">
                   {!sidebarCollapsed && (
-                    <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider text-muted-foreground/90">
                       {section.label}
                     </span>
                   )}
@@ -182,7 +182,7 @@ export function DesktopLayout() {
                                 cn(
                                   'flex items-center justify-center h-10 w-10 mx-auto rounded-lg transition-colors duration-200',
                                   isActive
-                                    ? 'bg-sidebar-accent text-sidebar-primary font-semibold'
+                                    ? 'bg-sidebar-accent text-sidebar-primary font-bold'
                                     : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
                                 )
                               }
@@ -196,17 +196,17 @@ export function DesktopLayout() {
                         <NavLink
                           key={item.to}
                           to={item.to}
-                          className={({ isActive }) =>
+                           className={({ isActive }) =>
                             cn(
-                              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200',
+                              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors duration-200',
                               isActive
-                                ? 'bg-sidebar-accent text-sidebar-primary font-semibold'
+                                ? 'bg-sidebar-accent text-sidebar-primary font-bold'
                                 : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
                             )
                           }
                         >
                           <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
-                          <span className="truncate">{item.label}</span>
+                          <span className="truncate py-0.5 leading-normal">{item.label}</span>
                         </NavLink>
                       );
                     })}
@@ -223,7 +223,7 @@ export function DesktopLayout() {
               {/* API Status */}
               <div
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-md text-[11px] font-semibold justify-center',
+                  'inline-flex items-center gap-2 rounded-md text-xs font-bold justify-center',
                   sidebarCollapsed ? 'p-1.5 h-10 w-10 mx-auto' : 'px-2.5 py-1.5',
                   apiConnected
                     ? 'text-emerald-600 dark:text-emerald-400'
@@ -250,7 +250,7 @@ export function DesktopLayout() {
               {/* Camoufox Status */}
               <div
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-md text-[11px] font-semibold justify-center',
+                  'inline-flex items-center gap-2 rounded-md text-xs font-bold justify-center',
                   sidebarCollapsed ? 'p-1.5 h-10 w-10 mx-auto' : 'px-2.5 py-1.5',
                   camoufoxStatus.state === 'ready'
                     ? 'text-sky-600 dark:text-sky-400'
@@ -266,7 +266,14 @@ export function DesktopLayout() {
             </div>
 
             {!sidebarCollapsed && (
-              <p className="text-[11px] text-muted-foreground truncate px-1">
+              <p className={cn(
+                "text-xs font-bold truncate px-1",
+                rawStatus === 'running' && "text-emerald-600 dark:text-emerald-400",
+                rawStatus === 'starting' && "text-amber-600 dark:text-amber-400 animate-pulse",
+                rawStatus === 'restarting' && "text-amber-600 dark:text-amber-400",
+                rawStatus === 'stopped' && "text-muted-foreground",
+                rawStatus === 'error' && "text-destructive"
+              )}>
                 {backendStatus}
               </p>
             )}

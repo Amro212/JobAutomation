@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Anton&family=Anybody:ital,wght@0,100..900;1,100..900&family=Arimo:ital,wght@0,400..700;1,400..700&display=swap');
 
 /* ──────────────────────────────────────────────────────────────
    Sahara Design System — Sun-Drenched Minimalism
@@ -48,9 +47,9 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  --font-sans: "Anybody", "Segoe UI", system-ui, sans-serif;
-  --font-headline: "Anton", sans-serif;
-  --font-label: "Arimo", sans-serif;
+  --font-sans: "Kind Sans", "Segoe UI", system-ui, sans-serif;
+  --font-headline: "Kind Sans", sans-serif;
+  --font-label: "Kind Sans", sans-serif;
 }
 
 /* ── Light Theme (Sahara Sun-Drenched Minimalism) ─────────────── */
@@ -141,6 +140,16 @@
 
 /* ── Base Styles ─────────────────────────────────────────────── */
 @layer base {
+  /* ── Kind Sans — self-hosted ──────────────────────────────── */
+  @font-face {
+    font-family: "Kind Sans";
+    src: url("/fonts/KindSans-Regular.otf") format("opentype"),
+         url("/fonts/KindSans-Regular.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+
   * {
     @apply border-border;
   }
@@ -151,6 +160,23 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased min-h-screen;
+    font-weight: 450;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  strong, b {
+    font-weight: 700;
+  }
+
+  input, select, textarea, button, [role="combobox"], [role="button"] {
+    font-weight: 550;
+  }
+
+  ::placeholder, [data-placeholder] {
+    font-weight: 500;
+    opacity: 0.85 !important;
   }
 
   a {
@@ -158,14 +184,15 @@
   }
 
   /* Headline typography */
-  h1, h2, h3, .font-headline {
+  h1, h2, h3, h4, h5, h6, .font-headline {
     font-family: var(--font-headline);
-    font-weight: 400; /* Anton is a strong display font that uses normal weight */
+    font-weight: 700;
   }
 
   /* Label typography */
   label, .font-label {
     font-family: var(--font-label);
+    font-weight: 400;
   }
 
   /* Focus visible — WCAG 2.4.7 */
