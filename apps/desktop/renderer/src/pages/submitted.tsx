@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { Play, ExternalLink, RefreshCw } from 'lucide-react';
+import { Send, ExternalLink, RefreshCw, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { getAutopilotRuns } from '@renderer/lib/api';
-import type { AutopilotRunSummary } from '@renderer/lib/api';
+import { getApplicationRuns, buildArtifactFileUrl } from '@renderer/lib/api';
+import type { ApplicationRunSummary } from '@renderer/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,10 +20,10 @@ import {
 
 function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 'outline' {
   switch (status) {
-    case 'completed':
+    case 'success':
       return 'success';
     case 'failed':
-    case 'cancelled':
+    case 'blocked':
       return 'destructive';
     case 'running':
       return 'warning';
@@ -35,25 +35,25 @@ function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 
 function formatDate(dateStr: string | Date | null | undefined): string {
   if (!dateStr) return '—';
   const d = dateStr instanceof Date ? dateStr : new Date(dateStr);
-  return d.toLocaleString('en-US', {
+  return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    year: 'numeric'
   });
 }
 
-export function AutopilotRunsPage() {
-  const [runs, setRuns] = useState<AutopilotRunSummary[]>([]);
+export function SubmittedPage() {
+  const [runs, setRuns] = useState<ApplicationRunSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const data = await getAutopilotRuns();
-      setRuns(data);
+      const data = await getApplicationRuns();
+      // Show only successfully submitted applications
+      setRuns(data.filter((r) => r.run.status === 'completed'));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load autopilot runs');
+      toast.error(e instanceof Error ? e.message : 'Failed to load submitted applications');
     } finally {
       setLoading(false);
     }
@@ -63,13 +63,19 @@ export function AutopilotRunsPage() {
     void refresh();
   }, []);
 
+  const handleArtifactClick = async (artifactId: string, label: string) => {
+    const url = await buildArtifactFileUrl(artifactId);
+    window.open(url, '_blank');
+    toast.success(`Opening ${label}...`);
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
-            <Play className="h-5 w-5 text-primary" />
-            Autopilot Runs
+            <Send className="h-5 w-5 text-primary" />
+            Submitted Applications
             {!loading && (
               <span className="text-sm font-normal text-muted-foreground ml-1">
                 ({runs.length})
@@ -80,7 +86,7 @@ export function AutopilotRunsPage() {
             variant="ghost"
             size="sm"
             onClick={() => void refresh()}
-            aria-label="Refresh autopilot runs"
+            aria-label="Refresh submitted list"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -96,10 +102,10 @@ export function AutopilotRunsPage() {
           </div>
         ) : runs.length === 0 ? (
           <div className="p-12 text-center">
-            <Play className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-            <p className="text-sm font-medium text-muted-foreground">No autopilot runs yet</p>
+            <Send className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No applications submitted yet</p>
             <p className="text-xs text-muted-foreground/70 mt-1">
-              Launch a run from the Autopilot page
+              Run the Autopilot to start applying to shortlisted jobs
             </p>
             <Button variant="outline" size="sm" className="mt-4" asChild>
               <Link to="/autopilot">Go to Autopilot</Link>
@@ -109,20 +115,22 @@ export function AutopilotRunsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Run ID</TableHead>
-                <TableHead>Started</TableHead>
+                <TableHead>Job Title</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Submitted</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Discovery</TableHead>
+                <TableHead>Artifacts</TableHead>
                 <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {runs.map(({ run, discoveryRun }) => (
+              {runs.map(({ run, job, resumeArtifact, coverLetterArtifact }) => (
                 <TableRow key={run.id}>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {run.id.slice(0, 8)}…
+                  <TableCell className="font-medium max-w-[220px] truncate">
+                    {job.title}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="text-muted-foreground text-sm">{job.companyName}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">
                     {formatDate(run.createdAt)}
                   </TableCell>
                   <TableCell>
@@ -130,14 +138,43 @@ export function AutopilotRunsPage() {
                       {run.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground font-mono">
-                    {discoveryRun ? `${discoveryRun.id.slice(0, 8)}…` : '—'}
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      {resumeArtifact && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() =>
+                            void handleArtifactClick(resumeArtifact.id, 'Resume PDF')
+                          }
+                          aria-label={`Open resume for ${job.title}`}
+                        >
+                          <FileText className="h-3 w-3" />
+                          Resume
+                        </Button>
+                      )}
+                      {coverLetterArtifact && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() =>
+                            void handleArtifactClick(coverLetterArtifact.id, 'Cover Letter')
+                          }
+                          aria-label={`Open cover letter for ${job.title}`}
+                        >
+                          <FileText className="h-3 w-3" />
+                          Cover
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
                       <Link
-                        to={`/autopilot-runs/${run.id}`}
-                        aria-label={`View autopilot run ${run.id}`}
+                        to={`/applications/${run.id}`}
+                        aria-label={`View application run for ${job.title}`}
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                       </Link>

@@ -1,4 +1,11 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Anybody:ital,wght@0,100..900;1,100..900&family=Arimo:ital,wght@0,400..700;1,400..700&display=swap');
+
+/* ──────────────────────────────────────────────────────────────
+   Sahara Design System — Sun-Drenched Minimalism
+   North Star: "Sun-Baked Simplicity"
+   Dual theme: light (default) + dark (.dark class)
+   ────────────────────────────────────────────────────────────── */
 
 @theme {
   --color-border: hsl(var(--border));
@@ -28,87 +35,272 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
+  --color-sidebar-background: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  --font-sans: "Inter", "Segoe UI", sans-serif;
+  --font-sans: "Anybody", "Segoe UI", system-ui, sans-serif;
+  --font-headline: "Anton", sans-serif;
+  --font-label: "Arimo", sans-serif;
 }
 
+/* ── Light Theme (Sahara Sun-Drenched Minimalism) ─────────────── */
 @layer base {
   :root {
-    /* Premium Dark Theme */
-    --background: 240 25% 6%; /* #0a0a0f */
-    --foreground: 220 15% 95%; /* #f5f7fb */
+    --background: 24 100% 98%;        /* #fff8f4 — warm background */
+    --foreground: 34 23% 10%;         /* #201b14 — on-surface */
 
-    --card: 230 20% 12%; /* rgba(15, 23, 42, 0.55) */
-    --card-foreground: 220 15% 95%;
+    --card: 26 82% 95%;               /* #fef1e7 — surface-container-low */
+    --card-foreground: 34 23% 10%;
 
-    --popover: 230 20% 12%;
-    --popover-foreground: 220 15% 95%;
+    --popover: 24 100% 98%;
+    --popover-foreground: 34 23% 10%;
 
-    --primary: 217 91% 60%; /* #3b82f6 */
-    --primary-foreground: 210 40% 98%;
+    --primary: 25 92% 31%;            /* #964407 — primary sienna */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 20% 18%; /* muted dark blue */
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 27 6% 37%;           /* #645d57 — secondary slate */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 220 20% 18%;
-    --muted-foreground: 215 20% 65%; /* #94a3b8 */
+    --muted: 26 43% 92%;              /* #f2e6dc — surface-container-high */
+    --muted-foreground: 22 20% 28%;   /* #554339 — on-surface-variant */
 
-    --accent: 217 91% 60%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 0 42% 42%;              /* #944242 — tertiary sienna rose */
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 75% 42%;         /* #ba1a1a */
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 215 25% 20%; /* rgba(148, 163, 184, 0.16) */
-    --input: 215 25% 20%;
-    --ring: 217 91% 60%;
+    --border: 19 33% 78%;             /* #dbc1b5 — outline-variant */
+    --input: 19 33% 78%;
+    --ring: 25 92% 31%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
+
+    /* Sidebar (light) */
+    --sidebar-background: 26 82% 95%;
+    --sidebar-foreground: 34 23% 10%;
+    --sidebar-primary: 25 92% 31%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 26 43% 92%;
+    --sidebar-accent-foreground: 34 23% 10%;
+    --sidebar-border: 19 33% 78%;
+    --sidebar-ring: 25 92% 31%;
+  }
+
+  /* ── Dark Theme (Orange-y Sienna Warm Cocoa Dark) ───────────── */
+  .dark {
+    --background: 20 35% 12%;          /* #291a13 — warm terracotta dark clay */
+    --foreground: 30 64% 94%;         /* #fbefe4 — inverse-on-surface warm linen */
+
+    --card: 20 33% 16%;               /* #36241b — terracotta cocoa card background */
+    --card-foreground: 30 64% 94%;
+
+    --popover: 20 33% 16%;
+    --popover-foreground: 30 64% 94%;
+
+    --primary: 23 69% 49%;            /* #d16b27 — sienna bright accent */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 20 20% 45%;
+    --secondary-foreground: 30 64% 94%;
+
+    --muted: 20 35% 14%;              /* #2e1e16 — warm muted terracotta */
+    --muted-foreground: 20 20% 64%;   /* #a79185 — warm gray sand */
+
+    --accent: 0 52% 52%;              /* rose accent */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 19 30% 24%;             /* #4f362b — terracotta sienna border */
+    --input: 19 30% 24%;
+    --ring: 23 69% 49%;
+
+    /* Sidebar (dark) */
+    --sidebar-background: 20 38% 8%;   /* #1d120d — rich warm deep sidebar */
+    --sidebar-foreground: 30 64% 94%;
+    --sidebar-primary: 23 69% 49%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 20 35% 14%;
+    --sidebar-accent-foreground: 30 64% 94%;
+    --sidebar-border: 19 30% 24%;
+    --sidebar-ring: 23 69% 49%;
   }
 }
 
+/* ── Base Styles ─────────────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border;
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased min-h-screen;
-    background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 32%),
-                radial-gradient(circle at top right, rgba(34, 211, 238, 0.12), transparent 26%),
-                linear-gradient(180deg, hsl(var(--background)) 0%, #050508 100%);
-    background-attachment: fixed;
   }
-  
+
   a {
     @apply text-inherit no-underline;
   }
+
+  /* Headline typography */
+  h1, h2, h3, .font-headline {
+    font-family: var(--font-headline);
+    font-weight: 400; /* Anton is a strong display font that uses normal weight */
+  }
+
+  /* Label typography */
+  label, .font-label {
+    font-family: var(--font-label);
+  }
+
+  /* Focus visible — WCAG 2.4.7 */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
-/* React Aria Overrides for Custom Theme */
-.react-aria-Button {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 h-10 px-4 py-2;
+/* ── Glass Panel Utility ─────────────────────────────────────── */
+@utility glass-panel {
+  background: rgba(246, 240, 232, 0.6);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid rgba(216, 208, 200, 0.4);
+  box-shadow: 0 4px 30px rgba(58, 48, 42, 0.05);
 }
 
-.react-aria-Button[data-variant="default"] {
-  @apply bg-primary text-primary-foreground hover:bg-primary/90 shadow-[0_4px_14px_0_rgba(59,130,246,0.39)] hover:shadow-[0_6px_20px_rgba(59,130,246,0.23)];
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.88), rgba(8, 145, 178, 0.84));
+.dark .glass-panel {
+  background: rgba(41, 26, 19, 0.45);
+  border-color: rgba(219, 193, 181, 0.12);
+  box-shadow: 0 12px 40px rgba(21, 16, 12, 0.3);
 }
 
-.react-aria-Button[data-variant="secondary"] {
-  @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-white/5;
+@utility glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px) saturate(110%);
+  -webkit-backdrop-filter: blur(12px) saturate(110%);
+  border: 1px solid rgba(216, 208, 200, 0.6);
+  box-shadow: 0 2px 16px rgba(58, 48, 42, 0.04);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(58, 48, 42, 0.08);
+  }
 }
 
-.react-aria-Button[data-variant="ghost"] {
-  @apply hover:bg-white/10 hover:text-accent-foreground;
+.dark .glass-card {
+  background: rgba(54, 36, 27, 0.6);
+  border-color: rgba(219, 193, 181, 0.08);
+  box-shadow: 0 2px 16px rgba(21, 16, 12, 0.2);
+
+  &:hover {
+    box-shadow: 0 8px 24px rgba(21, 16, 12, 0.3);
+  }
 }
 
-.react-aria-Input {
-  @apply flex h-10 w-full rounded-xl border border-border bg-black/20 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-shadow;
+/* ── Animations ──────────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(74, 222, 128, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+  }
 }
 
-.react-aria-Label {
-  @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-muted-foreground;
+@utility animate-pulse-dot {
+  animation: pulse-dot 2s infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@utility shimmer-overlay {
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0,
+      rgba(255, 255, 255, 0.15) 20%,
+      rgba(255, 255, 255, 0.35) 60%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    animation: shimmer 2.5s infinite;
+  }
+}
+
+/* ── Custom Scrollbars ───────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 9999px;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+/* ── Reduced Motion ──────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Reduced Transparency Fallback ───────────────────────────── */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-panel,
+  .glass-card {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: hsl(var(--card)) !important;
+  }
 }

@@ -1,41 +1,25 @@
-import { Checkbox as RACheckbox, type CheckboxProps as RACheckboxProps } from 'react-aria-components';
+import * as React from 'react';
+import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
+import { Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-export interface CheckboxProps extends RACheckboxProps {
-  children?: React.ReactNode;
-}
+const Checkbox = React.forwardRef<
+  React.ElementRef<typeof CheckboxPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>
+>(({ className, ...props }, ref) => (
+  <CheckboxPrimitive.Root
+    ref={ref}
+    className={cn(
+      'peer h-4 w-4 shrink-0 rounded-sm border border-primary shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
+      className
+    )}
+    {...props}
+  >
+    <CheckboxPrimitive.Indicator className={cn('flex items-center justify-center text-current')}>
+      <Check className="h-4 w-4" />
+    </CheckboxPrimitive.Indicator>
+  </CheckboxPrimitive.Root>
+));
+Checkbox.displayName = CheckboxPrimitive.Root.displayName;
 
-export function Checkbox({ children, ...props }: CheckboxProps) {
-  return (
-    <RACheckbox
-      {...props}
-      className={({ isFocusVisible, isSelected, isDisabled }) =>
-        `group flex items-center gap-3 text-sm transition-colors ${
-          isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:text-sky-50'
-        } ${isFocusVisible ? 'ring-2 ring-primary ring-offset-2 ring-offset-background outline-none rounded' : ''}`
-      }
-    >
-      {({ isSelected, isIndeterminate }) => (
-        <>
-          <div
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-all ${
-              isSelected || isIndeterminate
-                ? 'bg-primary border-primary text-primary-foreground shadow-[0_2px_10px_rgba(59,130,246,0.3)]'
-                : 'border-border bg-black/20'
-            }`}
-          >
-            {(isSelected || isIndeterminate) && (
-              <svg viewBox="0 0 18 18" aria-hidden="true" className="w-3.5 h-3.5 stroke-current stroke-[3] fill-none">
-                {isIndeterminate ? (
-                  <path d="M4 9h10" />
-                ) : (
-                  <polyline points="4 9 8 13 14 5" />
-                )}
-              </svg>
-            )}
-          </div>
-          {children}
-        </>
-      )}
-    </RACheckbox>
-  );
-}
+export { Checkbox };

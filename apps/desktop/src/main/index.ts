@@ -99,6 +99,10 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow(getWindowOptions(configStore));
   const entry = getRendererEntry();
 
+  window.once('ready-to-show', () => {
+    window.show();
+  });
+
   if (entry.startsWith('file://')) {
     await window.loadURL(entry);
   } else {
@@ -348,10 +352,6 @@ async function bootstrap(): Promise<void> {
   trayController.create();
   debugLog('bootstrap:tray-created');
   refreshDesktopStatus();
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-  });
 
   // Start the API in the background so the window appears immediately.
   debugLog('bootstrap:api-starting');

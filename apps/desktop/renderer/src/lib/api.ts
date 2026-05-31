@@ -9,8 +9,28 @@ import type {
   JobListFilters,
   JobListItem,
   JobRecord,
-  LogEventRecord
+  LogEventRecord,
+  ApplicantProfile,
+  DiscoveryScheduleRecord,
+  DiscoverySourcePatch,
+  DiscoverySourceRecord,
+  JobReviewPatch
 } from '@jobautomation/core';
+
+export type ApplicantProfileResponse = {
+  profile: ApplicantProfile | null;
+  readiness: {
+    hasBaseResume: boolean;
+    hasReusableContext: boolean;
+    readyForTailoring: boolean;
+  };
+};
+
+export type GenerateArtifactsResult = {
+  artifacts: ArtifactRecord[];
+  warnings: string[] | undefined;
+};
+
 
 export type DiscoveryRunDetail = {
   run: DiscoveryRunRecord;
@@ -134,7 +154,7 @@ export async function buildArtifactFileUrl(
   return `${await getApiBaseUrl()}/artifacts/${artifactId}/file${search}`;
 }
 
-function buildJobsQuery(filters: JobListFilters = {}): string {
+function buildJobsQuery(filters: Partial<JobListFilters> = {}): string {
   const searchParams = new URLSearchParams();
 
   if (filters.sourceKind) searchParams.set('sourceKind', filters.sourceKind);
@@ -185,7 +205,7 @@ export async function getHealth(): Promise<{ ok: boolean }> {
 }
 
 export function getJobs(
-  filters: JobListFilters = {}
+  filters: Partial<JobListFilters> = {}
 ): Promise<{ jobs: JobListItem[]; total: number }> {
   return fetchFromApi(`/jobs${buildJobsQuery(filters)}`);
 }
@@ -337,3 +357,340 @@ export async function cancelAutopilotRun(
 
   return (await response.json()) as { accepted: boolean; active: boolean };
 }
+
+export async function getDistinctCompanyNames(
+  filters: Partial<JobListFilters> = {}
+): Promise<string[]> {
+  const baseUrl = await getApiBaseUrl();
+  const searchParams = new URLSearchParams();
+  if (filters.sourceKind) searchParams.set('sourceKind', filters.sourceKind);
+  if (filters.status) searchParams.set('status', filters.status);
+  if (filters.remoteType) searchParams.set('remoteType', filters.remoteType);
+  if (filters.title) searchParams.set('title', filters.title);
+  if (filters.location) searchParams.set('location', filters.location);
+  if (filters.matchProfile === 'me') searchParams.set('matchProfile', 'me');
+
+  const query = searchParams.toString();
+  const path = `/jobs/distinct-companies${query ? `?${query}` : ''}`;
+  const response = await fetch(`${baseUrl}${path}`, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return ((await response.json()) as { companies: string[] }).companies;
+}
+
+export async function getJobReviewCapabilities(): Promise<{ scoringEnabled: boolean }> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/job-reviews/capabilities`, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return (await response.json()) as { scoringEnabled: boolean };
+}
+
+export async function updateJobReview(
+  jobId: string,
+  payload: JobReviewPatch
+): Promise<JobRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/job-reviews/${jobId}`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
+export async function addJobToShortlist(jobId: string): Promise<JobRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/job-reviews/${jobId}/shortlist`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
+export async function removeJobFromShortlist(jobId: string): Promise<JobRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/job-reviews/${jobId}/shortlist`, {
+    method: 'DELETE',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
+export async function scoreJobReview(jobId: string): Promise<JobRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/job-reviews/${jobId}/score`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { job: JobRecord }).job;
+}
+
+export async function createApplicationRun(payload: {
+  jobId: string;
+}): Promise<ApplicationRunSummary> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/application-runs`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as ApplicationRunSummary;
+}
+
+export async function waitForDiscoveryRun(
+  runId: string,
+  options: { timeoutMs?: number; pollIntervalMs?: number } = {}
+): Promise<DiscoveryRunDetail | null> {
+  const timeoutMs = options.timeoutMs ?? 15000;
+  const pollIntervalMs = options.pollIntervalMs ?? 250;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const detail = await getDiscoveryRun(runId);
+
+    if (!detail) {
+      return null;
+    }
+
+    if (detail.run.status !== 'pending' && detail.run.status !== 'running') {
+      return detail;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  return getDiscoveryRun(runId);
+}
+
+export async function runDiscoverySources(payload: {
+  sourceIds: string[];
+}): Promise<DiscoveryRunRecord[]> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/discovery-runs`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { runs: DiscoveryRunRecord[] }).runs;
+}
+
+export async function retryDiscoveryRunStep(
+  runId: string,
+  payload: { sourceId: string }
+): Promise<DiscoveryRunRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/discovery-runs/${runId}/retry`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { run: DiscoveryRunRecord }).run;
+}
+
+export async function getDiscoverySchedule(): Promise<DiscoveryScheduleRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/discovery-schedules`, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return ((await response.json()) as { schedule: DiscoveryScheduleRecord }).schedule;
+}
+
+export async function updateDiscoverySchedule(payload: {
+  cronExpression?: string;
+  timezone?: string;
+  enabled?: boolean;
+}): Promise<DiscoveryScheduleRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/discovery-schedules`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { schedule: DiscoveryScheduleRecord }).schedule;
+}
+
+export async function getDiscoverySources(): Promise<DiscoverySourceRecord[]> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/discovery-sources`, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return ((await response.json()) as { sources: DiscoverySourceRecord[] }).sources;
+}
+
+export async function createDiscoverySource(payload: {
+  sourceKind: 'greenhouse' | 'lever' | 'ashby' | 'playwright';
+  sourceKey: string;
+  label: string;
+  enabled: boolean;
+}): Promise<DiscoverySourceRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/discovery-sources`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { source: DiscoverySourceRecord }).source;
+}
+
+export async function updateDiscoverySource(
+  sourceId: string,
+  payload: DiscoverySourcePatch
+): Promise<DiscoverySourceRecord> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/discovery-sources/${sourceId}`, {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { source: DiscoverySourceRecord }).source;
+}
+
+export async function getApplicantProfile(): Promise<ApplicantProfileResponse> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/applicant-profile`, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return (await response.json()) as ApplicantProfileResponse;
+}
+
+export async function saveApplicantProfile(
+  payload: Omit<ApplicantProfile, 'updatedAt'>
+): Promise<ApplicantProfile> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/applicant-profile`, {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { profile: ApplicantProfile }).profile;
+}
+
+export async function generateApplicantJobKeywordProfile(): Promise<ApplicantProfile> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/applicant-profile/job-keyword-profile/generate`, {
+    method: 'POST',
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return ((await response.json()) as { profile: ApplicantProfile }).profile;
+}
+
+export async function getJobArtifacts(jobId: string): Promise<ArtifactRecord[]> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/jobs/${jobId}/artifacts`, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return ((await response.json()) as { artifacts: ArtifactRecord[] }).artifacts;
+}
+
+export async function generateJobArtifacts(
+  jobId: string,
+  payload: { mode?: 'both' | 'resume' | 'cover-letter' } = {}
+): Promise<GenerateArtifactsResult> {
+  const baseUrl = await getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/jobs/${jobId}/artifacts`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as GenerateArtifactsResult;
+}
+

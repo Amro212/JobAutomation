@@ -5,7 +5,8 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@renderer/*": ["./src/*"]
+      "@renderer/*": ["./src/*"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*"]

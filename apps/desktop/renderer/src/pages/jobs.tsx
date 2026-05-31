@@ -1,12 +1,60 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
+import { Search, Filter, ExternalLink, RefreshCw } from 'lucide-react';
 
 import type { JobListFilters } from '@jobautomation/core';
 import { getJobs } from '@renderer/lib/api';
-import { Button } from '@renderer/components/ui/button';
-import { Input } from '@renderer/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@/components/ui/table';
+import { cn } from '@renderer/lib/utils';
 
-const EMPTY_FILTERS: JobListFilters = {};
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All Statuses' },
+  { value: 'discovered', label: 'Discovered' },
+  { value: 'shortlisted', label: 'Shortlisted' },
+  { value: 'applied', label: 'Applied' },
+  { value: 'rejected', label: 'Rejected' }
+];
+
+const MATCH_OPTIONS = [
+  { value: '', label: 'All Profiles' },
+  { value: 'me', label: 'Matching Me' }
+];
+
+function statusVariant(
+  status: string
+): 'default' | 'success' | 'warning' | 'destructive' | 'outline' | 'info' {
+  switch (status) {
+    case 'applied':
+      return 'success';
+    case 'shortlisted':
+      return 'info';
+    case 'rejected':
+      return 'destructive';
+    case 'discovered':
+      return 'outline';
+    default:
+      return 'secondary' as never;
+  }
+}
 
 export function JobsPage() {
   const [filters, setFilters] = useState({
@@ -16,21 +64,34 @@ export function JobsPage() {
     status: '',
     matchProfile: ''
   });
-  const [jobs, setJobs] = useState<Array<{ id: string; title: string; company: string; location: string; status: string }>>([]);
+  const [jobs, setJobs] = useState<
+    Array<{ id: string; title: string; company: string; location: string; status: string }>
+  >([]);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const refresh = async (nextFilters: JobListFilters = EMPTY_FILTERS) => {
-    const response = await getJobs(nextFilters);
-    setTotal(response.total);
-    setJobs(
-      response.jobs.slice(0, 25).map((job) => ({
-        id: job.id,
-        title: job.title,
-        company: job.companyName,
-        location: job.location,
-        status: job.status
-      }))
-    );
+  const refresh = async (nextFilters: Partial<JobListFilters> = {}) => {
+    setLoading(true);
+    setError(null);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const response = await getJobs(nextFilters as any);
+      setTotal(response.total);
+      setJobs(
+        response.jobs.slice(0, 50).map((job) => ({
+          id: job.id,
+          title: job.title,
+          company: job.companyName,
+          location: job.location,
+          status: job.status
+        }))
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load jobs');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -38,152 +99,172 @@ export function JobsPage() {
   }, []);
 
   const applyFilters = async () => {
-    const nextFilters: JobListFilters = {
-      title: filters.title || undefined,
-      companyName: filters.companyName || undefined,
-      location: filters.location || undefined,
-      status:
-        filters.status === ''
-          ? undefined
-          : (filters.status as NonNullable<JobListFilters['status']>),
-      matchProfile:
-        filters.matchProfile === ''
-          ? undefined
-          : (filters.matchProfile as NonNullable<JobListFilters['matchProfile']>)
-    };
-    await refresh(nextFilters);
+    const next: Partial<JobListFilters> = {};
+    if (filters.title) next.title = filters.title;
+    if (filters.companyName) next.companyName = filters.companyName;
+    if (filters.location) next.location = filters.location;
+    if (filters.status) next.status = filters.status as JobListFilters['status'];
+    if (filters.matchProfile === 'me') next.matchProfile = 'me';
+    await refresh(next as JobListFilters);
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <section className="p-8 rounded-[2rem] border border-border bg-card/60 backdrop-blur-3xl shadow-[0_20px_60px_rgba(2,6,23,0.32)]">
-        <h1 className="text-2xl font-semibold mb-2">Jobs</h1>
-        <p className="text-muted-foreground">
-          Jobs now support basic filtering in the desktop shell and drill into the same detail records as the current dashboard.
-        </p>
-      </section>
-
-      <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <label className="flex flex-col gap-2">
-            <span className="text-sm text-muted-foreground">Title</span>
-            <Input
-              value={filters.title}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, title: event.target.value }))
-              }
-            />
-          </label>
-          <label className="flex flex-col gap-2">
-            <span className="text-sm text-muted-foreground">Company</span>
-            <Input
-              value={filters.companyName}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, companyName: event.target.value }))
-              }
-            />
-          </label>
-          <label className="flex flex-col gap-2">
-            <span className="text-sm text-muted-foreground">Location</span>
-            <Input
-              value={filters.location}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, location: event.target.value }))
-              }
-            />
-          </label>
-          <label className="flex flex-col gap-2">
-            <span className="text-sm text-muted-foreground">Status</span>
-            <select
-              className="flex h-10 w-full rounded-xl border border-border bg-black/20 px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={filters.status}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, status: event.target.value }))
-              }
+    <div className="space-y-6">
+      {/* Filter Bar */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              Filters
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void refresh()}
+              aria-label="Refresh jobs list"
             >
-              <option value="">All</option>
-              <option value="discovered">Discovered</option>
-              <option value="reviewing">Reviewing</option>
-              <option value="shortlisted">Shortlisted</option>
-              <option value="applied">Applied</option>
-              <option value="archived">Archived</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-2">
-            <span className="text-sm text-muted-foreground">Match profile</span>
-            <select
-              className="flex h-10 w-full rounded-xl border border-border bg-black/20 px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={filters.matchProfile}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, matchProfile: event.target.value }))
-              }
-            >
-              <option value="">All</option>
-              <option value="me">Prefilter pass only</option>
-              <option value="all">All jobs</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <Button variant="default" onPress={() => void applyFilters()}>
-            Apply Filters
-          </Button>
-          <Button
-            variant="ghost"
-            onPress={() => {
-              setFilters({
-                title: '',
-                companyName: '',
-                location: '',
-                status: '',
-                matchProfile: ''
-              });
-              void refresh();
-            }}
-          >
-            Reset
-          </Button>
-        </div>
-      </section>
-
-      <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
-        <p className="text-sm text-muted-foreground mb-6">Showing {jobs.length} of {total} matching jobs.</p>
-        {jobs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No jobs have been discovered yet.</p>
-        ) : (
-          <div className="w-full overflow-hidden rounded-2xl border border-border">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-card/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Title</th>
-                  <th className="px-4 py-3 font-medium">Company</th>
-                  <th className="px-4 py-3 font-medium">Location</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {jobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3">
-                      <Link className="text-sky-400 hover:text-sky-300 transition-colors font-medium" to={`/jobs/${job.id}`}>
-                        {job.title}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">{job.company}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{job.location || 'Unspecified'}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-slate-500/10 text-slate-300">
-                        {job.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
           </div>
-        )}
-      </section>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                id="jobs-filter-title"
+                placeholder="Job title..."
+                value={filters.title}
+                onChange={(e) => setFilters({ ...filters, title: e.target.value })}
+                className="pl-9"
+              />
+            </div>
+
+            <Input
+              id="jobs-filter-company"
+              placeholder="Company..."
+              value={filters.companyName}
+              onChange={(e) => setFilters({ ...filters, companyName: e.target.value })}
+            />
+
+            <Input
+              id="jobs-filter-location"
+              placeholder="Location..."
+              value={filters.location}
+              onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+            />
+
+            <Select
+              value={filters.status || 'all'}
+              onValueChange={(v) => setFilters({ ...filters, status: v === 'all' ? '' : v })}
+            >
+              <SelectTrigger id="jobs-filter-status" aria-label="Filter by status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex justify-end mt-3">
+            <Button onClick={() => void applyFilters()} size="sm">
+              Apply Filters
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Results */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">
+              Jobs
+              {!loading && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">
+                  ({total} total)
+                </span>
+              )}
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {error ? (
+            <div
+              role="alert"
+              className="p-8 text-center text-sm text-destructive"
+            >
+              {error}
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3 block mx-auto"
+                onClick={() => void refresh()}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : loading ? (
+            <div className="p-4 space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : jobs.length === 0 ? (
+            <div className="p-12 text-center">
+              <Search className="h-8 w-8 text-muted-foreground/50 mx-auto mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">No jobs found</p>
+              <p className="text-xs text-muted-foreground/70 mt-1">
+                Configure discovery sources to start finding jobs
+              </p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Title</TableHead>
+                  <TableHead>Company</TableHead>
+                  <TableHead>Location</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-[60px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jobs.map((job) => (
+                  <TableRow key={job.id}>
+                    <TableCell className="font-medium max-w-[260px] truncate">
+                      {job.title}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{job.company}</TableCell>
+                    <TableCell className="text-muted-foreground text-xs">{job.location}</TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant(job.status)} className="capitalize">
+                        {job.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                        <Link
+                          to={`/jobs/${job.id}`}
+                          aria-label={`View details for ${job.title}`}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

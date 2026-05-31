@@ -172,7 +172,8 @@ export class ApiProcessManager {
     this.child = child;
 
     try {
-      await new Promise<void>((resolve, reject) => {
+      let cleanupIpc: () => void = () => {};
+      const ipcReadyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           cleanup();
           reject(new Error('API process did not report ready in time.'));
@@ -203,11 +204,16 @@ export class ApiProcessManager {
           child.off('exit', exitHandler);
         };
 
+        cleanupIpc = cleanup;
         child.on('message', messageHandler);
         child.on('exit', exitHandler);
       });
 
-      await (this.options.healthCheck ?? waitForHealth)(this.apiBaseUrl);
+      const healthPromise = (this.options.healthCheck ?? waitForHealth)(this.apiBaseUrl);
+
+      await Promise.race([ipcReadyPromise, healthPromise]);
+      cleanupIpc();
+
       this.restartAttempts = 0;
       this.setState({ status: 'running' });
     } catch (error) {

@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import {
+  Zap,
+  Square,
+  Save,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Settings
+} from 'lucide-react';
+import { toast } from 'sonner';
 
 import type { AutopilotConfigInput, AutopilotSettingsRecord } from '@jobautomation/core';
 import {
@@ -10,10 +22,23 @@ import {
   updateAutopilotSettings
 } from '@renderer/lib/api';
 import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
-import { Button } from '@renderer/components/ui/button';
-import { TextField } from '@renderer/components/ui/textfield';
-import { Select, SelectItem } from '@renderer/components/ui/select';
-import { Checkbox } from '@renderer/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
+import { cn } from '@renderer/lib/utils';
 
 type AutopilotFormState = {
   artifactMode: 'both' | 'resume' | 'cover-letter';
@@ -26,11 +51,27 @@ type AutopilotFormState = {
 function formStateFromSettings(settings: AutopilotSettingsRecord): AutopilotFormState {
   return {
     artifactMode: settings.config.artifactMode,
-    maxJobsPerRun: settings.config.maxJobsPerRun == null ? '' : String(settings.config.maxJobsPerRun),
+    maxJobsPerRun:
+      settings.config.maxJobsPerRun == null ? '' : String(settings.config.maxJobsPerRun),
     discoveryCacheHours: String(settings.config.discoveryCacheHours),
     matchProfile: settings.config.matchProfile ?? '',
     forceFreshDiscovery: settings.config.forceFreshDiscovery
   };
+}
+
+function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 'outline' {
+  switch (status) {
+    case 'completed':
+      return 'success';
+    case 'failed':
+    case 'cancelled':
+      return 'destructive';
+    case 'running':
+    case 'pending':
+      return 'warning';
+    default:
+      return 'outline';
+  }
 }
 
 export function AutopilotPage() {
@@ -56,13 +97,11 @@ export function AutopilotPage() {
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const settingsSummary = useMemo(() => {
-    if (!settings) {
-      return 'Loading settings...';
-    }
-
-    return `Mode: ${settings.config.artifactMode} | Max jobs: ${settings.config.maxJobsPerRun ?? 'unbounded'} | Discovery cache: ${settings.config.discoveryCacheHours}h`;
+    if (!settings) return 'Loading settings...';
+    return `Mode: ${settings.config.artifactMode} | Max: ${settings.config.maxJobsPerRun ?? '∞'} jobs | Cache: ${settings.config.discoveryCacheHours}h`;
   }, [settings]);
 
   const refresh = async () => {
@@ -70,17 +109,14 @@ export function AutopilotPage() {
       getAutopilotSettings(),
       getAutopilotRuns()
     ]);
-
     setSettings(settingsResponse);
     setFormState(formStateFromSettings(settingsResponse));
-
-    const nextRuns = runsResponse.slice(0, 6).map((entry) => ({
+    const nextRuns = runsResponse.slice(0, 8).map((entry) => ({
       id: entry.run.id,
       status: entry.run.status,
       step: entry.run.currentStep
     }));
     setRuns(nextRuns);
-
     const nextActiveRun = runsResponse.find(
       (entry) => entry.run.status === 'running' || entry.run.status === 'pending'
     )?.run;
@@ -101,23 +137,19 @@ export function AutopilotPage() {
   };
 
   useEffect(() => {
-    void refresh().catch((error) => {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load autopilot.');
-    });
+    void refresh()
+      .catch((err) => {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to load autopilot.');
+      })
+      .finally(() => setInitialLoading(false));
   }, []);
 
   useEffect(() => {
-    if (!activeRun) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
+    if (!activeRun) return;
+    const id = window.setInterval(() => {
       void refresh().catch(() => null);
     }, 5_000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
+    return () => window.clearInterval(id);
   }, [activeRun]);
 
   const handleStart = async () => {
@@ -126,25 +158,28 @@ export function AutopilotPage() {
     try {
       await createAutopilotRun();
       await refresh();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to start autopilot.');
+      toast.success('Autopilot run started');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to start autopilot.';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleStop = async () => {
-    if (!activeRun) {
-      return;
-    }
-
+    if (!activeRun) return;
     setSubmitting(true);
     setErrorMessage(null);
     try {
       await cancelAutopilotRun(activeRun.id);
       await refresh();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to stop autopilot.');
+      toast.success('Autopilot run cancelled');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to cancel run.';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -158,17 +193,18 @@ export function AutopilotPage() {
         artifactMode: formState.artifactMode,
         discoveryCacheHours: Number(formState.discoveryCacheHours),
         maxJobsPerRun:
-          formState.maxJobsPerRun.trim().length === 0
-            ? null
-            : Number(formState.maxJobsPerRun),
+          formState.maxJobsPerRun.trim().length === 0 ? null : Number(formState.maxJobsPerRun),
         matchProfile: formState.matchProfile === '' ? null : formState.matchProfile,
         forceFreshDiscovery: formState.forceFreshDiscovery
       };
       const updated = await updateAutopilotSettings(payload);
       setSettings(updated);
       setFormState(formStateFromSettings(updated));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to save settings.');
+      toast.success('Settings saved');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to save settings.';
+      setErrorMessage(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -176,194 +212,347 @@ export function AutopilotPage() {
 
   const camoufoxReady = camoufoxStatus.state === 'ready';
   const startDisabled = submitting || Boolean(activeRun) || !camoufoxReady;
+  const totalDone = activeRun ? activeRun.submitted + activeRun.blocked + activeRun.failed : 0;
+  const eligibleForProgress = activeRun?.eligible ?? 0;
+  const progressPct =
+    eligibleForProgress > 0 ? Math.round((totalDone / eligibleForProgress) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-6">
-      <section className="p-8 rounded-[2rem] border border-border bg-card/60 backdrop-blur-3xl shadow-[0_20px_60px_rgba(2,6,23,0.32)]">
-        <h1 className="text-2xl font-semibold mb-2">Autopilot</h1>
-        <p className="text-muted-foreground mb-6">
-          Desktop controls now hit the same Fastify routes as the current dashboard. Active runs auto-refresh while automation is in flight.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="default"
-            onPress={handleStart}
-            isDisabled={startDisabled}
-          >
-            Start Autopilot
-          </Button>
-          <Button
-            variant="secondary"
-            onPress={handleStop}
-            isDisabled={submitting || !activeRun}
-          >
-            Stop Active Run
-          </Button>
-          <Button variant="ghost" onPress={() => void refresh()} isDisabled={submitting}>
-            Refresh
-          </Button>
-          <Link className="inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium transition-colors hover:bg-white/10 hover:text-accent-foreground h-10 px-4 py-2" to="/autopilot-runs">
-            View History
-          </Link>
+    <div className="space-y-6">
+      {/* Error Banner */}
+      {errorMessage && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {errorMessage}
         </div>
-        {!camoufoxReady ? (
-          <p className="mt-6 text-sm text-amber-500/90 font-medium bg-amber-500/10 px-4 py-3 rounded-xl border border-amber-500/20 w-fit">
-            Autopilot stays locked until Camoufox finishes setup.
-          </p>
-        ) : null}
-        {errorMessage ? <p className="mt-6 text-sm text-destructive font-medium bg-destructive/10 px-4 py-3 rounded-xl border border-destructive/20 w-fit">{errorMessage}</p> : null}
-      </section>
+      )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
-          <h2 className="text-xl font-semibold mb-2">Launch profile</h2>
-          <p className="text-sm text-muted-foreground mb-6">{settingsSummary}</p>
+      {/* Camoufox Warning */}
+      {!camoufoxReady && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-400"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Camoufox browser is not ready.{' '}
+          <Link to="/setup" className="font-semibold underline underline-offset-2">
+            Complete setup
+          </Link>{' '}
+          before launching autopilot.
+        </div>
+      )}
 
-          <div className="grid gap-4">
-            <label className="flex flex-col gap-2">
-              <Select
-                label="Artifact mode"
-                selectedKey={formState.artifactMode}
-                onSelectionChange={(key) =>
-                  setFormState((current) => ({
-                    ...current,
-                    artifactMode: key as AutopilotFormState['artifactMode']
-                  }))
-                }
-              >
-                <SelectItem id="both">Both</SelectItem>
-                <SelectItem id="resume">Resume only</SelectItem>
-                <SelectItem id="cover-letter">Cover letter only</SelectItem>
-              </Select>
-            </label>
-            <label className="flex flex-col gap-2">
-              <TextField
-                label="Max jobs per run"
-                value={formState.maxJobsPerRun}
-                onChange={(value) =>
-                  setFormState((current) => ({
-                    ...current,
-                    maxJobsPerRun: value
-                  }))
-                }
-                placeholder="Unlimited"
-              />
-            </label>
-            <label className="flex flex-col gap-2">
-              <TextField
-                label="Discovery cache hours"
-                value={formState.discoveryCacheHours}
-                onChange={(value) =>
-                  setFormState((current) => ({
-                    ...current,
-                    discoveryCacheHours: value
-                  }))
-                }
-              />
-            </label>
-            <label className="flex flex-col gap-2">
-              <Select
-                label="Match profile"
-                selectedKey={formState.matchProfile}
-                onSelectionChange={(key) =>
-                  setFormState((current) => ({
-                    ...current,
-                    matchProfile: key as AutopilotFormState['matchProfile']
-                  }))
-                }
-              >
-                <SelectItem id="">Default</SelectItem>
-                <SelectItem id="me">Prefilter pass only</SelectItem>
-                <SelectItem id="all">All jobs</SelectItem>
-              </Select>
-            </label>
-            <label className="flex items-center gap-3 mt-2">
-              <Checkbox
-                isSelected={formState.forceFreshDiscovery}
-                onChange={(isSelected) =>
-                  setFormState((current) => ({
-                    ...current,
-                    forceFreshDiscovery: isSelected
-                  }))
-                }
-              >
-                Force fresh discovery before launch
-              </Checkbox>
-            </label>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button variant="secondary" onPress={handleSaveSettings} isDisabled={submitting}>
-              Save Settings
-            </Button>
-          </div>
-        </section>
-
-        <section className="p-6 rounded-3xl border border-border bg-card/55 backdrop-blur-[18px]">
-          <h2 className="text-xl font-semibold mb-6">Active status</h2>
-          {activeRun ? (
-            <div className="flex flex-col gap-6">
-              <p className="text-sm text-muted-foreground">
-                Run <span className="font-mono text-sky-400">{activeRun.id.slice(0, 8)}</span> | {activeRun.status} | {activeRun.step}
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <div className="flex flex-col gap-1 p-4 rounded-2xl border border-border bg-card/50">
-                  <strong className="text-xl">{activeRun.discovered}</strong>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Discovered</span>
-                </div>
-                <div className="flex flex-col gap-1 p-4 rounded-2xl border border-border bg-card/50">
-                  <strong className="text-xl">{activeRun.eligible}</strong>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Eligible</span>
-                </div>
-                <div className="flex flex-col gap-1 p-4 rounded-2xl border border-border bg-card/50">
-                  <strong className="text-xl">{activeRun.submitted}</strong>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Submitted</span>
-                </div>
-                <div className="flex flex-col gap-1 p-4 rounded-2xl border border-border bg-card/50">
-                  <strong className="text-xl">{activeRun.blocked}</strong>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Blocked</span>
-                </div>
-                <div className="flex flex-col gap-1 p-4 rounded-2xl border border-border bg-card/50">
-                  <strong className="text-xl">{activeRun.failed}</strong>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Failed</span>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* ── Left: Control Panel ───────────────────────────── */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Launch Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-primary" />
+                Autopilot Control
+              </CardTitle>
+              <CardDescription>{settingsSummary}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={() => void handleStart()}
+                  disabled={startDisabled}
+                  className="gap-2"
+                  id="autopilot-start-btn"
+                >
+                  <Zap className="h-4 w-4" />
+                  {submitting && !activeRun ? 'Starting…' : 'Launch Autopilot'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => void handleStop()}
+                  disabled={submitting || !activeRun}
+                  className="gap-2"
+                  id="autopilot-stop-btn"
+                >
+                  <Square className="h-4 w-4" />
+                  Stop Run
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => void refresh().catch(() => null)}
+                  aria-label="Refresh autopilot status"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
               </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground mb-8">No active autopilot run.</p>
-          )}
 
-          <h2 className="text-xl font-semibold mt-10 mb-6">Recent runs</h2>
-          {runs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No autopilot runs recorded yet.</p>
-          ) : (
-            <div className="w-full overflow-hidden rounded-2xl border border-border">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-card/40 text-muted-foreground text-xs uppercase tracking-wider border-b border-border">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Run</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                    <th className="px-4 py-3 font-medium">Step</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {runs.map((run) => (
-                    <tr key={run.id} className="hover:bg-white/5 transition-colors">
-                      <td className="px-4 py-3">
-                        <Link className="text-sky-400 hover:text-sky-300 transition-colors font-mono" to={`/autopilot-runs/${run.id}`}>
-                          {run.id.slice(0, 8)}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">{run.status}</td>
-                      <td className="px-4 py-3">{run.step}</td>
-                    </tr>
+              {/* Active Run Progress */}
+              {activeRun && (
+                <div className="mt-5 space-y-4">
+                  <Separator />
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-foreground">
+                        Run in progress
+                      </span>
+                      <Badge variant="warning" className="animate-pulse">
+                        {activeRun.status}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Step: {activeRun.step ?? 'Initializing…'}
+                    </p>
+                    <Progress value={progressPct} className="h-2 mb-3" />
+                    <div className="grid grid-cols-4 gap-3">
+                      <MetricPill label="Discovered" value={activeRun.discovered} />
+                      <MetricPill label="Eligible" value={activeRun.eligible} />
+                      <MetricPill
+                        label="Submitted"
+                        value={activeRun.submitted}
+                        positive
+                      />
+                      <MetricPill
+                        label="Blocked"
+                        value={activeRun.blocked}
+                        negative
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Settings Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Settings className="h-4 w-4 text-muted-foreground" />
+                Run Configuration
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {initialLoading ? (
+                <div className="space-y-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-9 w-full" />
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  {/* Artifact Mode */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="artifact-mode">Artifact Mode</Label>
+                    <Select
+                      value={formState.artifactMode}
+                      onValueChange={(v) =>
+                        setFormState({
+                          ...formState,
+                          artifactMode: v as AutopilotFormState['artifactMode']
+                        })
+                      }
+                    >
+                      <SelectTrigger id="artifact-mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="both">Resume + Cover Letter</SelectItem>
+                        <SelectItem value="resume">Resume Only</SelectItem>
+                        <SelectItem value="cover-letter">Cover Letter Only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Max Jobs */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="max-jobs">Max Jobs Per Run</Label>
+                    <Input
+                      id="max-jobs"
+                      type="number"
+                      min="1"
+                      placeholder="Unlimited"
+                      value={formState.maxJobsPerRun}
+                      onChange={(e) =>
+                        setFormState({ ...formState, maxJobsPerRun: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  {/* Discovery Cache */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="discovery-cache">Discovery Cache (hours)</Label>
+                    <Input
+                      id="discovery-cache"
+                      type="number"
+                      min="0"
+                      value={formState.discoveryCacheHours}
+                      onChange={(e) =>
+                        setFormState({ ...formState, discoveryCacheHours: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  {/* Match Profile */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="match-profile">Match Profile</Label>
+                    <Select
+                      value={formState.matchProfile || 'any'}
+                      onValueChange={(v) =>
+                        setFormState({
+                          ...formState,
+                          matchProfile: (v === 'any' ? '' : v) as AutopilotFormState['matchProfile']
+                        })
+                      }
+                    >
+                      <SelectTrigger id="match-profile">
+                        <SelectValue placeholder="Any" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any profile</SelectItem>
+                        <SelectItem value="me">Match Me</SelectItem>
+                        <SelectItem value="all">All profiles</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Force Fresh Discovery */}
+                  <div className="col-span-full">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id="force-fresh"
+                        checked={formState.forceFreshDiscovery}
+                        onCheckedChange={(checked) =>
+                          setFormState({ ...formState, forceFreshDiscovery: Boolean(checked) })
+                        }
+                      />
+                      <Label htmlFor="force-fresh" className="cursor-pointer">
+                        Force fresh discovery (ignore cache)
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end mt-5">
+                <Button
+                  onClick={() => void handleSaveSettings()}
+                  disabled={submitting || initialLoading}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <Save className="h-4 w-4" />
+                  Save Settings
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── Right: Run History ────────────────────────────── */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Recent Runs</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {initialLoading ? (
+                <div className="p-4 space-y-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : runs.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-sm text-muted-foreground">No runs yet</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {runs.map((run) => (
+                    <li key={run.id}>
+                      <Link
+                        to={`/autopilot-runs/${run.id}`}
+                        className="flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <RunStatusIcon status={run.status} />
+                          <div>
+                            <p className="text-xs font-mono text-muted-foreground">
+                              {run.id.slice(0, 10)}…
+                            </p>
+                            {run.step && (
+                              <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate max-w-[160px]">
+                                {run.step}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <Badge variant={statusVariant(run.status)} className="text-[10px] py-0.5">
+                          {run.status}
+                        </Badge>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {runs.length > 0 && (
+                <div className="px-4 py-3 border-t border-border">
+                  <Button variant="ghost" size="sm" className="w-full text-xs" asChild>
+                    <Link to="/autopilot-runs">View all runs</Link>
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
+}
+
+/* ── Helper Components ────────────────────────────────────────── */
+
+function MetricPill({
+  label,
+  value,
+  positive,
+  negative
+}: {
+  label: string;
+  value: number;
+  positive?: boolean;
+  negative?: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center rounded-lg bg-muted/50 p-2.5 text-center">
+      <span
+        className={cn(
+          'font-headline text-xl font-bold',
+          positive && 'text-emerald-600 dark:text-emerald-400',
+          negative && 'text-red-600 dark:text-red-400'
+        )}
+      >
+        {value}
+      </span>
+      <span className="text-[10px] text-muted-foreground mt-0.5">{label}</span>
+    </div>
+  );
+}
+
+function RunStatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case 'completed':
+      return <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />;
+    case 'failed':
+    case 'cancelled':
+      return <XCircle className="h-4 w-4 text-red-500 shrink-0" />;
+    case 'running':
+    case 'pending':
+      return <RefreshCw className="h-4 w-4 text-amber-500 shrink-0 animate-spin" />;
+    default:
+      return <Clock className="h-4 w-4 text-muted-foreground shrink-0" />;
+  }
 }

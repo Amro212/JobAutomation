@@ -6,10 +6,14 @@ import { ApplicationsPage } from '@renderer/pages/applications';
 import { AutopilotRunDetailPage } from '@renderer/pages/autopilot-run-detail';
 import { AutopilotRunsPage } from '@renderer/pages/autopilot-runs';
 import { AutopilotPage } from '@renderer/pages/autopilot';
+import { DashboardPage } from '@renderer/pages/dashboard';
 import { DiscoveryRunDetailPage } from '@renderer/pages/discovery-run-detail';
 import { JobDetailPage } from '@renderer/pages/job-detail';
 import { JobsPage } from '@renderer/pages/jobs';
 import { RunsPage } from '@renderer/pages/runs';
+import { SetupPage } from '@renderer/pages/setup';
+import { ShortlistPage } from '@renderer/pages/shortlist';
+import { SubmittedPage } from '@renderer/pages/submitted';
 
 export const router = createHashRouter([
   {
@@ -18,7 +22,11 @@ export const router = createHashRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/autopilot" replace />
+        element: <Navigate to="/dashboard" replace />
+      },
+      {
+        path: 'dashboard',
+        element: <DashboardPage />
       },
       {
         path: 'autopilot',
@@ -41,6 +49,10 @@ export const router = createHashRouter([
         element: <JobDetailPage />
       },
       {
+        path: 'shortlist',
+        element: <ShortlistPage />
+      },
+      {
         path: 'runs',
         element: <RunsPage />
       },
@@ -49,12 +61,20 @@ export const router = createHashRouter([
         element: <DiscoveryRunDetailPage />
       },
       {
+        path: 'submitted',
+        element: <SubmittedPage />
+      },
+      {
         path: 'applications',
         element: <ApplicationsPage />
       },
       {
         path: 'applications/:runId',
         element: <ApplicationDetailPage />
+      },
+      {
+        path: 'setup',
+        element: <SetupPage />
       }
     ]
   }
