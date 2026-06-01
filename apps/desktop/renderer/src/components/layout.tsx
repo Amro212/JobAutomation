@@ -28,6 +28,26 @@ import { ApiConnectionGuard } from '@renderer/components/api-connection-guard';
 import { CamoufoxSetupBanner } from '@renderer/components/camoufox-setup-banner';
 import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
 import { useTheme } from '@renderer/components/theme-provider';
+
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+  
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 text-muted-foreground hover:text-foreground"
+      onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+    >
+      {resolvedTheme === 'dark' ? (
+        <Sun className="h-4 w-4" />
+      ) : (
+        <Moon className="h-4 w-4" />
+      )}
+    </Button>
+  );
+}
 import { cn } from '@renderer/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -125,7 +145,6 @@ export function DesktopLayout() {
   const [backendStatus, setBackendStatus] = useState('Connecting...');
   const [rawStatus, setRawStatus] = useState<string>('stopped');
   const { status: camoufoxStatus } = useCamoufoxStatus();
-  const { resolvedTheme, setTheme } = useTheme();
   const location = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -159,10 +178,6 @@ export function DesktopLayout() {
     ] ??
     'JobAutomation';
 
-  const toggleTheme = () => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
-  };
-
   if (!apiConnected) {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-background text-foreground overflow-hidden">
@@ -186,8 +201,7 @@ export function DesktopLayout() {
         {/* ── Sidebar ──────────────────────────────────────── */}
         <aside
           className={cn(
-            'relative flex flex-col border-r border-sidebar-border bg-sidebar-background select-none overflow-hidden',
-            'transition-all duration-300'
+            'relative flex flex-col border-r border-sidebar-border bg-sidebar-background select-none overflow-hidden'
           )}
           aria-label="Main navigation"
         >
@@ -347,19 +361,7 @@ export function DesktopLayout() {
                 </Button>
 
                 {/* Theme Toggle */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                  onClick={toggleTheme}
-                  aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
-                >
-                  {resolvedTheme === 'dark' ? (
-                    <Sun className="h-4 w-4" />
-                  ) : (
-                    <Moon className="h-4 w-4" />
-                  )}
-                </Button>
+                <ThemeToggle />
               </div>
               
               <WindowControls />

@@ -70,7 +70,21 @@ export function ThemeProvider({
 
   const setTheme = (next: Theme) => {
     localStorage.setItem(storageKey, next);
-    setThemeState(next);
+    
+    // Add View Transitions API support for immersive theme toggle
+    if (document.startViewTransition) {
+      document.startViewTransition(() => {
+        // We do the DOM update synchronously inside the callback
+        const resolved = resolveTheme(next);
+        const root = document.documentElement;
+        root.classList.remove('light', 'dark');
+        root.classList.add(resolved);
+        // Also update the state for React
+        setThemeState(next);
+      });
+    } else {
+      setThemeState(next);
+    }
   };
 
   return (
