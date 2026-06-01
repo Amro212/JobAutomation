@@ -10,8 +10,11 @@ import { NavLink } from '@/components/nav-link';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'JobAutomation',
-  description: 'Local-first job automation control panel'
+  title: 'Sahara',
+  description: 'Local-first job automation control panel',
+  icons: {
+    icon: '/favicon.png'
+  }
 };
 
 const navItems = [
@@ -36,11 +39,18 @@ export default function RootLayout({
         <div className="min-h-screen">
           <header className="sticky top-0 z-50 border-b bg-card">
             <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 items-center gap-3">
                 <HeaderBackButton />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo-light.png"
+                  alt=""
+                  aria-hidden="true"
+                  className="h-10 w-10 shrink-0 rounded-xl object-contain"
+                />
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                    JobAutomation
+                    Sahara
                   </p>
                   <h1 className="text-lg font-semibold text-foreground">Control Panel</h1>
                 </div>

@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 
 import { ApiConnectionGuard } from '@renderer/components/api-connection-guard';
 import { CamoufoxSetupBanner } from '@renderer/components/camoufox-setup-banner';
+import { SaharaLogo } from '@renderer/components/sahara-logo';
 import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
 import { useTheme } from '@renderer/components/theme-provider';
 import { createAutopilotRun } from '@renderer/lib/api';
@@ -159,7 +160,12 @@ const rotatingWords = [
 
 function SaharaLoadingScreen() {
   return (
-    <div className="relative flex h-screen w-screen flex-col items-center justify-center bg-white text-zinc-900 overflow-hidden">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      className="relative flex h-screen w-screen flex-col items-center justify-center bg-white text-zinc-900 overflow-hidden"
+    >
       <style>{`
         @keyframes loading-slide {
           0% { transform: translateX(-100%); }
@@ -173,9 +179,10 @@ function SaharaLoadingScreen() {
       {/* Foreground Content */}
       <div className="z-10 flex flex-col items-center max-w-xs w-full px-6">
         {/* Logo */}
-        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground font-headline font-bold text-2xl mb-12 shadow-[0_0_20px_rgba(255,140,0,0.3)]">
-          S
-        </div>
+        <SaharaLogo
+          variant="light"
+          className="h-24 w-24 mb-10 shadow-[0_0_24px_rgba(255,140,0,0.35)] rounded-2xl"
+        />
 
         {/* Progress Container */}
         <div className="w-full flex flex-col items-center gap-4">
@@ -283,13 +290,17 @@ export function DesktopLayout() {
             "flex items-center gap-3 py-5 border-b border-sidebar-border min-h-[72px]",
             sidebarCollapsed ? "justify-center px-0" : "px-4"
           )}>
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground font-headline font-bold text-lg">
-              S
-            </div>
+            <SaharaLogo
+              decorative={!sidebarCollapsed}
+              className={cn(
+                'shrink-0 rounded-xl object-contain',
+                sidebarCollapsed ? 'h-10 w-10' : 'h-11 w-11'
+              )}
+            />
             {!sidebarCollapsed && (
               <div className="flex flex-col overflow-hidden">
                 <span className="font-headline text-lg font-bold text-foreground tracking-tight truncate">
-                  Sahara AI
+                  Sahara
                 </span>
                 <span className="text-xs text-muted-foreground font-semibold truncate">
                   Automation Suite

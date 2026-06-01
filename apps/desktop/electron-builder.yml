@@ -1,6 +1,7 @@
 asar: true
 appId: com.jobautomation.desktop
 productName: JobAutomation
+icon: resources/icon.png
 directories:
   output: release
 files:

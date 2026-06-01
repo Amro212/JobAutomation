@@ -21,7 +21,7 @@ export type TrayControllerOptions = {
 function resolveTrayIcon(): Electron.NativeImage {
   const iconPath = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../../build/icon.png'
+    '../../resources/icon.png'
   );
   return nativeImage.createFromPath(iconPath).isEmpty()
     ? nativeImage.createEmpty()
