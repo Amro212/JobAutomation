@@ -7,6 +7,7 @@ import {
   ipcMain,
   Notification,
   dialog,
+  shell,
   type BrowserWindowConstructorOptions
 } from 'electron';
 import type Store from 'electron-store';
@@ -104,6 +105,13 @@ async function createMainWindow(): Promise<BrowserWindow> {
 
   window.once('ready-to-show', () => {
     window.show();
+  });
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
   });
 
   if (entry.startsWith('file://')) {

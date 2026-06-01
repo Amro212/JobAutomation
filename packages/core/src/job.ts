@@ -143,6 +143,7 @@ export const jobListItemSchema = z.object({
   companyName: z.string().min(1),
   title: z.string().min(1),
   sourceKind: z.string().min(1),
+  sourceUrl: z.string().url(),
   location: z.string().default(''),
   remoteType: z.string().default('unknown'),
   status: jobStatusSchema,

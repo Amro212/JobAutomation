@@ -73,7 +73,7 @@ export type AutopilotRunSummary = {
 
 export type AutopilotApplicationSummary = {
   run: ApplicationRunRecord;
-  job: Pick<JobRecord, 'id' | 'title' | 'companyName' | 'location'>;
+  job: Pick<JobRecord, 'id' | 'title' | 'companyName' | 'location' | 'sourceUrl'>;
   resumeArtifact: ArtifactRecord | null;
   coverLetterArtifact: ArtifactRecord | null;
 };

@@ -20,7 +20,7 @@ import {
 
 export function ShortlistPage() {
   const [jobs, setJobs] = useState<
-    Array<{ id: string; title: string; company: string; location: string; status: string }>
+    Array<{ id: string; title: string; company: string; location: string; status: string; sourceUrl: string }>
   >([]);
   const [loading, setLoading] = useState(true);
   const [removing, setRemoving] = useState<string | null>(null);
@@ -36,7 +36,8 @@ export function ShortlistPage() {
           title: job.title,
           company: job.companyName,
           location: job.location,
-          status: job.status
+          status: job.status,
+          sourceUrl: job.sourceUrl
         }))
       );
     } catch (e) {
@@ -129,10 +130,26 @@ export function ShortlistPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                        <Link to={`/jobs/${job.id}`} aria-label={`View ${job.title}`}>
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 transition-transform hover:scale-105 active:scale-95"
+                        asChild={!!job.sourceUrl}
+                        disabled={!job.sourceUrl}
+                        title={job.sourceUrl ? `View posting for ${job.title}` : 'Job posting URL is unavailable'}
+                      >
+                        {job.sourceUrl ? (
+                          <a
+                            href={job.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`View posting for ${job.title}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <ExternalLink className="h-3.5 w-3.5 opacity-50" />
+                        )}
                       </Button>
                       <Button
                         variant="ghost"

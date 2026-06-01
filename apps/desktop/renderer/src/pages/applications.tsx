@@ -183,13 +183,26 @@ export function ApplicationsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                        <Link
-                          to={`/applications/${run.id}`}
-                          aria-label={`View run for ${job.title}`}
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 transition-transform hover:scale-105 active:scale-95"
+                        asChild={!!job.sourceUrl}
+                        disabled={!job.sourceUrl}
+                        title={job.sourceUrl ? `View posting for ${job.title}` : 'Job posting URL is unavailable'}
+                      >
+                        {job.sourceUrl ? (
+                          <a
+                            href={job.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`View posting for ${job.title}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <ExternalLink className="h-3.5 w-3.5 opacity-50" />
+                        )}
                       </Button>
                     </TableCell>
                   </TableRow>

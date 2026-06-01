@@ -366,6 +366,7 @@ export class JobsRepository {
       companyName: jobsTable.companyName,
       title: jobsTable.title,
       sourceKind: jobsTable.sourceKind,
+      sourceUrl: jobsTable.sourceUrl,
       location: jobsTable.location,
       remoteType: jobsTable.remoteType,
       status: jobsTable.status,
@@ -421,7 +422,7 @@ export class JobsRepository {
    */
   async findSummariesByIds(
     ids: string[]
-  ): Promise<Map<string, { id: string; title: string; companyName: string; location: string }>> {
+  ): Promise<Map<string, { id: string; title: string; companyName: string; location: string; sourceUrl: string }>> {
     if (ids.length === 0) {
       return new Map();
     }
@@ -431,12 +432,13 @@ export class JobsRepository {
         id: jobsTable.id,
         title: jobsTable.title,
         companyName: jobsTable.companyName,
-        location: jobsTable.location
+        location: jobsTable.location,
+        sourceUrl: jobsTable.sourceUrl
       })
       .from(jobsTable)
       .where(inArray(jobsTable.id, ids));
 
-    const map = new Map<string, { id: string; title: string; companyName: string; location: string }>();
+    const map = new Map<string, { id: string; title: string; companyName: string; location: string; sourceUrl: string }>();
     for (const record of records) {
       map.set(record.id, record);
     }
