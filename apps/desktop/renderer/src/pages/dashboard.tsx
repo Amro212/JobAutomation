@@ -18,13 +18,17 @@ interface DashboardMetrics {
   totalJobs: number;
   totalApplications: number;
   totalAutopilotRuns: number;
+  successRate: number;
+  blockedRate: number;
 }
 
 export function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalJobs: 0,
     totalApplications: 0,
-    totalAutopilotRuns: 0
+    totalAutopilotRuns: 0,
+    successRate: 0,
+    blockedRate: 0
   });
 
   useEffect(() => {
@@ -36,10 +40,27 @@ export function DashboardPage() {
           getAutopilotRuns()
         ]);
 
+        let successRate = 0;
+        let blockedRate = 0;
+
+        if (appRuns.status === 'fulfilled') {
+          const runs = appRuns.value;
+          const successCount = runs.filter(r => r.run.status === 'completed').length;
+          const blockedCount = runs.filter(r => ['failed', 'cancelled', 'skipped'].includes(r.run.status)).length;
+          const totalResolved = successCount + blockedCount;
+          
+          if (totalResolved > 0) {
+            successRate = Math.round((successCount / totalResolved) * 100);
+            blockedRate = 100 - successRate;
+          }
+        }
+
         setMetrics({
           totalJobs: jobsRes.status === 'fulfilled' ? jobsRes.value.total : 0,
           totalApplications: appRuns.status === 'fulfilled' ? appRuns.value.length : 0,
-          totalAutopilotRuns: autopilotRuns.status === 'fulfilled' ? autopilotRuns.value.length : 0
+          totalAutopilotRuns: autopilotRuns.status === 'fulfilled' ? autopilotRuns.value.length : 0,
+          successRate,
+          blockedRate
         });
       } catch {
         // Silently handle
@@ -145,17 +166,17 @@ export function DashboardPage() {
             <div className="md:w-1/2 flex flex-col justify-center space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Success</span>
-                <span className="font-semibold">68%</span>
+                <span className="font-semibold">{metrics.successRate}%</span>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5">
-                <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: '68%' }} />
+                <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${metrics.successRate}%` }} />
               </div>
               <div className="flex items-center justify-between text-sm pt-2">
                 <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-destructive" /> Blocked</span>
-                <span className="font-semibold">32%</span>
+                <span className="font-semibold">{metrics.blockedRate}%</span>
               </div>
               <div className="w-full bg-muted rounded-full h-1.5">
-                <div className="bg-destructive h-1.5 rounded-full" style={{ width: '32%' }} />
+                <div className="bg-destructive h-1.5 rounded-full" style={{ width: `${metrics.blockedRate}%` }} />
               </div>
             </div>
           </div>

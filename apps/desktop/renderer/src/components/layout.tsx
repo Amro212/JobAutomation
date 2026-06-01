@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   LayoutDashboard,
   Zap,
@@ -23,11 +23,13 @@ import {
   Square,
   X
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { ApiConnectionGuard } from '@renderer/components/api-connection-guard';
 import { CamoufoxSetupBanner } from '@renderer/components/camoufox-setup-banner';
 import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
 import { useTheme } from '@renderer/components/theme-provider';
+import { createAutopilotRun } from '@renderer/lib/api';
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -146,7 +148,9 @@ export function DesktopLayout() {
   const [rawStatus, setRawStatus] = useState<string>('stopped');
   const { status: camoufoxStatus } = useCamoufoxStatus();
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -177,6 +181,20 @@ export function DesktopLayout() {
       ) ?? ''
     ] ??
     'JobAutomation';
+
+  const handleLaunchAutopilot = async () => {
+    setIsLaunching(true);
+    try {
+      await createAutopilotRun();
+      toast.success('Autopilot run started');
+      navigate('/autopilot');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to start autopilot.';
+      toast.error(msg);
+    } finally {
+      setIsLaunching(false);
+    }
+  };
 
   if (!apiConnected) {
     return (
@@ -238,19 +256,19 @@ export function DesktopLayout() {
                   <div className="flex flex-col gap-0.5 mt-1">
                     {section.items.map((item) => {
                       const Icon = item.icon;
+                      const isActive = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+                      
                       return sidebarCollapsed ? (
                         <Tooltip key={item.to}>
                           <TooltipTrigger asChild>
                             <NavLink
                                to={item.to}
-                              className={({ isActive }) =>
-                                cn(
-                                  'flex items-center justify-center h-10 w-10 mx-auto rounded-lg transition-colors duration-200',
-                                  isActive
-                                    ? 'bg-sidebar-accent text-sidebar-primary font-bold'
-                                    : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
-                                )
-                              }
+                              className={cn(
+                                'flex items-center justify-center h-10 w-10 mx-auto rounded-lg transition-colors duration-200',
+                                isActive
+                                  ? 'bg-sidebar-accent text-sidebar-primary font-bold'
+                                  : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
+                              )}
                             >
                               <Icon className="h-5 w-5" strokeWidth={1.8} />
                             </NavLink>
@@ -261,14 +279,12 @@ export function DesktopLayout() {
                         <NavLink
                           key={item.to}
                           to={item.to}
-                           className={({ isActive }) =>
-                            cn(
-                              'flex items-center gap-3 px-2 py-1.5 rounded-lg text-sm font-semibold transition-colors duration-200',
-                              isActive
-                                ? 'bg-sidebar-accent text-sidebar-primary font-bold'
-                                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
-                            )
-                          }
+                           className={cn(
+                            'flex items-center gap-3 px-2 py-1.5 rounded-lg text-sm font-semibold transition-colors duration-200',
+                            isActive
+                              ? 'bg-sidebar-accent text-sidebar-primary font-bold'
+                              : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
+                          )}
                         >
                           <div className="flex h-8 w-8 items-center justify-center shrink-0">
                             <Icon className="h-5 w-5" strokeWidth={1.8} />
@@ -290,10 +306,16 @@ export function DesktopLayout() {
                 "font-label font-semibold shadow-sm transition-colors flex items-center justify-center gap-2 relative overflow-hidden",
                 !sidebarCollapsed ? "w-full py-2.5" : "h-10 w-10 p-0 mx-auto flex-shrink-0"
               )}
+              onClick={handleLaunchAutopilot}
+              disabled={isLaunching}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
-              <Rocket className={cn("shrink-0 z-10 relative", sidebarCollapsed ? "h-5 w-5" : "h-4 w-4")} />
-              {!sidebarCollapsed && <span className="z-10 relative">Launch Autopilot</span>}
+              {isLaunching ? (
+                <Loader2 className={cn("shrink-0 z-10 relative animate-spin", sidebarCollapsed ? "h-5 w-5" : "h-4 w-4")} />
+              ) : (
+                <Rocket className={cn("shrink-0 z-10 relative", sidebarCollapsed ? "h-5 w-5" : "h-4 w-4")} />
+              )}
+              {!sidebarCollapsed && <span className="z-10 relative">{isLaunching ? 'Launching...' : 'Launch Autopilot'}</span>}
             </Button>
             
             {!sidebarCollapsed && (
@@ -320,7 +342,7 @@ export function DesktopLayout() {
               variant="ghost"
               size="sm"
               className={cn(
-                "justify-center text-muted-foreground hover:text-foreground flex-shrink-0",
+                "flex justify-center text-muted-foreground hover:text-foreground flex-shrink-0",
                 !sidebarCollapsed ? "w-full h-8" : "h-10 w-10 p-0 mx-auto"
               )}
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
