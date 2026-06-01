@@ -73,13 +73,8 @@ function getWindowOptions(store: { get: <K extends keyof DesktopConfig>(key: K) 
     minWidth: 1100,
     minHeight: 700,
     show: false,
+    frame: false,
     backgroundColor: '#0b1020',
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#0b1020',
-      symbolColor: '#ffffff',
-      height: 56 // 56px matches our h-14 header
-    },
     webPreferences: {
       preload: path.resolve(currentDir, '../preload/index.js'),
       contextIsolation: true,
@@ -333,20 +328,18 @@ async function bootstrap(): Promise<void> {
   ipcMain.on('minimize-to-tray', () => {
     mainWindow?.hide();
   });
-  ipcMain.on('set-theme', (_event, theme: 'light' | 'dark') => {
-    if (mainWindow) {
-      if (theme === 'dark') {
-        mainWindow.setTitleBarOverlay({
-          color: '#0b1020',
-          symbolColor: '#ffffff'
-        });
-      } else {
-        mainWindow.setTitleBarOverlay({
-          color: '#ffffff',
-          symbolColor: '#000000'
-        });
-      }
+  ipcMain.on('window-minimize', () => {
+    mainWindow?.minimize();
+  });
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow?.maximize();
     }
+  });
+  ipcMain.on('window-close', () => {
+    mainWindow?.close();
   });
 
   // Create window and tray FIRST so the user always sees the app,

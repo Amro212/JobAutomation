@@ -20,7 +20,9 @@ function onChannel<T>(channel: string, callback: (payload: T) => void): () => vo
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  setTheme: (theme: 'light' | 'dark') => ipcRenderer.send('set-theme', theme),
+  minimizeWindow: () => ipcRenderer.send('window-minimize'),
+  maximizeWindow: () => ipcRenderer.send('window-maximize'),
+  closeWindow: () => ipcRenderer.send('window-close'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getAutoUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   installUpdate: () => ipcRenderer.invoke('install-update'),

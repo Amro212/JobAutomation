@@ -18,7 +18,10 @@ import {
   Rocket,
   HelpCircle,
   LogOut,
-  Loader2
+  Loader2,
+  Minus,
+  Square,
+  X
 } from 'lucide-react';
 
 import { ApiConnectionGuard } from '@renderer/components/api-connection-guard';
@@ -85,6 +88,38 @@ const pageTitles: Record<string, string> = {
 /* ──────────────────────────────────────────────────────────────
    Layout Component
    ────────────────────────────────────────────────────────────── */
+
+function WindowControls() {
+  const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+  
+  if (!electronAPI) return null;
+
+  return (
+    <div className="flex h-full items-center">
+      <button 
+        onClick={() => electronAPI.minimizeWindow()} 
+        className="h-full px-4 inline-flex items-center justify-center hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground"
+        aria-label="Minimize"
+      >
+        <Minus className="h-4 w-4" />
+      </button>
+      <button 
+        onClick={() => electronAPI.maximizeWindow()} 
+        className="h-full px-4 inline-flex items-center justify-center hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground"
+        aria-label="Maximize"
+      >
+        <Square className="h-3.5 w-3.5" />
+      </button>
+      <button 
+        onClick={() => electronAPI.closeWindow()} 
+        className="h-full px-4 inline-flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors text-muted-foreground"
+        aria-label="Close"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
 
 export function DesktopLayout() {
   const [backendStatus, setBackendStatus] = useState('Connecting...');
@@ -289,40 +324,45 @@ export function DesktopLayout() {
         {/* ── Main Content Area ─────────────────────────────── */}
         <div className="flex flex-col h-screen overflow-hidden">
           {/* Top Header */}
+          {/* Top Header */}
           <header 
-            className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/90 backdrop-blur-md px-6 pr-[150px]"
+            className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/90 backdrop-blur-md pl-6 pr-0"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
             <h1 className="font-headline text-xl font-bold tracking-tight text-foreground">
               {currentPageTitle}
             </h1>
 
-            <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
-              {/* System Status Pill */}
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-muted/40 text-xs font-semibold text-foreground">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-[pulse_2s_infinite]" />
-                System Active
+            <div className="flex items-center h-full" style={{ WebkitAppRegion: 'no-drag' } as any}>
+              <div className="flex items-center gap-3 mr-2">
+                {/* System Status Pill */}
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-muted/40 text-xs font-semibold text-foreground">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-[pulse_2s_infinite]" />
+                  System Active
+                </div>
+
+                {/* Notifications */}
+                <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground" aria-label="Notifications">
+                  <Bell className="h-4 w-4" />
+                </Button>
+
+                {/* Theme Toggle */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                  onClick={toggleTheme}
+                  aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+                >
+                  {resolvedTheme === 'dark' ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
-
-              {/* Notifications */}
-              <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground" aria-label="Notifications">
-                <Bell className="h-4 w-4" />
-              </Button>
-
-              {/* Theme Toggle */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                onClick={toggleTheme}
-                aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
-              >
-                {resolvedTheme === 'dark' ? (
-                  <Sun className="h-4 w-4" />
-                ) : (
-                  <Moon className="h-4 w-4" />
-                )}
-              </Button>
+              
+              <WindowControls />
             </div>
           </header>
 
