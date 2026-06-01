@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   LayoutDashboard,
@@ -33,7 +33,7 @@ import { createAutopilotRun } from '@renderer/lib/api';
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  
+
   return (
     <Button
       variant="ghost"
@@ -113,32 +113,169 @@ const pageTitles: Record<string, string> = {
 
 function WindowControls() {
   const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
-  
+
   if (!electronAPI) return null;
 
   return (
     <div className="flex h-full items-center">
-      <button 
-        onClick={() => electronAPI.minimizeWindow()} 
+      <button
+        onClick={() => electronAPI.minimizeWindow()}
         className="h-full px-4 inline-flex items-center justify-center hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground"
         aria-label="Minimize"
       >
         <Minus className="h-4 w-4" />
       </button>
-      <button 
-        onClick={() => electronAPI.maximizeWindow()} 
+      <button
+        onClick={() => electronAPI.maximizeWindow()}
         className="h-full px-4 inline-flex items-center justify-center hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground"
         aria-label="Maximize"
       >
         <Square className="h-3.5 w-3.5" />
       </button>
-      <button 
-        onClick={() => electronAPI.closeWindow()} 
+      <button
+        onClick={() => electronAPI.closeWindow()}
         className="h-full px-4 inline-flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors text-muted-foreground"
         aria-label="Close"
       >
         <X className="h-4 w-4" />
       </button>
+    </div>
+  );
+}
+
+const quirkyMessages = [
+  "Reticulating splines...",
+  "Warming up worker nodes...",
+  "Feeding the hamsters...",
+  "Polishing the pixels...",
+  "Aligning the stars...",
+  "Generating witty loading messages...",
+  "Charging the flux capacitor...",
+  "Summoning the AI spirits...",
+  "Brewing coffee for the server...",
+  "Untangling the web..."
+];
+
+function SaharaLoadingScreen() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [message] = useState(() => quirkyMessages[Math.floor(Math.random() * quirkyMessages.length)]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let width: number, height: number, particles: any[] = [];
+    let animationFrameId: number;
+
+    function resize() {
+      if (!canvas) return;
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+
+    class Particle {
+      x!: number;
+      y!: number;
+      size!: number;
+      speedX!: number;
+      speedY!: number;
+      opacity!: number;
+
+      constructor() {
+        this.init();
+      }
+      init() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.size = Math.random() * 2 + 1;
+        this.speedX = Math.random() * 0.5 + 0.2;
+        this.speedY = Math.random() * 0.2 - 0.1;
+        this.opacity = Math.random() * 0.5 + 0.1;
+      }
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        if (this.x > width) this.x = -10;
+        if (this.y > height) this.y = 0;
+        if (this.y < 0) this.y = height;
+      }
+      draw() {
+        ctx!.fillStyle = `rgba(255, 140, 0, ${this.opacity})`;
+        ctx!.beginPath();
+        ctx!.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx!.fill();
+      }
+    }
+
+    function init() {
+      resize();
+      particles = Array.from({ length: 50 }, () => new Particle());
+    }
+
+    function animate() {
+      ctx!.clearRect(0, 0, width, height);
+      particles.forEach(p => {
+        p.update();
+        p.draw();
+      });
+      animationFrameId = requestAnimationFrame(animate);
+    }
+
+    window.addEventListener('resize', resize);
+    init();
+    animate();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
+
+  return (
+    <div className="relative flex h-screen w-screen flex-col items-center justify-center bg-white text-zinc-900 overflow-hidden">
+      <style>{`
+        @keyframes loading-slide {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(200%); }
+        }
+        .animate-loading-slide {
+          animation: loading-slide 1.5s ease-in-out infinite;
+        }
+      `}</style>
+
+      {/* Background Effects */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        {/* Particle Canvas */}
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full"></canvas>
+      </div>
+
+      {/* Foreground Content */}
+      <div className="z-10 flex flex-col items-center max-w-xs w-full px-6">
+        {/* Logo */}
+        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground font-headline font-bold text-2xl mb-12 shadow-[0_0_20px_rgba(255,140,0,0.3)]">
+          S
+        </div>
+
+        {/* Progress Container */}
+        <div className="w-full flex flex-col items-center gap-4">
+          {/* Quirky Message */}
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500 animate-pulse text-center">
+            {message}
+          </p>
+
+          {/* Indeterminate Progress Bar */}
+          <div className="h-1 w-full bg-zinc-200 rounded-full overflow-hidden relative">
+            <div className="absolute top-0 bottom-0 left-0 w-1/2 bg-gradient-to-r from-primary/10 via-primary to-primary/10 rounded-full animate-loading-slide" />
+          </div>
+
+          {/* Subtitle */}
+          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-400 mt-6">
+            Sahara AI Automation
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -176,9 +313,9 @@ export function DesktopLayout() {
   const currentPageTitle =
     pageTitles[location.pathname] ??
     pageTitles[
-      Object.keys(pageTitles).find((key) =>
-        location.pathname.startsWith(key)
-      ) ?? ''
+    Object.keys(pageTitles).find((key) =>
+      location.pathname.startsWith(key)
+    ) ?? ''
     ] ??
     'JobAutomation';
 
@@ -197,16 +334,7 @@ export function DesktopLayout() {
   };
 
   if (!apiConnected) {
-    return (
-      <div className="flex h-screen w-screen flex-col items-center justify-center bg-background text-foreground overflow-hidden">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground font-headline font-bold text-3xl mb-8 shadow-lg">
-          S
-        </div>
-        <Loader2 className="h-8 w-8 text-primary animate-spin mb-4" />
-        <h1 className="text-2xl font-bold font-headline tracking-tight">Sahara AI</h1>
-        <p className="text-sm text-muted-foreground mt-2">Loading...</p>
-      </div>
-    );
+    return <SaharaLoadingScreen />;
   }
 
   return (
@@ -257,12 +385,12 @@ export function DesktopLayout() {
                     {section.items.map((item) => {
                       const Icon = item.icon;
                       const isActive = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
-                      
+
                       return sidebarCollapsed ? (
                         <Tooltip key={item.to}>
                           <TooltipTrigger asChild>
                             <NavLink
-                               to={item.to}
+                              to={item.to}
                               className={cn(
                                 'flex items-center justify-center h-10 w-10 mx-auto rounded-lg transition-colors duration-200',
                                 isActive
@@ -279,7 +407,7 @@ export function DesktopLayout() {
                         <NavLink
                           key={item.to}
                           to={item.to}
-                           className={cn(
+                          className={cn(
                             'flex items-center gap-3 px-2 py-1.5 rounded-lg text-sm font-semibold transition-colors duration-200',
                             isActive
                               ? 'bg-sidebar-accent text-sidebar-primary font-bold'
@@ -317,7 +445,7 @@ export function DesktopLayout() {
               )}
               {!sidebarCollapsed && <span className="z-10 relative">{isLaunching ? 'Launching...' : 'Launch Autopilot'}</span>}
             </Button>
-            
+
             {!sidebarCollapsed && (
               <div className="flex flex-col space-y-1 mt-2">
                 <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground h-10 px-2 gap-3">
@@ -361,7 +489,7 @@ export function DesktopLayout() {
         <div className="flex flex-col h-screen overflow-hidden">
           {/* Top Header */}
           {/* Top Header */}
-          <header 
+          <header
             className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/90 backdrop-blur-md pl-6 pr-0"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
@@ -385,7 +513,7 @@ export function DesktopLayout() {
                 {/* Theme Toggle */}
                 <ThemeToggle />
               </div>
-              
+
               <WindowControls />
             </div>
           </header>
