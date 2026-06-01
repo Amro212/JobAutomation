@@ -62,6 +62,7 @@ import {
 } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import RotatingText from '@/components/ui/rotating-text';
+import { WindBackground } from '@renderer/components/wind-background';
 
 /* ──────────────────────────────────────────────────────────────
    Navigation Config
@@ -164,8 +165,11 @@ function SaharaLoadingScreen() {
       role="status"
       aria-live="polite"
       aria-busy="true"
-      className="relative flex h-screen w-screen flex-col items-center justify-center bg-white text-zinc-900 overflow-hidden"
+      data-testid="sahara-loading-screen"
+      className="relative flex h-screen w-screen flex-col items-center justify-center bg-background text-foreground overflow-hidden"
     >
+      <WindBackground />
+
       <style>{`
         @keyframes loading-slide {
           0% { transform: translateX(-100%); }
@@ -181,13 +185,13 @@ function SaharaLoadingScreen() {
         {/* Logo */}
         <SaharaLogo
           variant="light"
-          className="h-24 w-24 mb-10 shadow-[0_0_24px_rgba(255,140,0,0.35)] rounded-2xl"
+          className="h-24 w-24 mb-10 rounded-2xl"
         />
 
         {/* Progress Container */}
         <div className="w-full flex flex-col items-center gap-4">
           {/* Quirky Message */}
-          <div className="flex flex-nowrap justify-center items-center min-h-8 md:min-h-10 w-full mb-1 whitespace-nowrap text-sm md:text-base font-bold uppercase tracking-[0.15em] text-zinc-500">
+          <div className="flex flex-nowrap justify-center items-center min-h-8 md:min-h-10 w-full mb-1 whitespace-nowrap text-sm md:text-base font-bold uppercase tracking-[0.15em] text-muted-foreground">
             <span className="mr-2 shrink-0">Preparing the</span>
             <RotatingText
               texts={rotatingWords}
@@ -205,7 +209,7 @@ function SaharaLoadingScreen() {
           </div>
 
           {/* Indeterminate Progress Bar */}
-          <div className="h-1 w-full bg-zinc-200 rounded-full overflow-hidden relative">
+          <div className="h-1 w-full bg-muted rounded-full overflow-hidden relative">
             <div className="absolute top-0 bottom-0 left-0 w-1/2 bg-gradient-to-r from-primary/10 via-primary to-primary/10 rounded-full animate-loading-slide" />
           </div>
         </div>
@@ -303,7 +307,7 @@ export function DesktopLayout() {
                   Sahara
                 </span>
                 <span className="text-xs text-muted-foreground font-semibold truncate">
-                  Automation Suite
+                  Job Automation
                 </span>
               </div>
             )}
