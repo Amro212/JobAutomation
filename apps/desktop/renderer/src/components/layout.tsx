@@ -289,12 +289,15 @@ export function DesktopLayout() {
         {/* ── Main Content Area ─────────────────────────────── */}
         <div className="flex flex-col h-screen overflow-hidden">
           {/* Top Header */}
-          <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/90 backdrop-blur-md px-6">
+          <header 
+            className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/90 backdrop-blur-md px-6 pr-[150px]"
+            style={{ WebkitAppRegion: 'drag' } as any}
+          >
             <h1 className="font-headline text-xl font-bold tracking-tight text-foreground">
               {currentPageTitle}
             </h1>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
               {/* System Status Pill */}
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-muted/40 text-xs font-semibold text-foreground">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-[pulse_2s_infinite]" />

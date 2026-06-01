@@ -74,6 +74,12 @@ function getWindowOptions(store: { get: <K extends keyof DesktopConfig>(key: K) 
     minHeight: 700,
     show: false,
     backgroundColor: '#0b1020',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0b1020',
+      symbolColor: '#ffffff',
+      height: 56 // 56px matches our h-14 header
+    },
     webPreferences: {
       preload: path.resolve(currentDir, '../preload/index.js'),
       contextIsolation: true,
@@ -98,6 +104,8 @@ function getRendererEntry(): string {
 async function createMainWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow(getWindowOptions(configStore));
   const entry = getRendererEntry();
+
+  window.removeMenu();
 
   window.once('ready-to-show', () => {
     window.show();
@@ -324,6 +332,21 @@ async function bootstrap(): Promise<void> {
   });
   ipcMain.on('minimize-to-tray', () => {
     mainWindow?.hide();
+  });
+  ipcMain.on('set-theme', (_event, theme: 'light' | 'dark') => {
+    if (mainWindow) {
+      if (theme === 'dark') {
+        mainWindow.setTitleBarOverlay({
+          color: '#0b1020',
+          symbolColor: '#ffffff'
+        });
+      } else {
+        mainWindow.setTitleBarOverlay({
+          color: '#ffffff',
+          symbolColor: '#000000'
+        });
+      }
+    }
   });
 
   // Create window and tray FIRST so the user always sees the app,

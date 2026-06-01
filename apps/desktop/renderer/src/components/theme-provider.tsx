@@ -50,6 +50,11 @@ export function ThemeProvider({
     const root = document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(resolved);
+    
+    // Notify main process for Window Controls Overlay sync
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.setTheme) {
+      (window as any).electronAPI.setTheme(resolved);
+    }
   }, [theme]);
 
   useEffect(() => {
@@ -62,6 +67,10 @@ export function ThemeProvider({
       const root = document.documentElement;
       root.classList.remove('light', 'dark');
       root.classList.add(resolved);
+      
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.setTheme) {
+        (window as any).electronAPI.setTheme(resolved);
+      }
     };
 
     mq.addEventListener('change', handler);
