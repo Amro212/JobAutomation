@@ -60,6 +60,7 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import RotatingText from '@/components/ui/rotating-text';
 
 /* ──────────────────────────────────────────────────────────────
    Navigation Config
@@ -143,96 +144,20 @@ function WindowControls() {
   );
 }
 
-const quirkyMessages = [
-  "Reticulating splines...",
-  "Warming up worker nodes...",
-  "Feeding the hamsters...",
-  "Polishing the pixels...",
-  "Aligning the stars...",
-  "Generating witty loading messages...",
-  "Charging the flux capacitor...",
-  "Summoning the AI spirits...",
-  "Brewing coffee for the server...",
-  "Untangling the web..."
+const rotatingWords = [
+  "resumes",
+  "applicants",
+  "jobs",
+  "cover letters",
+  "applications",
+  "tasks",
+  "pipelines",
+  "workflows",
+  "openings",
+  "automations"
 ];
 
 function SaharaLoadingScreen() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [message] = useState(() => quirkyMessages[Math.floor(Math.random() * quirkyMessages.length)]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let width: number, height: number, particles: any[] = [];
-    let animationFrameId: number;
-
-    function resize() {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    }
-
-    class Particle {
-      x!: number;
-      y!: number;
-      size!: number;
-      speedX!: number;
-      speedY!: number;
-      opacity!: number;
-
-      constructor() {
-        this.init();
-      }
-      init() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.size = Math.random() * 2 + 1;
-        this.speedX = Math.random() * 0.5 + 0.2;
-        this.speedY = Math.random() * 0.2 - 0.1;
-        this.opacity = Math.random() * 0.5 + 0.1;
-      }
-      update() {
-        this.x += this.speedX;
-        this.y += this.speedY;
-        if (this.x > width) this.x = -10;
-        if (this.y > height) this.y = 0;
-        if (this.y < 0) this.y = height;
-      }
-      draw() {
-        ctx!.fillStyle = `rgba(255, 140, 0, ${this.opacity})`;
-        ctx!.beginPath();
-        ctx!.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx!.fill();
-      }
-    }
-
-    function init() {
-      resize();
-      particles = Array.from({ length: 50 }, () => new Particle());
-    }
-
-    function animate() {
-      ctx!.clearRect(0, 0, width, height);
-      particles.forEach(p => {
-        p.update();
-        p.draw();
-      });
-      animationFrameId = requestAnimationFrame(animate);
-    }
-
-    window.addEventListener('resize', resize);
-    init();
-    animate();
-
-    return () => {
-      window.removeEventListener('resize', resize);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, []);
-
   return (
     <div className="relative flex h-screen w-screen flex-col items-center justify-center bg-white text-zinc-900 overflow-hidden">
       <style>{`
@@ -245,12 +170,6 @@ function SaharaLoadingScreen() {
         }
       `}</style>
 
-      {/* Background Effects */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
-        {/* Particle Canvas */}
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full"></canvas>
-      </div>
-
       {/* Foreground Content */}
       <div className="z-10 flex flex-col items-center max-w-xs w-full px-6">
         {/* Logo */}
@@ -261,19 +180,27 @@ function SaharaLoadingScreen() {
         {/* Progress Container */}
         <div className="w-full flex flex-col items-center gap-4">
           {/* Quirky Message */}
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500 animate-pulse text-center">
-            {message}
-          </p>
+          <div className="flex flex-nowrap justify-center items-center min-h-8 md:min-h-10 w-full mb-1 whitespace-nowrap text-sm md:text-base font-bold uppercase tracking-[0.15em] text-zinc-500">
+            <span className="mr-2 shrink-0">Preparing the</span>
+            <RotatingText
+              texts={rotatingWords}
+              mainClassName="inline-flex shrink-0 bg-primary text-primary-foreground px-2 py-0.5 rounded-md"
+              staggerFrom="last"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "-120%" }}
+              staggerDuration={0.025}
+              splitLevelClassName="overflow-hidden pb-0.5 sm:pb-1 md:pb-1"
+              transition={{ type: "spring", damping: 30, stiffness: 400 }}
+              rotationInterval={1500}
+              randomize={true}
+            />
+          </div>
 
           {/* Indeterminate Progress Bar */}
           <div className="h-1 w-full bg-zinc-200 rounded-full overflow-hidden relative">
             <div className="absolute top-0 bottom-0 left-0 w-1/2 bg-gradient-to-r from-primary/10 via-primary to-primary/10 rounded-full animate-loading-slide" />
           </div>
-
-          {/* Subtitle */}
-          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-400 mt-6">
-            Sahara AI Automation
-          </p>
         </div>
       </div>
     </div>
@@ -454,7 +381,10 @@ export function DesktopLayout() {
                   </div>
                   Help
                 </Button>
-                <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive h-10 px-2 gap-3">
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-muted-foreground hover:bg-destructive hover:text-destructive-foreground h-10 px-2 gap-3"
+                >
                   <div className="flex h-8 w-8 items-center justify-center shrink-0">
                     <LogOut className="h-5 w-5" />
                   </div>

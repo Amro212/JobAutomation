@@ -117,4 +117,28 @@ describe('AutopilotWorkerThreadClient', () => {
 
     expect(fakeWorker.terminated).toBe(true);
   });
+
+  test('removes the ready listener after the worker signals ready', async () => {
+    const fakeWorker = new FakeWorker();
+    const client = new AutopilotWorkerThreadClient({
+      config: readEnv({} as NodeJS.ProcessEnv),
+      repositories: createRepositoriesStub(),
+      workerFactory: (_entry, _workerData) => fakeWorker as unknown as WorkerLike
+    });
+
+    const executePromise = client.executeRun(createQueueInput('run-1'));
+    await Promise.resolve();
+    fakeWorker.emit('message', { type: 'ready' });
+
+    await waitForPostedMessage(fakeWorker, 0);
+    expect(fakeWorker.listenerCount('message')).toBe(1);
+
+    fakeWorker.emit('message', {
+      type: 'completed',
+      payload: { runId: 'run-1', status: 'completed' }
+    });
+
+    await executePromise;
+    await client.dispose();
+  });
 });

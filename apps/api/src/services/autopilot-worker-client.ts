@@ -40,7 +40,7 @@ export type AutopilotWorkerEvent =
 
 export type WorkerLike = Pick<
   Worker,
-  'on' | 'once' | 'postMessage' | 'terminate' | 'removeAllListeners'
+  'on' | 'once' | 'off' | 'postMessage' | 'terminate' | 'removeAllListeners'
 >;
 
 function resolveWorkerEntry(): URL {
@@ -170,6 +170,7 @@ export class AutopilotWorkerThreadClient {
           return;
         }
 
+        worker.off('message', readyListener as Parameters<WorkerLike['on']>[1]);
         resolve();
       };
 

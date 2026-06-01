@@ -288,14 +288,16 @@ export class AutopilotQueueService implements AutopilotQueue {
   }
 
   async runNow(input: QueueAutopilotRunInput): Promise<void> {
-    const controller = new AbortController();
-    this.abortControllers.set(input.run.id, controller);
+    await this.queue.add(async () => {
+      const controller = new AbortController();
+      this.abortControllers.set(input.run.id, controller);
 
-    try {
-      await this.executeRun(input, controller.signal);
-    } finally {
-      this.abortControllers.delete(input.run.id);
-    }
+      try {
+        await this.executeRun(input, controller.signal);
+      } finally {
+        this.abortControllers.delete(input.run.id);
+      }
+    });
   }
 
   requestCancelRun(runId: string): boolean {
@@ -978,8 +980,16 @@ export class WorkerAutopilotQueueService implements AutopilotQueue {
       return true;
     }
 
-    this.pendingRunIds.delete(runId);
-    return false;
+    const removed = this.pendingRunIds.delete(runId);
+    if (removed) {
+      void this.input.repositories.autopilotRuns.update(runId, {
+        status: 'cancelled',
+        currentStep: 'cancelled',
+        completedAt: new Date()
+      }).catch(() => null);
+    }
+
+    return removed;
   }
 
   async cancelRun(runId: string): Promise<boolean> {

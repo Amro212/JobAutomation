@@ -97,8 +97,10 @@ describe('WorkerAutopilotQueueService', () => {
         .mockResolvedValueOnce(undefined),
       cancelRun: vi.fn(async () => false)
     };
+    const repositories = createRepositoriesStub();
+    const updateRunSpy = vi.spyOn(repositories.autopilotRuns, 'update');
     const queue = new WorkerAutopilotQueueService({
-      repositories: createRepositoriesStub(),
+      repositories,
       workerClient
     });
 
@@ -106,7 +108,14 @@ describe('WorkerAutopilotQueueService', () => {
     queue.enqueueRun(createQueueInput('run-2'));
     await Promise.resolve();
 
-    expect(queue.requestCancelRun('run-2')).toBe(false);
+    expect(queue.requestCancelRun('run-2')).toBe(true);
+    expect(updateRunSpy).toHaveBeenCalledWith(
+      'run-2',
+      expect.objectContaining({
+        status: 'cancelled',
+        currentStep: 'cancelled'
+      })
+    );
 
     releaseActiveRun();
     await queue.onIdle();
