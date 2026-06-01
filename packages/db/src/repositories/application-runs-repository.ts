@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray } from 'drizzle-orm';
 
 import {
   applicationRunRecordSchema,
@@ -94,6 +94,57 @@ export class ApplicationRunsRepository {
       .orderBy(desc(applicationRunsTable.updatedAt));
 
     return records.map(mapApplicationRun);
+  }
+
+  async listPaginated(
+    pagination: { page: number; pageSize: number },
+    options?: { statuses?: ApplicationRunStatus[] }
+  ): Promise<{ runs: ApplicationRunRecord[]; total: number }> {
+    const whereClause =
+      options?.statuses && options.statuses.length > 0
+        ? inArray(applicationRunsTable.status, options.statuses)
+        : undefined;
+
+    const countQuery = this.db.select({ total: count() }).from(applicationRunsTable);
+    const [{ total }] = whereClause
+      ? await countQuery.where(whereClause)
+      : await countQuery;
+
+    const baseSelect = this.db.select().from(applicationRunsTable);
+    const filtered = whereClause ? baseSelect.where(whereClause) : baseSelect;
+    const records = await filtered
+      .orderBy(desc(applicationRunsTable.updatedAt))
+      .limit(pagination.pageSize)
+      .offset((pagination.page - 1) * pagination.pageSize);
+
+    return { runs: records.map(mapApplicationRun), total };
+  }
+
+  async getStats(): Promise<{ total: number; completedCount: number; failedCount: number; cancelledCount: number; skippedCount: number }> {
+    const statsQuery = await this.db
+      .select({
+        status: applicationRunsTable.status,
+        c: count()
+      })
+      .from(applicationRunsTable)
+      .groupBy(applicationRunsTable.status);
+
+    let total = 0;
+    let completedCount = 0;
+    let failedCount = 0;
+    let cancelledCount = 0;
+    let skippedCount = 0;
+
+    for (const row of statsQuery) {
+      const countVal = Number(row.c);
+      total += countVal;
+      if (row.status === 'completed') completedCount += countVal;
+      else if (row.status === 'failed') failedCount += countVal;
+      else if (row.status === 'cancelled') cancelledCount += countVal;
+      else if (row.status === 'skipped') skippedCount += countVal;
+    }
+
+    return { total, completedCount, failedCount, cancelledCount, skippedCount };
   }
 
   /** Fetch runs filtered by status — avoids loading all runs for stale recovery. */

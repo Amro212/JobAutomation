@@ -11,15 +11,17 @@ import {
   Rocket
 } from 'lucide-react';
 
-import { getJobs, getApplicationRuns, getAutopilotRuns } from '@renderer/lib/api';
+import { getJobs, getApplicationRunsStats, getAutopilotRuns } from '@renderer/lib/api';
 import { cn } from '@renderer/lib/utils';
 
 interface DashboardMetrics {
   totalJobs: number;
   totalApplications: number;
   totalAutopilotRuns: number;
+  totalAutopilotRuns: number;
   successRate: number;
   blockedRate: number;
+  completedApplications: number;
 }
 
 export function DashboardPage() {
@@ -28,7 +30,8 @@ export function DashboardPage() {
     totalApplications: 0,
     totalAutopilotRuns: 0,
     successRate: 0,
-    blockedRate: 0
+    blockedRate: 0,
+    completedApplications: 0
   });
 
   useEffect(() => {
@@ -36,17 +39,21 @@ export function DashboardPage() {
       try {
         const [jobsRes, appRuns, autopilotRuns] = await Promise.allSettled([
           getJobs({ page: 1, pageSize: 1 } as any),
-          getApplicationRuns(),
+          getApplicationRunsStats(),
           getAutopilotRuns()
         ]);
 
         let successRate = 0;
         let blockedRate = 0;
+        let totalApplications = 0;
+        let completedApplications = 0;
 
         if (appRuns.status === 'fulfilled') {
-          const runs = appRuns.value;
-          const successCount = runs.filter(r => r.run.status === 'completed').length;
-          const blockedCount = runs.filter(r => ['failed', 'cancelled', 'skipped'].includes(r.run.status)).length;
+          const stats = appRuns.value;
+          totalApplications = stats.total;
+          completedApplications = stats.completedCount;
+          const successCount = stats.completedCount;
+          const blockedCount = stats.failedCount + stats.cancelledCount + stats.skippedCount;
           const totalResolved = successCount + blockedCount;
           
           if (totalResolved > 0) {
@@ -57,7 +64,8 @@ export function DashboardPage() {
 
         setMetrics({
           totalJobs: jobsRes.status === 'fulfilled' ? jobsRes.value.total : 0,
-          totalApplications: appRuns.status === 'fulfilled' ? appRuns.value.length : 0,
+          totalApplications,
+          completedApplications,
           totalAutopilotRuns: autopilotRuns.status === 'fulfilled' ? autopilotRuns.value.length : 0,
           successRate,
           blockedRate
@@ -141,7 +149,7 @@ export function DashboardPage() {
           </p>
           <div className="mt-6 flex items-end justify-between relative z-10">
             <div>
-              <span className="block text-3xl font-headline font-bold text-primary">87</span>
+              <span className="block text-3xl font-headline font-bold text-primary">{metrics.completedApplications}</span>
               <span className="text-xs text-muted-foreground uppercase tracking-wider">Total</span>
             </div>
             <div className="w-16 h-8 bg-muted rounded-t-sm relative flex items-end gap-1 p-1">

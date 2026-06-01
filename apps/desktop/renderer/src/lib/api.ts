@@ -46,9 +46,24 @@ export type ApplicationRunSummary = {
   coverLetterArtifact: ArtifactRecord | null;
 };
 
+export type ApplicationRunsPage = {
+  runs: ApplicationRunSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 export type ApplicationRunDetail = ApplicationRunSummary & {
   logs: LogEventRecord[];
   artifacts: ArtifactRecord[];
+};
+
+export type ApplicationRunsStats = {
+  total: number;
+  completedCount: number;
+  failedCount: number;
+  cancelledCount: number;
+  skippedCount: number;
 };
 
 export type AutopilotRunSummary = {
@@ -251,7 +266,26 @@ export async function getDiscoveryRun(
 }
 
 export async function getApplicationRuns(): Promise<ApplicationRunSummary[]> {
-  return (await fetchFromApi<{ runs: ApplicationRunSummary[] }>('/application-runs')).runs;
+  return (await fetchFromApi<{ runs: ApplicationRunSummary[] }>('/application-runs?page=1&pageSize=100')).runs;
+}
+
+export async function getApplicationRunsStats(): Promise<ApplicationRunsStats> {
+  return await fetchFromApi<ApplicationRunsStats>('/application-runs/stats');
+}
+
+export async function getApplicationRunsPage(input: {
+  page: number;
+  pageSize: number;
+  status?: string[];
+}): Promise<ApplicationRunsPage> {
+  const params = new URLSearchParams({
+    page: String(input.page),
+    pageSize: String(input.pageSize)
+  });
+  if (input.status && input.status.length > 0) {
+    params.set('status', input.status.join(','));
+  }
+  return await fetchFromApi<ApplicationRunsPage>(`/application-runs?${params.toString()}`);
 }
 
 export async function getApplicationRun(

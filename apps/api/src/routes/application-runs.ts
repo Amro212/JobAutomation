@@ -19,6 +19,12 @@ type CreateApplicationRunPayload = {
   jobId: string;
 };
 
+type ApplicationRunsQuery = {
+  page?: string;
+  pageSize?: string;
+  status?: string;
+};
+
 function parseCreatePayload(body: unknown): CreateApplicationRunPayload {
   const jobId =
     typeof body === 'object' &&
@@ -85,8 +91,26 @@ async function resolveSubmittedArtifacts(
 }
 
 export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
-  app.get('/application-runs', async () => {
-    const runs = await app.repositories.applicationRuns.list();
+  app.get('/application-runs', async (request) => {
+    const query = (request.query ?? {}) as ApplicationRunsQuery;
+    const pageRaw = Number.parseInt(query.page ?? '1', 10);
+    const pageSizeRaw = Number.parseInt(query.pageSize ?? '1000', 10);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const pageSize = Number.isFinite(pageSizeRaw)
+      ? Math.min(Math.max(pageSizeRaw, 1), 100)
+      : 25;
+    const statusFilters =
+      typeof query.status === 'string' && query.status.length > 0
+        ? query.status
+          .split(',')
+          .map((status) => status.trim())
+          .filter((status): status is ApplicationRunStatus => status.length > 0)
+        : undefined;
+
+    const { runs, total } = await app.repositories.applicationRuns.listPaginated(
+      { page, pageSize },
+      { statuses: statusFilters }
+    );
 
     // Batch-fetch all related jobs in a single query instead of N individual findById calls
     const uniqueJobIds = [...new Set(runs.map((run) => run.jobId))];
@@ -132,7 +156,16 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
         (value): value is NonNullable<typeof value> => value !== null
       );
 
-    return { runs: summaries };
+    return {
+      runs: summaries,
+      total,
+      page,
+      pageSize
+    };
+  });
+
+  app.get('/application-runs/stats', async () => {
+    return await app.repositories.applicationRuns.getStats();
   });
 
   app.get('/application-runs/:runId', async (request, reply) => {

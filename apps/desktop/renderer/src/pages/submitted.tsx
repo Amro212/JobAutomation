@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { Send, ExternalLink, RefreshCw, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { getApplicationRuns, buildArtifactFileUrl } from '@renderer/lib/api';
+import { getApplicationRunsPage, buildArtifactFileUrl } from '@renderer/lib/api';
 import type { ApplicationRunSummary } from '@renderer/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,13 +45,21 @@ function formatDate(dateStr: string | Date | null | undefined): string {
 export function SubmittedPage() {
   const [runs, setRuns] = useState<ApplicationRunSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(25);
+  const [total, setTotal] = useState(0);
 
-  const refresh = async () => {
+  const refresh = async (nextPage = page) => {
     setLoading(true);
     try {
-      const data = await getApplicationRuns();
-      // Show only successfully submitted applications
-      setRuns(data.filter((r) => r.run.status === 'completed'));
+      const data = await getApplicationRunsPage({
+        page: nextPage,
+        pageSize,
+        status: ['completed']
+      });
+      setRuns(data.runs);
+      setTotal(data.total);
+      setPage(data.page);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load submitted applications');
     } finally {
@@ -62,6 +70,7 @@ export function SubmittedPage() {
   useEffect(() => {
     void refresh();
   }, []);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const handleArtifactClick = async (artifactId: string, label: string) => {
     const url = await buildArtifactFileUrl(artifactId);
@@ -78,14 +87,14 @@ export function SubmittedPage() {
             Submitted Applications
             {!loading && (
               <span className="text-sm font-normal text-muted-foreground ml-1">
-                ({runs.length})
+                ({total})
               </span>
             )}
           </CardTitle>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => void refresh()}
+            onClick={() => void refresh(page)}
             aria-label="Refresh submitted list"
           >
             <RefreshCw className="h-4 w-4" />
@@ -100,7 +109,7 @@ export function SubmittedPage() {
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : runs.length === 0 ? (
+        ) : total === 0 ? (
           <div className="p-12 text-center">
             <Send className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No applications submitted yet</p>
@@ -184,6 +193,34 @@ export function SubmittedPage() {
               ))}
             </TableBody>
           </Table>
+        )}
+        {!loading && total > 0 && (
+          <div className="flex items-center justify-between border-t border-border px-4 py-3">
+            <p className="text-xs text-muted-foreground">
+              Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => void refresh(page - 1)}
+              >
+                Previous
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Page {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => void refresh(page + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
