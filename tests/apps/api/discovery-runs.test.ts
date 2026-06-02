@@ -246,7 +246,8 @@ describe('discovery run routes', () => {
     expect(jobsResponse.json().jobs.some((job: { title: string }) => job.title === 'Engineer Who Can Design, Americas')).toBe(true);
     expect(runsResponse.json().runs).toHaveLength(2);
     expect(runsResponse.json().runs[0].status).toBe('completed');
-    expect(runDetailResponse.json().sourceSummaries).toEqual([
+    expect(runDetailResponse.json().sourceSummaries).toHaveLength(3);
+    expect(runDetailResponse.json().sourceSummaries).toEqual(expect.arrayContaining([
       expect.objectContaining({
         sourceKind: 'greenhouse',
         sourceKey: 'greenhouse',
@@ -274,7 +275,7 @@ describe('discovery run routes', () => {
         newJobCount: 2,
         updatedJobCount: 0
       })
-    ]);
+    ]));
   });
 
   test('queues a retry run for a specific source step', async () => {

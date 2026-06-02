@@ -3,6 +3,7 @@ import {
   type ChildProcess,
   type ForkOptions
 } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 type ApiProcessMessage = {
@@ -49,6 +50,54 @@ function resolveApiEntry(options: Pick<ApiProcessOptions, 'desktopRoot' | 'packa
   // If workspaceRoot is not provided, fall back to navigating from desktopRoot.
   const base = options.workspaceRoot ?? path.resolve(options.desktopRoot, '..', '..');
   return path.join(base, 'apps', 'api', 'src', 'index.ts');
+}
+
+function parseDotEnvValue(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
+
+function readDevDotEnv(workspaceRoot?: string): NodeJS.ProcessEnv {
+  if (!workspaceRoot) {
+    return {};
+  }
+
+  const envPath = path.join(workspaceRoot, '.env');
+  if (!existsSync(envPath)) {
+    return {};
+  }
+
+  const output: NodeJS.ProcessEnv = {};
+  const content = readFileSync(envPath, 'utf8');
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const normalized = line.startsWith('export ') ? line.slice('export '.length).trim() : line;
+    const separatorIndex = normalized.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = normalized.slice(0, separatorIndex).trim();
+    const value = parseDotEnvValue(normalized.slice(separatorIndex + 1));
+    if (!key || process.env[key] !== undefined) {
+      continue;
+    }
+
+    output[key] = value;
+  }
+
+  return output;
 }
 
 async function waitForHealth(apiBaseUrl: string, timeoutMs = 15000): Promise<void> {
@@ -107,11 +156,13 @@ export class ApiProcessManager {
     console.error(`[api-process] Forking API from: ${entry}`);
     console.error(`[api-process] CWD: ${this.options.desktopRoot}`);
     console.error(`[api-process] Packaged: ${String(this.options.packaged)}`);
+    const devDotEnv = this.options.packaged ? {} : readDevDotEnv(this.options.workspaceRoot);
     const childFactory = this.options.childFactory ?? ((childEntry, childOptions) =>
       fork(childEntry, childOptions));
     const child = childFactory(entry, {
       cwd: this.options.desktopRoot,
       env: {
+        ...devDotEnv,
         ...process.env,
         API_HOST: this.options.apiHost,
         API_PORT: String(this.options.apiPort),

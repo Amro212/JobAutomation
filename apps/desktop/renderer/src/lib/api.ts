@@ -7,6 +7,7 @@ import type {
   DiscoveryRunRecord,
   DiscoveryRunSourceSummary,
   JobListFilters,
+  JobListPagination,
   JobListItem,
   JobRecord,
   LogEventRecord,
@@ -80,6 +81,21 @@ export type AutopilotApplicationSummary = {
 
 export type AutopilotRunDetail = AutopilotRunSummary & {
   applications: AutopilotApplicationSummary[];
+};
+
+export type AutopilotQueueStatus = {
+  activeRunId: string | null;
+  pendingRunIds: string[];
+  queueSize: number;
+  queuePending: number;
+};
+
+export type JobsListResponse = {
+  jobs: JobListItem[];
+  total: number;
+  matchProfileRequested?: 'all' | 'me';
+  matchProfileEffective?: 'all' | 'me';
+  meaningfulMatchProfile?: boolean;
 };
 
 let cachedApiBaseUrl: string | null = null;
@@ -169,7 +185,10 @@ export async function buildArtifactFileUrl(
   return `${await getApiBaseUrl()}/artifacts/${artifactId}/file${search}`;
 }
 
-function buildJobsQuery(filters: Partial<JobListFilters> = {}): string {
+function buildJobsQuery(
+  filters: Partial<JobListFilters> = {},
+  pagination: Partial<JobListPagination> = {}
+): string {
   const searchParams = new URLSearchParams();
 
   if (filters.sourceKind) searchParams.set('sourceKind', filters.sourceKind);
@@ -179,6 +198,8 @@ function buildJobsQuery(filters: Partial<JobListFilters> = {}): string {
   if (filters.location) searchParams.set('location', filters.location);
   if (filters.companyName) searchParams.set('companyName', filters.companyName);
   if (filters.matchProfile === 'me') searchParams.set('matchProfile', 'me');
+  if (pagination.page) searchParams.set('page', String(pagination.page));
+  if (pagination.pageSize) searchParams.set('pageSize', String(pagination.pageSize));
 
   for (const country of filters.locationCountries ?? []) {
     searchParams.append('country', country);
@@ -197,9 +218,10 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
-async function fetchFromApi<T>(path: string): Promise<T> {
+async function fetchFromApi<T>(path: string, init: RequestInit = {}): Promise<T> {
   const baseUrl = await getApiBaseUrl();
   const response = await fetch(`${baseUrl}${path}`, {
+    ...init,
     cache: 'no-store'
   });
 
@@ -220,9 +242,16 @@ export async function getHealth(): Promise<{ ok: boolean }> {
 }
 
 export function getJobs(
-  filters: Partial<JobListFilters> = {}
-): Promise<{ jobs: JobListItem[]; total: number }> {
-  return fetchFromApi(`/jobs${buildJobsQuery(filters)}`);
+  filters: Partial<JobListFilters> = {},
+  pagination: Partial<JobListPagination> = {}
+): Promise<JobsListResponse> {
+  return fetchFromApi(`/jobs${buildJobsQuery(filters, pagination)}`);
+}
+
+export function recomputeJobPrefilterMatches(): Promise<{ evaluated: number }> {
+  return fetchFromApi('/jobs/recompute-prefilter-matches', {
+    method: 'POST'
+  });
 }
 
 export async function getJob(jobId: string): Promise<JobRecord | null> {
@@ -309,6 +338,12 @@ export async function getApplicationRun(
 
 export async function getAutopilotRuns(): Promise<AutopilotRunSummary[]> {
   return (await fetchFromApi<{ runs: AutopilotRunSummary[] }>('/autopilot-runs')).runs;
+}
+
+export async function getAutopilotQueueStatus(): Promise<AutopilotQueueStatus> {
+  return (await fetchFromApi<{ queue: AutopilotQueueStatus }>(
+    '/autopilot-runs/queue/status'
+  )).queue;
 }
 
 export async function getAutopilotRun(
@@ -727,4 +762,3 @@ export async function generateJobArtifacts(
 
   return (await response.json()) as GenerateArtifactsResult;
 }
-

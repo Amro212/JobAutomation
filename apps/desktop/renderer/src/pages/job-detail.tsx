@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ChevronLeft, Sparkles, Download, Building2, MapPin, MoreVertical, FileText, FileUp, FileBadge } from 'lucide-react';
+import { ChevronLeft, Sparkles, Download, Building2, MapPin, MoreVertical, FileText, FileUp, FileBadge, Play } from 'lucide-react';
 import type { ArtifactRecord, ApplicantProfile } from '@jobautomation/core';
 
 import {
@@ -8,7 +8,8 @@ import {
   getJobArtifacts,
   generateJobArtifacts,
   buildArtifactFileUrl,
-  updateJobReview
+  updateJobReview,
+  createApplicationRun
 } from '@renderer/lib/api';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -82,6 +83,7 @@ export function JobDetailPage() {
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isStartingApplication, setIsStartingApplication] = useState(false);
   const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
   
   // Modal Preview State
@@ -138,6 +140,19 @@ export function JobDetailPage() {
     }
   };
 
+  const handleStartApplicationRun = async () => {
+    setIsStartingApplication(true);
+    try {
+      const result = await createApplicationRun({ jobId });
+      toast.success('Application run started.');
+      navigate(`/applications/${result.run.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to start application run.');
+    } finally {
+      setIsStartingApplication(false);
+    }
+  };
+
   if (!job) {
     return (
       <div className="p-8 max-w-7xl mx-auto w-full flex flex-col gap-8">
@@ -187,6 +202,9 @@ export function JobDetailPage() {
 
   const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
   const canGenerate = Boolean(profile?.baseResumeTex.trim() && profile.reusableContext.trim());
+  const canStartApplicationRun = artifacts.some(
+    (artifact) => artifact.kind === 'resume-variant' && artifact.format === 'pdf'
+  );
 
   return (
     <div className="flex flex-col gap-8 h-full min-h-[calc(100vh-10rem)] max-w-7xl mx-auto w-full p-4">
@@ -223,6 +241,21 @@ export function JobDetailPage() {
               ))}
             </SelectContent>
           </Select>
+
+          <Button
+            variant="outline"
+            disabled={!canStartApplicationRun || isStartingApplication}
+            onClick={handleStartApplicationRun}
+            title={
+              canStartApplicationRun
+                ? undefined
+                : 'Generate a tailored resume PDF before starting an application run.'
+            }
+            className="w-full sm:w-auto"
+          >
+            <Play className={`h-4 w-4 mr-2 ${isStartingApplication ? 'animate-pulse' : ''}`} />
+            {isStartingApplication ? 'Starting...' : 'Start Application Run'}
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

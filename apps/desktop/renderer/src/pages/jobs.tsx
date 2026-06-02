@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Search, Filter, ExternalLink, RefreshCw } from 'lucide-react';
+import { AlertCircle, Search, Filter, ExternalLink, RefreshCw } from 'lucide-react';
 
 import type { JobListFilters } from '@jobautomation/core';
-import { getJobs } from '@renderer/lib/api';
+import { getApplicantProfile, getJobs, recomputeJobPrefilterMatches } from '@renderer/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -62,31 +62,59 @@ export function JobsPage() {
     companyName: '',
     location: '',
     status: '',
-    matchProfile: 'me' // Default to "Matching Me" for instant, relevant load times
+    matchProfile: 'all'
   });
   const [jobs, setJobs] = useState<
-    Array<{ id: string; title: string; company: string; location: string; status: string; sourceUrl: string }>
+    Array<{
+      id: string;
+      title: string;
+      company: string;
+      location: string;
+      status: string;
+      sourceUrl: string;
+      prefilterScore: number | null;
+    }>
   >([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [recomputing, setRecomputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [meaningfulMatchScope, setMeaningfulMatchScope] = useState(false);
+  const [matchWarning, setMatchWarning] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Pagination state
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50); // Fetch 50 items per page
 
-  const refresh = async (nextFilters: Partial<JobListFilters> = {}, targetPage = page) => {
+  const filtersToQuery = (source = filters): Partial<JobListFilters> => {
+    const next: Partial<JobListFilters> = {};
+    if (source.title) next.title = source.title;
+    if (source.companyName) next.companyName = source.companyName;
+    if (source.location) next.location = source.location;
+    if (source.status) next.status = source.status as JobListFilters['status'];
+    if (source.matchProfile === 'me' && meaningfulMatchScope) next.matchProfile = 'me';
+    return next;
+  };
+
+  const refresh = async (nextFilters: Partial<JobListFilters> = filtersToQuery(), targetPage = page) => {
     setLoading(true);
     setError(null);
+    setMatchWarning(null);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const response = await getJobs({
-        ...nextFilters,
+      const response = await getJobs(nextFilters, {
         page: targetPage,
         pageSize
-      } as any);
+      });
       setTotal(response.total);
+      if (
+        response.matchProfileRequested === 'me' &&
+        response.matchProfileEffective !== 'me'
+      ) {
+        setMatchWarning(
+          'Backend returned all jobs because the applicant keyword profile is missing or not usable.'
+        );
+      }
       setJobs(
         response.jobs.map((job) => ({
           id: job.id,
@@ -94,7 +122,8 @@ export function JobsPage() {
           company: job.companyName,
           location: job.location,
           status: job.status,
-          sourceUrl: job.sourceUrl
+          sourceUrl: job.sourceUrl,
+          prefilterScore: job.prefilterScore
         }))
       );
     } catch (e) {
@@ -105,18 +134,41 @@ export function JobsPage() {
   };
 
   useEffect(() => {
-    void refresh({ matchProfile: 'me' }, 1);
+    void (async () => {
+      try {
+        const { profile } = await getApplicantProfile();
+        const hasKeywordProfile = profile?.jobKeywordProfile != null;
+        setMeaningfulMatchScope(hasKeywordProfile);
+        const initialFilters = {
+          ...filters,
+          matchProfile: hasKeywordProfile ? 'me' : 'all'
+        };
+        setFilters(initialFilters);
+        await refresh(hasKeywordProfile ? { matchProfile: 'me' } : {}, 1);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load jobs');
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const applyFilters = async () => {
     setPage(1);
-    const next: Partial<JobListFilters> = {};
-    if (filters.title) next.title = filters.title;
-    if (filters.companyName) next.companyName = filters.companyName;
-    if (filters.location) next.location = filters.location;
-    if (filters.status) next.status = filters.status as JobListFilters['status'];
-    if (filters.matchProfile === 'me') next.matchProfile = 'me';
-    await refresh(next as JobListFilters, 1);
+    await refresh(filtersToQuery(), 1);
+  };
+
+  const handleRecomputeMatches = async () => {
+    setRecomputing(true);
+    setError(null);
+    try {
+      const result = await recomputeJobPrefilterMatches();
+      await refresh(filtersToQuery(), 1);
+      setMatchWarning(`Recomputed applicant matches for ${result.evaluated} jobs.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to recompute matches');
+    } finally {
+      setRecomputing(false);
+    }
   };
 
   return (
@@ -184,7 +236,8 @@ export function JobsPage() {
 
             <Select
               value={filters.matchProfile || 'all'}
-              onValueChange={(v) => setFilters({ ...filters, matchProfile: v === 'all' ? '' : v })}
+              onValueChange={(v) => setFilters({ ...filters, matchProfile: v })}
+              disabled={!meaningfulMatchScope}
             >
               <SelectTrigger id="jobs-filter-profile" aria-label="Filter by match profile">
                 <SelectValue placeholder="Profile Match" />
@@ -199,7 +252,32 @@ export function JobsPage() {
             </Select>
           </div>
 
-          <div className="flex justify-end mt-3">
+          {!meaningfulMatchScope && (
+            <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-600/30 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-300">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Matching Me is disabled until Setup has a generated job keyword profile. Showing all jobs.
+              </span>
+            </div>
+          )}
+
+          {matchWarning && (
+            <div className="mt-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{matchWarning}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 mt-3">
+            <Button
+              onClick={() => void handleRecomputeMatches()}
+              size="sm"
+              variant="outline"
+              disabled={recomputing || loading || !meaningfulMatchScope}
+            >
+              <RefreshCw className={cn('mr-2 h-3.5 w-3.5', recomputing && 'animate-spin')} />
+              Recompute Matches
+            </Button>
             <Button onClick={() => void applyFilters()} size="sm">
               Apply Filters
             </Button>
@@ -259,6 +337,7 @@ export function JobsPage() {
                     <TableHead>Title</TableHead>
                     <TableHead>Company</TableHead>
                     <TableHead>Location</TableHead>
+                    <TableHead>Match</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-[60px]" />
                   </TableRow>
@@ -275,6 +354,13 @@ export function JobsPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{job.company}</TableCell>
                       <TableCell className="text-muted-foreground text-xs">{job.location}</TableCell>
+                      <TableCell>
+                        {job.prefilterScore != null ? (
+                          <Badge variant="outline">{job.prefilterScore}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={statusVariant(job.status)} className="capitalize">
                           {job.status}
@@ -324,13 +410,7 @@ export function JobsPage() {
                       const prevPage = Math.max(1, page - 1);
                       if (prevPage !== page) {
                         setPage(prevPage);
-                        const next: Partial<JobListFilters> = {};
-                        if (filters.title) next.title = filters.title;
-                        if (filters.companyName) next.companyName = filters.companyName;
-                        if (filters.location) next.location = filters.location;
-                        if (filters.status) next.status = filters.status as JobListFilters['status'];
-                        if (filters.matchProfile === 'me') next.matchProfile = 'me';
-                        await refresh(next as JobListFilters, prevPage);
+                        await refresh(filtersToQuery(), prevPage);
                       }
                     }}
                     disabled={page === 1 || loading}
@@ -345,13 +425,7 @@ export function JobsPage() {
                       const nextPage = Math.min(Math.ceil(total / pageSize), page + 1);
                       if (nextPage !== page) {
                         setPage(nextPage);
-                        const next: Partial<JobListFilters> = {};
-                        if (filters.title) next.title = filters.title;
-                        if (filters.companyName) next.companyName = filters.companyName;
-                        if (filters.location) next.location = filters.location;
-                        if (filters.status) next.status = filters.status as JobListFilters['status'];
-                        if (filters.matchProfile === 'me') next.matchProfile = 'me';
-                        await refresh(next as JobListFilters, nextPage);
+                        await refresh(filtersToQuery(), nextPage);
                       }
                     }}
                     disabled={page >= Math.ceil(total / pageSize) || loading}

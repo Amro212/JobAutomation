@@ -89,6 +89,7 @@ export class AutopilotWorkerThreadClient {
       };
       workerFactory?: (entry: URL, workerData: { config: AppEnv }) => WorkerLike;
       terminateCamoufoxImpl?: () => Promise<void>;
+      workerStartupTimeoutMs?: number;
     }
   ) {}
 
@@ -165,17 +166,44 @@ export class AutopilotWorkerThreadClient {
     this.worker = worker;
 
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('Autopilot worker did not report ready in time.'));
+      }, this.input.workerStartupTimeoutMs ?? 15000);
+
+      const cleanup = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timeout);
+        worker.off('message', readyListener as Parameters<WorkerLike['on']>[1]);
+        worker.off('error', errorListener as Parameters<WorkerLike['on']>[1]);
+        worker.off('exit', exitListener as Parameters<WorkerLike['on']>[1]);
+      };
+
       const readyListener = (message: AutopilotWorkerEvent) => {
         if (message.type !== 'ready') {
           return;
         }
 
-        worker.off('message', readyListener as Parameters<WorkerLike['on']>[1]);
+        cleanup();
         resolve();
+      };
+      const errorListener = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+      const exitListener = (code: number) => {
+        cleanup();
+        reject(new Error(`Autopilot worker exited before ready with code ${code}.`));
       };
 
       worker.on('message', readyListener as Parameters<WorkerLike['on']>[1]);
-      worker.once('error', reject);
+      worker.once('error', errorListener as Parameters<WorkerLike['once']>[1]);
+      worker.once('exit', exitListener as Parameters<WorkerLike['once']>[1]);
     });
 
     worker.on('message', (message: AutopilotWorkerEvent) => {

@@ -141,4 +141,36 @@ describe('AutopilotWorkerThreadClient', () => {
     await executePromise;
     await client.dispose();
   });
+
+  test('rejects when the worker exits before reporting ready', async () => {
+    const fakeWorker = new FakeWorker();
+    const client = new AutopilotWorkerThreadClient({
+      config: readEnv({} as NodeJS.ProcessEnv),
+      repositories: createRepositoriesStub(),
+      workerFactory: (_entry, _workerData) => fakeWorker as unknown as WorkerLike,
+      workerStartupTimeoutMs: 100
+    });
+
+    const executePromise = client.executeRun(createQueueInput('run-1'));
+    await Promise.resolve();
+    fakeWorker.emit('exit', 1);
+
+    await expect(executePromise).rejects.toThrow(
+      'Autopilot worker exited before ready with code 1.'
+    );
+  });
+
+  test('rejects when the worker never reports ready', async () => {
+    const fakeWorker = new FakeWorker();
+    const client = new AutopilotWorkerThreadClient({
+      config: readEnv({} as NodeJS.ProcessEnv),
+      repositories: createRepositoriesStub(),
+      workerFactory: (_entry, _workerData) => fakeWorker as unknown as WorkerLike,
+      workerStartupTimeoutMs: 1
+    });
+
+    await expect(client.executeRun(createQueueInput('run-1'))).rejects.toThrow(
+      'Autopilot worker did not report ready in time.'
+    );
+  });
 });

@@ -220,7 +220,9 @@ function SaharaLoadingScreen() {
 export function DesktopLayout() {
   const [backendStatus, setBackendStatus] = useState('Connecting...');
   const [rawStatus, setRawStatus] = useState<string>('stopped');
-  const [hasActiveAutopilotRun, setHasActiveAutopilotRun] = useState(false);
+  const [autopilotHeaderStatus, setAutopilotHeaderStatus] = useState<
+    'idle' | 'pending' | 'running'
+  >('idle');
   const { status: camoufoxStatus } = useCamoufoxStatus();
   const location = useLocation();
   const navigate = useNavigate();
@@ -249,7 +251,7 @@ export function DesktopLayout() {
 
   useEffect(() => {
     if (!apiConnected) {
-      setHasActiveAutopilotRun(false);
+      setAutopilotHeaderStatus('idle');
       return;
     }
 
@@ -258,13 +260,17 @@ export function DesktopLayout() {
       try {
         const runs = await getAutopilotRuns();
         if (!cancelled) {
-          setHasActiveAutopilotRun(
-            runs.some(({ run }) => ['pending', 'running'].includes(run.status))
-          );
+          if (runs.some(({ run }) => run.status === 'running')) {
+            setAutopilotHeaderStatus('running');
+          } else if (runs.some(({ run }) => run.status === 'pending')) {
+            setAutopilotHeaderStatus('pending');
+          } else {
+            setAutopilotHeaderStatus('idle');
+          }
         }
       } catch {
         if (!cancelled) {
-          setHasActiveAutopilotRun(false);
+          setAutopilotHeaderStatus('idle');
         }
       }
     };
@@ -278,11 +284,16 @@ export function DesktopLayout() {
   }, [apiConnected]);
 
   const statusPill = apiConnected
-    ? hasActiveAutopilotRun
+    ? autopilotHeaderStatus === 'running'
       ? {
           label: 'Autopilot Running',
           dotClassName: 'bg-emerald-500 animate-[pulse_2s_infinite]'
         }
+      : autopilotHeaderStatus === 'pending'
+        ? {
+            label: 'Autopilot Pending',
+            dotClassName: 'bg-amber-500'
+          }
       : {
           label: 'Backend Ready',
           dotClassName: 'bg-sky-500'

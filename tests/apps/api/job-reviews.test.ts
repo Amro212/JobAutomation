@@ -187,7 +187,7 @@ describe('job review routes', () => {
       scoringEnabled: false
     });
     expect(scoreResponse.statusCode).toBe(409);
-    expect(scoreResponse.json().message).toContain('OpenRouter');
+    expect(scoreResponse.json().message).toContain('Hosted AI generation');
   });
 
   test('rejects invalid score output safely without changing review notes', async () => {

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { buildApp } from '../../../apps/api/src/app';
 import {
   ApplicationRunsRepository,
+  AutopilotRunsRepository,
   JobsRepository,
   createDatabaseClient,
   migrateDatabase
@@ -94,6 +95,50 @@ describe('API startup recovery', () => {
           status: 'retry',
           currentStep: 'retry_queued',
           stopReason: 'stale_startup_recovery'
+        })
+      );
+    } finally {
+      await app.close();
+      if (originalDbPath === undefined) {
+        delete process.env.JOB_AUTOMATION_DB_PATH;
+      } else {
+        process.env.JOB_AUTOMATION_DB_PATH = originalDbPath;
+      }
+    }
+  });
+
+  test('marks interrupted pending autopilot runs failed on startup', async () => {
+    const originalDbPath = process.env.JOB_AUTOMATION_DB_PATH;
+    const dbPath = createTestDatabasePath();
+    process.env.JOB_AUTOMATION_DB_PATH = dbPath;
+
+    const setupDb = createDatabaseClient(dbPath);
+    trackedClients.push(setupDb.$client);
+    await migrateDatabase(setupDb);
+
+    const autopilotRunsRepository = new AutopilotRunsRepository(setupDb);
+    const interruptedRun = await autopilotRunsRepository.create({
+      triggerKind: 'manual',
+      status: 'pending',
+      currentStep: 'queued',
+      createdAt: new Date('2026-05-01T10:01:00.000Z'),
+      updatedAt: new Date('2026-05-01T10:01:00.000Z')
+    });
+    await setupDb.$client.close();
+    trackedClients.pop();
+
+    const app = buildApp();
+    try {
+      await app.ready();
+
+      await expect(
+        app.repositories.autopilotRuns.findById(interruptedRun.id)
+      ).resolves.toEqual(
+        expect.objectContaining({
+          status: 'failed',
+          currentStep: 'failed',
+          errorMessage:
+            'Autopilot run was interrupted before the worker could complete. Launch a new run to retry.'
         })
       );
     } finally {

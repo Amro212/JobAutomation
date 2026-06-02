@@ -24,11 +24,13 @@ import {
   cancelAutopilotRun,
   createAutopilotRun,
   getApplicantProfile,
+  getAutopilotQueueStatus,
   getAutopilotRuns,
   getAutopilotSettings,
   getDiscoverySources,
   saveApplicantProfile,
-  updateAutopilotSettings
+  updateAutopilotSettings,
+  type AutopilotQueueStatus
 } from '@renderer/lib/api';
 import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
 import { Button } from '@/components/ui/button';
@@ -142,17 +144,19 @@ export function AutopilotPage() {
     applySiteKeys: ['greenhouse', 'lever', 'ashby'],
     preferredCountriesCsv: ''
   });
-  const [runs, setRuns] = useState<Array<{ id: string; status: string; step: string }>>([]);
+  const [runs, setRuns] = useState<Array<{ id: string; status: string; step: string; errorMessage: string | null }>>([]);
   const [activeRun, setActiveRun] = useState<{
     id: string;
     status: string;
     step: string;
+    errorMessage: string | null;
     discovered: number;
     eligible: number;
     submitted: number;
     blocked: number;
     failed: number;
   } | null>(null);
+  const [queueStatus, setQueueStatus] = useState<AutopilotQueueStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -163,9 +167,10 @@ export function AutopilotPage() {
   }, [settings]);
 
   const refresh = async () => {
-    const [settingsResponse, runsResponse] = await Promise.all([
+    const [settingsResponse, runsResponse, queueResponse] = await Promise.all([
       getAutopilotSettings(),
-      getAutopilotRuns()
+      getAutopilotRuns(),
+      getAutopilotQueueStatus()
     ]);
     const [sourcesResponse, profileResponse] = await Promise.all([
       getDiscoverySources(),
@@ -173,6 +178,7 @@ export function AutopilotPage() {
     ]);
     const enabled = sourcesResponse.filter((source) => source.enabled);
     setSettings(settingsResponse);
+    setQueueStatus(queueResponse);
     setEnabledSources(enabled);
     setProfile(profileResponse.profile);
     setFormState({
@@ -189,7 +195,8 @@ export function AutopilotPage() {
     const nextRuns = runsResponse.slice(0, 8).map((entry) => ({
       id: entry.run.id,
       status: entry.run.status,
-      step: entry.run.currentStep
+      step: entry.run.currentStep,
+      errorMessage: entry.run.errorMessage
     }));
     setRuns(nextRuns);
     const nextActiveRun = runsResponse.find(
@@ -201,6 +208,7 @@ export function AutopilotPage() {
             id: nextActiveRun.id,
             status: nextActiveRun.status,
             step: nextActiveRun.currentStep,
+            errorMessage: nextActiveRun.errorMessage,
             discovered: nextActiveRun.discoveredJobCount,
             eligible: nextActiveRun.eligibleJobCount,
             submitted: nextActiveRun.submittedCount,
@@ -334,6 +342,13 @@ export function AutopilotPage() {
   const eligibleForProgress = activeRun?.eligible ?? 0;
   const progressPct =
     eligibleForProgress > 0 ? Math.round((totalDone / eligibleForProgress) * 100) : 0;
+  const activeRunQueuedInMemory =
+    activeRun && queueStatus
+      ? queueStatus.activeRunId === activeRun.id || queueStatus.pendingRunIds.includes(activeRun.id)
+      : false;
+  const activeRunOrphaned = Boolean(
+    activeRun?.status === 'pending' && queueStatus && !activeRunQueuedInMemory
+  );
 
   return (
     <div className="space-y-6">
@@ -422,6 +437,29 @@ export function AutopilotPage() {
                     <p className="text-xs text-muted-foreground mb-3">
                       Step: {activeRun.step ?? 'Initializing…'}
                     </p>
+                    {activeRun.errorMessage && (
+                      <div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{activeRun.errorMessage}</span>
+                      </div>
+                    )}
+                    {activeRun.status === 'pending' && (
+                      <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-600/30 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-300">
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          {activeRunOrphaned
+                            ? 'Run is pending in the database but is not queued in the active backend worker. Cancel it and launch a new run after restarting the desktop backend.'
+                            : 'Run is queued in the backend worker and should move to discovery_running shortly.'}
+                        </span>
+                      </div>
+                    )}
+                    {queueStatus && (
+                      <p className="mb-3 text-xs text-muted-foreground">
+                        Worker: active {queueStatus.activeRunId?.slice(0, 8) ?? 'none'} |
+                        queued {queueStatus.pendingRunIds.length} | size {queueStatus.queueSize} |
+                        pending {queueStatus.queuePending}
+                      </p>
+                    )}
                     <Progress value={progressPct} className="h-2 mb-3" />
                     <div className="grid grid-cols-4 gap-3">
                       <MetricPill label="Discovered" value={activeRun.discovered} />
@@ -678,6 +716,11 @@ export function AutopilotPage() {
                                 {run.step}
                               </p>
                              )}
+                            {run.errorMessage && (
+                              <p className="text-xs text-destructive mt-0.5 truncate max-w-[160px]">
+                                {run.errorMessage}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <Badge variant={statusVariant(run.status)} className="text-[11px] font-bold py-0.5">

@@ -58,6 +58,10 @@ export const registerAutopilotRunRoutes: FastifyPluginAsync = async (app) => {
     };
   });
 
+  app.get('/autopilot-runs/queue/status', async () => ({
+    queue: app.autopilotQueue.getStatus()
+  }));
+
   app.get('/autopilot-runs/:runId', async (request, reply) => {
     const { runId } = request.params as { runId: string };
     const run = await app.repositories.autopilotRuns.findById(runId);

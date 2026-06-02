@@ -77,6 +77,12 @@ export interface AutopilotQueue {
   requestCancelRun(runId: string): boolean;
   cancelRun(runId: string): Promise<boolean>;
   onIdle(): Promise<void>;
+  getStatus(): {
+    activeRunId: string | null;
+    pendingRunIds: string[];
+    queueSize: number;
+    queuePending: number;
+  };
 }
 
 export interface AutopilotWorkerClient {
@@ -336,6 +342,20 @@ export class AutopilotQueueService implements AutopilotQueue {
 
   async onIdle(): Promise<void> {
     await this.queue.onIdle();
+  }
+
+  getStatus(): {
+    activeRunId: string | null;
+    pendingRunIds: string[];
+    queueSize: number;
+    queuePending: number;
+  } {
+    return {
+      activeRunId: [...this.abortControllers.keys()][0] ?? null,
+      pendingRunIds: [],
+      queueSize: this.queue.size,
+      queuePending: this.queue.pending
+    };
   }
 
   private async executeRun(input: QueueAutopilotRunInput, signal: AbortSignal): Promise<void> {
@@ -975,6 +995,14 @@ export class WorkerAutopilotQueueService implements AutopilotQueue {
         this.activeRunId = input.run.id;
         try {
           await this.input.workerClient.executeRun(input);
+        } catch (error) {
+          await this.input.repositories.autopilotRuns.update(input.run.id, {
+            status: 'failed',
+            currentStep: 'failed',
+            errorMessage: error instanceof Error ? error.message : String(error),
+            completedAt: new Date()
+          });
+          throw error;
         } finally {
           if (this.activeRunId === input.run.id) {
             this.activeRunId = null;
@@ -1023,5 +1051,19 @@ export class WorkerAutopilotQueueService implements AutopilotQueue {
 
   async onIdle(): Promise<void> {
     await this.queue.onIdle();
+  }
+
+  getStatus(): {
+    activeRunId: string | null;
+    pendingRunIds: string[];
+    queueSize: number;
+    queuePending: number;
+  } {
+    return {
+      activeRunId: this.activeRunId,
+      pendingRunIds: [...this.pendingRunIds],
+      queueSize: this.queue.size,
+      queuePending: this.queue.pending
+    };
   }
 }

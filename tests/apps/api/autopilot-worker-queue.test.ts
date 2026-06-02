@@ -127,4 +127,31 @@ describe('WorkerAutopilotQueueService', () => {
       })
     );
   });
+
+  test('marks a queued run failed when the worker client rejects before persisting state', async () => {
+    const workerClient: AutopilotWorkerClient = {
+      executeRun: vi.fn(async () => {
+        throw new Error('Worker failed before startup.');
+      }),
+      cancelRun: vi.fn(async () => false)
+    };
+    const repositories = createRepositoriesStub();
+    const updateRunSpy = vi.spyOn(repositories.autopilotRuns, 'update');
+    const queue = new WorkerAutopilotQueueService({
+      repositories,
+      workerClient
+    });
+
+    queue.enqueueRun(createQueueInput('run-1'));
+    await queue.onIdle();
+
+    expect(updateRunSpy).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({
+        status: 'failed',
+        currentStep: 'failed',
+        errorMessage: 'Worker failed before startup.'
+      })
+    );
+  });
 });

@@ -77,6 +77,36 @@ async function recoverStaleApplicationRunsOnStartup(
   }
 }
 
+async function recoverUnqueuedAutopilotRunsOnStartup(
+  repositories: ApiRepositories
+): Promise<void> {
+  const interruptedRuns = (await repositories.autopilotRuns.list()).filter(
+    (run) => run.status === 'pending' || run.status === 'running'
+  );
+
+  for (const run of interruptedRuns) {
+    await repositories.autopilotRuns.update(run.id, {
+      status: 'failed',
+      currentStep: 'failed',
+      errorMessage:
+        'Autopilot run was interrupted before the worker could complete. Launch a new run to retry.',
+      completedAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await repositories.logEvents.create({
+      level: 'warn',
+      message: 'Recovered interrupted autopilot run on API startup.',
+      detailsJson: JSON.stringify({
+        autopilotRunId: run.id,
+        previousStatus: run.status,
+        previousStep: run.currentStep,
+        previousUpdatedAt: run.updatedAt.toISOString()
+      })
+    });
+  }
+}
+
 declare module 'fastify' {
   interface FastifyInstance {
     db: JobAutomationDatabase;
@@ -91,6 +121,7 @@ export const registerDatabasePlugin = fp(async (app) => {
   const repositories = createApiRepositories(db);
 
   await recoverStaleApplicationRunsOnStartup(repositories);
+  await recoverUnqueuedAutopilotRunsOnStartup(repositories);
 
   app.decorate('db', db);
   app.decorate('repositories', repositories);

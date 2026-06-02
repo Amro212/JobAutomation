@@ -53,9 +53,22 @@ describe('autopilot run routes', () => {
       method: 'GET',
       url: '/autopilot-runs'
     });
+    const queueResponse = await app.inject({
+      method: 'GET',
+      url: '/autopilot-runs/queue/status'
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ runs: [] });
+    expect(queueResponse.statusCode).toBe(200);
+    expect(queueResponse.json()).toEqual({
+      queue: {
+        activeRunId: null,
+        pendingRunIds: [],
+        queueSize: 0,
+        queuePending: 0
+      }
+    });
   });
 
   test('rejects launch when setup is not ready', async () => {

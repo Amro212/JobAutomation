@@ -72,7 +72,13 @@ export const registerJobsRoutes: FastifyPluginAsync = async (app) => {
 
     const { jobs, total } = await app.repositories.jobs.listSummary(filters, { page, pageSize });
 
-    return { jobs, total };
+    return {
+      jobs,
+      total,
+      matchProfileRequested: parsed.matchProfile ?? 'all',
+      matchProfileEffective: matchProfile,
+      meaningfulMatchProfile: meaningful
+    };
   });
 
   app.get('/jobs/distinct-companies', async (request) => {
