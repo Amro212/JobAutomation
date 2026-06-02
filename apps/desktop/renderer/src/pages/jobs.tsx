@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Search, Filter, ExternalLink, RefreshCw } from 'lucide-react';
 
 import type { JobListFilters } from '@jobautomation/core';
@@ -70,6 +70,7 @@ export function JobsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -264,7 +265,11 @@ export function JobsPage() {
                 </TableHeader>
                 <TableBody>
                   {jobs.map((job) => (
-                    <TableRow key={job.id}>
+                    <TableRow 
+                      key={job.id} 
+                      onClick={() => navigate(`/jobs/${job.id}`)}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    >
                       <TableCell className="font-medium max-w-[220px] truncate">
                         {job.title}
                       </TableCell>
@@ -283,6 +288,7 @@ export function JobsPage() {
                           asChild={!!job.sourceUrl}
                           disabled={!job.sourceUrl}
                           title={job.sourceUrl ? `View posting for ${job.title}` : 'Job posting URL is unavailable'}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           {job.sourceUrl ? (
                             <a
@@ -290,6 +296,7 @@ export function JobsPage() {
                               target="_blank"
                               rel="noopener noreferrer"
                               aria-label={`View posting for ${job.title}`}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
                             </a>

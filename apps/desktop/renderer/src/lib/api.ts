@@ -698,13 +698,13 @@ export async function generateApplicantJobKeywordProfile(): Promise<ApplicantPro
   return ((await response.json()) as { profile: ApplicantProfile }).profile;
 }
 
-export async function getJobArtifacts(jobId: string): Promise<ArtifactRecord[]> {
+export async function getJobArtifacts(jobId: string): Promise<{ artifacts: ArtifactRecord[]; profile: ApplicantProfile | null }> {
   const baseUrl = await getApiBaseUrl();
   const response = await fetch(`${baseUrl}/jobs/${jobId}/artifacts`, { cache: 'no-store' });
   if (!response.ok) {
     throw new Error(await readError(response));
   }
-  return ((await response.json()) as { artifacts: ArtifactRecord[] }).artifacts;
+  return (await response.json()) as { artifacts: ArtifactRecord[]; profile: ApplicantProfile | null };
 }
 
 export async function generateJobArtifacts(
