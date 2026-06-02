@@ -15,6 +15,8 @@ import {
 } from '@jobautomation/automation';
 import type { FastifyPluginAsync } from 'fastify';
 
+import { createStructuredAiProvider } from '../services/ai-provider';
+
 type CreateApplicationRunPayload = {
   jobId: string;
 };
@@ -109,7 +111,7 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
 
     const { runs, total } = await app.repositories.applicationRuns.listPaginated(
       { page, pageSize },
-      { statuses: statusFilters }
+      statusFilters ? { statuses: statusFilters } : {}
     );
 
     // Batch-fetch all related jobs in a single query instead of N individual findById calls
@@ -223,12 +225,10 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
     const applicationFillPlanModel =
       app.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
       app.config.OPENROUTER_JOB_SUMMARY_MODEL;
-
-    if (app.config.OPENROUTER_API_KEY && !applicationFillPlanModel) {
-      throw new Error(
-        'OPENROUTER_APPLICATION_FILL_PLAN_MODEL or OPENROUTER_JOB_SUMMARY_MODEL must be set when OpenRouter is configured.'
-      );
-    }
+    const answerProvider = createStructuredAiProvider(app.config, {
+      model: applicationFillPlanModel,
+      enableReasoning: true
+    });
 
     const run = await runApplication({
       jobId: payload.jobId,
@@ -242,17 +242,18 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
         leverApplicationSite,
         ashbyApplicationSite,
       ],
-      openRouter: app.config.OPENROUTER_API_KEY
+      openRouter: !answerProvider && app.config.OPENROUTER_API_KEY && applicationFillPlanModel
         ? {
           apiKey: app.config.OPENROUTER_API_KEY,
           baseUrl: app.config.OPENROUTER_API_BASE_URL,
-          model: applicationFillPlanModel!,
+          model: applicationFillPlanModel,
           reasoning: {
             enabled: true,
             exclude: true,
           },
         }
         : null,
+      answerProvider,
       artifactsRootDir: join(
         dirname(app.config.JOB_AUTOMATION_DB_PATH),
         'artifacts'

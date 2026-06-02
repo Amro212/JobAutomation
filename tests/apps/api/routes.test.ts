@@ -19,8 +19,10 @@ describe('API routes', () => {
   const originalTectonicCommand = process.env.JOB_AUTOMATION_TECTONIC_COMMAND;
   const originalTectonicArgs = process.env.JOB_AUTOMATION_TECTONIC_ARGS_JSON;
   const originalDbPath = process.env.JOB_AUTOMATION_DB_PATH;
+  const originalStaticArtifactFallback = process.env.JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK;
   const dbPath = createTestDatabasePath();
   process.env.JOB_AUTOMATION_DB_PATH = dbPath;
+  process.env.JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK = '1';
   process.env.JOB_AUTOMATION_TECTONIC_COMMAND = 'node';
   process.env.JOB_AUTOMATION_TECTONIC_ARGS_JSON = JSON.stringify([
     fileURLToPath(new URL('../../fixtures/documents/tectonic-stub.mjs', import.meta.url))
@@ -30,6 +32,7 @@ describe('API routes', () => {
   afterAll(async () => {
     await app.close();
     process.env.JOB_AUTOMATION_DB_PATH = originalDbPath;
+    process.env.JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK = originalStaticArtifactFallback;
     process.env.JOB_AUTOMATION_TECTONIC_COMMAND = originalTectonicCommand;
     process.env.JOB_AUTOMATION_TECTONIC_ARGS_JSON = originalTectonicArgs;
 
@@ -354,5 +357,74 @@ describe('API routes', () => {
     expect(generateResponse.statusCode).toBe(200);
     expect(generateResponse.json().artifacts).toHaveLength(2);
     expect(generateResponse.json().artifacts.every((artifact: { kind: string }) => artifact.kind === 'resume-variant')).toBe(true);
+  });
+
+  test('rejects artifact generation when hosted AI is unavailable and static fallback is disabled', async () => {
+    await app.inject({
+      method: 'PUT',
+      url: '/applicant-profile',
+      payload: {
+        id: 'default',
+        fullName: 'Taylor Example',
+        email: 'taylor@example.com',
+        phone: '555-0100',
+        location: 'Toronto, ON',
+        summary: 'TypeScript engineer',
+        reusableContext: 'Builds automation systems.',
+        linkedinUrl: 'https://www.linkedin.com/in/taylor-example',
+        websiteUrl: 'https://example.com',
+        baseResumeFileName: 'resume.tex',
+        baseResumeTex: String.raw`\documentclass{article}
+\begin{document}
+\section{Experience}
+\begin{itemize}
+\item Built TypeScript automation systems.
+\end{itemize}
+\end{document}`
+      }
+    });
+
+    const job = await app.repositories.jobs.upsert({
+      sourceKind: 'greenhouse',
+      sourceId: 'job-ai-required',
+      sourceUrl: 'https://boards.greenhouse.io/example/jobs/ai-required',
+      companyName: 'Example Corp',
+      title: 'AI Required Engineer',
+      location: 'Remote - Canada',
+      remoteType: 'remote',
+      employmentType: 'full-time',
+      compensationText: '$170k-$190k CAD',
+      descriptionText: 'Build the local-first platform automation pipeline.',
+      rawPayload: '{"id":"job-ai-required"}',
+      discoveryRunId: null,
+      status: 'shortlisted',
+      discoveredAt: new Date('2026-03-15T09:00:00.000Z'),
+      updatedAt: new Date('2026-03-15T09:00:00.000Z')
+    });
+
+    const originalFallback = app.config.JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK;
+    const originalGatewayBaseUrl = app.config.JOBAUTOMATION_AI_GATEWAY_BASE_URL;
+    const originalGatewayToken = app.config.JOBAUTOMATION_AI_AUTH_TOKEN;
+    const originalOpenRouterKey = app.config.OPENROUTER_API_KEY;
+    try {
+      app.config.JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK = false;
+      app.config.JOBAUTOMATION_AI_GATEWAY_BASE_URL = undefined;
+      app.config.JOBAUTOMATION_AI_AUTH_TOKEN = undefined;
+      app.config.OPENROUTER_API_KEY = undefined;
+
+      const generateResponse = await app.inject({
+        method: 'POST',
+        url: `/jobs/${job.id}/artifacts`,
+        payload: {}
+      });
+
+      expect(generateResponse.statusCode).toBe(409);
+      expect(generateResponse.json().message).toContain('Sign in to enable hosted AI generation');
+    } finally {
+      app.config.JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK = originalFallback;
+      app.config.JOBAUTOMATION_AI_GATEWAY_BASE_URL = originalGatewayBaseUrl;
+      app.config.JOBAUTOMATION_AI_AUTH_TOKEN = originalGatewayToken;
+      app.config.OPENROUTER_API_KEY = originalOpenRouterKey;
+    }
   });
 });

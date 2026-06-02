@@ -32,6 +32,8 @@ export type ApiProcessOptions = {
   packaged: boolean;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
   onStateChange?: (state: ApiProcessState) => void;
+  aiGatewayBaseUrl?: string | null;
+  aiAuthToken?: string | null;
   maxRestartAttempts?: number;
   restartBaseDelayMs?: number;
   childFactory?: (entry: string, options: ForkOptions) => ChildProcessLike;
@@ -119,6 +121,16 @@ export class ApiProcessManager {
           path.dirname(this.options.dbPath),
           'tectonic'
         ),
+        ...(this.options.aiGatewayBaseUrl
+          ? {
+              JOBAUTOMATION_AI_GATEWAY_BASE_URL: this.options.aiGatewayBaseUrl
+            }
+          : {}),
+        ...(this.options.aiAuthToken
+          ? {
+              JOBAUTOMATION_AI_AUTH_TOKEN: this.options.aiAuthToken
+            }
+          : {}),
         ...(this.options.packaged
           ? {
               ELECTRON_RUN_AS_NODE: '1',
@@ -250,6 +262,11 @@ export class ApiProcessManager {
 
       child.send({ type: 'shutdown' });
     });
+  }
+
+  updateAiSession(input: { aiGatewayBaseUrl?: string | null; aiAuthToken?: string | null }): void {
+    this.options.aiGatewayBaseUrl = input.aiGatewayBaseUrl ?? null;
+    this.options.aiAuthToken = input.aiAuthToken ?? null;
   }
 
   private async handleUnexpectedExit(

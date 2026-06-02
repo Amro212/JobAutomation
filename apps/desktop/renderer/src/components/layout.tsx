@@ -18,7 +18,6 @@ import {
   Rocket,
   HelpCircle,
   LogOut,
-  Loader2,
   Minus,
   Square,
   X
@@ -30,7 +29,7 @@ import { CamoufoxSetupBanner } from '@renderer/components/camoufox-setup-banner'
 import { SaharaLogo } from '@renderer/components/sahara-logo';
 import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
 import { useTheme } from '@renderer/components/theme-provider';
-import { createAutopilotRun } from '@renderer/lib/api';
+import { getAutopilotRuns } from '@renderer/lib/api';
 
 function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -221,11 +220,11 @@ function SaharaLoadingScreen() {
 export function DesktopLayout() {
   const [backendStatus, setBackendStatus] = useState('Connecting...');
   const [rawStatus, setRawStatus] = useState<string>('stopped');
+  const [hasActiveAutopilotRun, setHasActiveAutopilotRun] = useState(false);
   const { status: camoufoxStatus } = useCamoufoxStatus();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isLaunching, setIsLaunching] = useState(false);
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -248,6 +247,51 @@ export function DesktopLayout() {
 
   const apiConnected = rawStatus === 'running';
 
+  useEffect(() => {
+    if (!apiConnected) {
+      setHasActiveAutopilotRun(false);
+      return;
+    }
+
+    let cancelled = false;
+    const refreshActiveRun = async () => {
+      try {
+        const runs = await getAutopilotRuns();
+        if (!cancelled) {
+          setHasActiveAutopilotRun(
+            runs.some(({ run }) => ['pending', 'running'].includes(run.status))
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setHasActiveAutopilotRun(false);
+        }
+      }
+    };
+
+    void refreshActiveRun();
+    const interval = window.setInterval(() => void refreshActiveRun(), 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [apiConnected]);
+
+  const statusPill = apiConnected
+    ? hasActiveAutopilotRun
+      ? {
+          label: 'Autopilot Running',
+          dotClassName: 'bg-emerald-500 animate-[pulse_2s_infinite]'
+        }
+      : {
+          label: 'Backend Ready',
+          dotClassName: 'bg-sky-500'
+        }
+    : {
+        label: backendStatus,
+        dotClassName: 'bg-muted-foreground'
+      };
+
   const currentPageTitle =
     pageTitles[location.pathname] ??
     pageTitles[
@@ -258,17 +302,8 @@ export function DesktopLayout() {
     'JobAutomation';
 
   const handleLaunchAutopilot = async () => {
-    setIsLaunching(true);
-    try {
-      await createAutopilotRun();
-      toast.success('Autopilot run started');
-      navigate('/autopilot');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to start autopilot.';
-      toast.error(msg);
-    } finally {
-      setIsLaunching(false);
-    }
+    toast.info('Review autopilot settings before launch.');
+    navigate('/autopilot');
   };
 
   if (!apiConnected) {
@@ -377,15 +412,10 @@ export function DesktopLayout() {
                 !sidebarCollapsed ? "w-full py-2.5" : "h-10 w-10 p-0 mx-auto flex-shrink-0"
               )}
               onClick={handleLaunchAutopilot}
-              disabled={isLaunching}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
-              {isLaunching ? (
-                <Loader2 className={cn("shrink-0 z-10 relative animate-spin", sidebarCollapsed ? "h-5 w-5" : "h-4 w-4")} />
-              ) : (
-                <Rocket className={cn("shrink-0 z-10 relative", sidebarCollapsed ? "h-5 w-5" : "h-4 w-4")} />
-              )}
-              {!sidebarCollapsed && <span className="z-10 relative">{isLaunching ? 'Launching...' : 'Launch Autopilot'}</span>}
+              <Rocket className={cn("shrink-0 z-10 relative", sidebarCollapsed ? "h-5 w-5" : "h-4 w-4")} />
+              {!sidebarCollapsed && <span className="z-10 relative">Configure Autopilot</span>}
             </Button>
 
             {!sidebarCollapsed && (
@@ -446,8 +476,8 @@ export function DesktopLayout() {
               <div className="flex items-center gap-3 mr-2">
                 {/* System Status Pill */}
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-muted/40 text-xs font-semibold text-foreground">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-[pulse_2s_infinite]" />
-                  System Active
+                  <span className={cn('h-2 w-2 rounded-full', statusPill.dotClassName)} />
+                  {statusPill.label}
                 </div>
 
                 {/* Notifications */}

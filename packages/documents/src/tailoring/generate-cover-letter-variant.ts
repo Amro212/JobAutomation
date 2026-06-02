@@ -41,6 +41,7 @@ export type GenerateCoverLetterVariantInput = {
       prompt: string;
     }): Promise<unknown>;
   } | null;
+  allowStaticFallback?: boolean;
 };
 
 async function generateCoverLetterContent(
@@ -148,6 +149,9 @@ export async function generateCoverLetterVariant(
     input.openRouter ?? null,
     Object.keys(letterOpts).length > 0 ? letterOpts : undefined
   );
+  if (!draft && !input.allowStaticFallback) {
+    throw new Error('AI generation is required for cover letter generation.');
+  }
   const outputRoot = resolve(input.outputRoot ?? 'output');
   const version = await input.artifactsRepository.nextVersionForJobAndKind(
     input.job.id,

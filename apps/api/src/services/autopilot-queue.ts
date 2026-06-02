@@ -22,6 +22,7 @@ import type {
 import { runStructuredDiscovery } from '@jobautomation/discovery';
 import type { OpenRouterConfig } from '@jobautomation/llm';
 
+import { createStructuredAiProvider } from './ai-provider';
 import { generateJobArtifactsForJob } from './generate-job-artifacts';
 import { reviewJobMatchWithLlm } from './job-match-llm-review';
 import { autopilotJobPoolFilters } from './jobs-tab-filters';
@@ -494,6 +495,11 @@ export class AutopilotQueueService implements AutopilotQueue {
         const matchReview = await this.reviewJobMatchImpl({
           job,
           applicantProfile: profile,
+          provider: createStructuredAiProvider(this.input.config, {
+            model:
+              this.input.config.OPENROUTER_JOB_SUMMARY_MODEL ??
+              this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL
+          }),
           openRouter: openRouterConfigForModel(
             this.input.config,
             this.input.config.OPENROUTER_JOB_SUMMARY_MODEL ??
@@ -570,6 +576,12 @@ export class AutopilotQueueService implements AutopilotQueue {
                 // Batch autopilot must close headed browsers on pause so the next job
                 // can reuse the same persistent profile without spawning empty windows.
                 leaveBrowserOpenOnPause: false,
+                answerProvider: createStructuredAiProvider(this.input.config, {
+                  model:
+                    this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??
+                    this.input.config.OPENROUTER_JOB_SUMMARY_MODEL,
+                  enableReasoning: true
+                }),
                 openRouter: openRouterConfigForModel(
                   this.input.config,
                   this.input.config.OPENROUTER_APPLICATION_FILL_PLAN_MODEL ??

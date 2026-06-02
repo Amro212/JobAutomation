@@ -2,6 +2,7 @@ import { applicantProfileInputSchema } from '@jobautomation/core';
 import { generateJobKeywordProfile, JobKeywordProfileError } from '@jobautomation/discovery';
 import type { FastifyPluginAsync } from 'fastify';
 
+import { createStructuredAiProvider, isStructuredAiConfigured } from '../services/ai-provider';
 import { recomputeJobPrefilterMatches } from '../services/job-prefilter-recompute';
 
 type ApplicantProfileReadiness = {
@@ -53,17 +54,15 @@ export const registerApplicantProfileRoutes: FastifyPluginAsync = async (app) =>
           .send({ message: 'Save applicant setup before generating a job filter profile.' });
       }
 
-      if (!app.config.OPENROUTER_API_KEY) {
-        return reply.code(409).send({ message: 'OpenRouter is not configured.' });
+      if (!isStructuredAiConfigured(app.config)) {
+        return reply.code(409).send({ message: 'Sign in to enable hosted AI generation.' });
       }
 
       const keywordProfile = await generateJobKeywordProfile({
         applicantProfile: existing,
-        openRouter: {
-          apiKey: app.config.OPENROUTER_API_KEY,
-          baseUrl: app.config.OPENROUTER_API_BASE_URL,
+        provider: createStructuredAiProvider(app.config, {
           model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
-        }
+        })
       });
 
       const profile = await app.repositories.applicantProfile.saveJobKeywordProfile(keywordProfile);

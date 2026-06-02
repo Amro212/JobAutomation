@@ -3,6 +3,7 @@ import { prefilterContextFromApplicant, prefilterJob } from '@jobautomation/core
 import type { JobsRepository } from '@jobautomation/db';
 import {
   createOpenRouterProvider,
+  type GenerateStructuredObjectInput,
   jobSummaryJsonSchema,
   jobSummarySchema,
   type OpenRouterConfig
@@ -30,6 +31,9 @@ export type ScoreJobInput = {
   jobId: string;
   jobsRepository: JobsRepository;
   openRouter?: OpenRouterConfig;
+  provider?: {
+    generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown>;
+  } | null;
   /** When present with non-empty scoring fields, the model judges fit for this applicant. */
   applicantProfile?: ApplicantProfile | null;
 };
@@ -143,10 +147,14 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
     );
   }
 
-  if (!input.openRouter?.apiKey) {
+  const provider =
+    input.provider ??
+    (input.openRouter?.apiKey ? createOpenRouterProvider(input.openRouter) : null);
+
+  if (!provider) {
     throw new JobScoreError(
       'not_configured',
-      'OpenRouter is not configured, so summary scoring is unavailable.'
+      'Hosted AI generation is not configured, so summary scoring is unavailable.'
     );
   }
 
@@ -155,7 +163,6 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
   const prompt = buildPrompt(job, profile);
 
   try {
-    const provider = createOpenRouterProvider(input.openRouter);
     const structured = await provider.generateStructuredObject({
       schemaName: 'job_summary',
       schema: jobSummaryJsonSchema,
@@ -168,7 +175,7 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
     if (!parsed.success) {
       throw new JobScoreError(
         'invalid_output',
-        'OpenRouter returned invalid structured output for this job.'
+        'AI provider returned invalid structured output for this job.'
       );
     }
 
@@ -189,7 +196,7 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
       throw error;
     }
 
-    const message = error instanceof Error ? error.message : 'Unknown OpenRouter scoring error.';
+    const message = error instanceof Error ? error.message : 'Unknown AI scoring error.';
     const normalizedMessage = message.toLowerCase();
 
     if (
@@ -199,14 +206,14 @@ export async function scoreJob(input: ScoreJobInput): Promise<JobRecord> {
     ) {
       throw new JobScoreError(
         'not_configured',
-        'OpenRouter authentication failed. Check OPENROUTER_API_KEY and retry.'
+        'Hosted AI authentication failed. Sign in and retry.'
       );
     }
 
     if (normalizedMessage.includes('(http 402)') || normalizedMessage.includes('status 402')) {
       throw new JobScoreError(
         'not_configured',
-        'OpenRouter or the model provider requires payment or credits. Add billing or top up on OpenRouter.'
+        'Hosted AI generation requires an active subscription.'
       );
     }
 

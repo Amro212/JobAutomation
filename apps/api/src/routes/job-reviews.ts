@@ -3,10 +3,12 @@ import { jobReviewPatchSchema } from '@jobautomation/core';
 import { JobScoreError, scoreJob, shortlistJob } from '@jobautomation/discovery';
 import type { FastifyPluginAsync } from 'fastify';
 
+import { createStructuredAiProvider, isStructuredAiConfigured } from '../services/ai-provider';
+
 export const registerJobReviewRoutes: FastifyPluginAsync = async (app) => {
   app.get('/job-reviews/capabilities', async () => {
     return {
-      scoringEnabled: isOpenRouterConfigured(app.config)
+      scoringEnabled: isStructuredAiConfigured(app.config) || isOpenRouterConfigured(app.config)
     };
   });
 
@@ -62,7 +64,10 @@ export const registerJobReviewRoutes: FastifyPluginAsync = async (app) => {
         jobId,
         jobsRepository: app.repositories.jobs,
         applicantProfile,
-        ...(app.config.OPENROUTER_API_KEY
+        provider: createStructuredAiProvider(app.config, {
+          model: app.config.OPENROUTER_JOB_SUMMARY_MODEL
+        }),
+        ...(app.config.OPENROUTER_API_KEY && app.config.OPENROUTER_JOB_SUMMARY_MODEL
           ? {
               openRouter: {
                 apiKey: app.config.OPENROUTER_API_KEY,

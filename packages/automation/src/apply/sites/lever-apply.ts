@@ -71,7 +71,7 @@ export const leverApplicationSite: SupportedApplicationSite = {
       })
     );
 
-    if (!context.openRouter?.apiKey) {
+    if (!context.answerProvider && !context.openRouter?.apiKey) {
       await context.logStep(
         'fields_scraped_ready',
         'Scraped the visible Lever application fields and stopped for Stage 3 review.',
@@ -107,6 +107,7 @@ export const leverApplicationSite: SupportedApplicationSite = {
         fields: scrapedFields,
         artifacts: context.artifacts,
         openRouter: context.openRouter ?? null,
+        provider: context.answerProvider ?? undefined
       })
     );
     const fillPlanValidation = fillPlanResult.fillPlanValidation ?? {

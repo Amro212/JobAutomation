@@ -278,6 +278,8 @@ async function bootstrap(): Promise<void> {
     desktopRoot,
     workspaceRoot,
     packaged: app.isPackaged,
+    aiGatewayBaseUrl: configStore.get('aiGatewayBaseUrl'),
+    aiAuthToken: configStore.get('aiAuthToken'),
     onStateChange: (state) => {
       backendStatus = state;
       if (state.status === 'running') {
@@ -325,6 +327,33 @@ async function bootstrap(): Promise<void> {
   ipcMain.handle('get-platform', () => process.platform);
   ipcMain.handle('get-update-status', () => autoUpdater.getStatus());
   ipcMain.handle('get-backend-status', () => backendStatus);
+  ipcMain.handle('get-ai-session', () => ({
+    signedIn: Boolean(configStore.get('aiAuthToken')),
+    gatewayBaseUrl: configStore.get('aiGatewayBaseUrl')
+  }));
+  ipcMain.handle('set-ai-session', async (_event, session: { gatewayBaseUrl?: string; authToken?: string }) => {
+    const gatewayBaseUrl = typeof session.gatewayBaseUrl === 'string' ? session.gatewayBaseUrl.trim() : '';
+    const authToken = typeof session.authToken === 'string' ? session.authToken.trim() : '';
+    if (!gatewayBaseUrl || !authToken) {
+      throw new Error('AI session requires gatewayBaseUrl and authToken.');
+    }
+    configStore.set('aiGatewayBaseUrl', gatewayBaseUrl);
+    configStore.set('aiAuthToken', authToken);
+    apiProcess.updateAiSession({ aiGatewayBaseUrl: gatewayBaseUrl, aiAuthToken: authToken });
+    await apiProcess.stop();
+    await apiProcess.start();
+    return { signedIn: true, gatewayBaseUrl };
+  });
+  ipcMain.handle('clear-ai-session', async () => {
+    configStore.set('aiAuthToken', null);
+    apiProcess.updateAiSession({
+      aiGatewayBaseUrl: configStore.get('aiGatewayBaseUrl'),
+      aiAuthToken: null
+    });
+    await apiProcess.stop();
+    await apiProcess.start();
+    return { signedIn: false, gatewayBaseUrl: configStore.get('aiGatewayBaseUrl') };
+  });
   ipcMain.handle('get-camoufox-status', () => camoufoxStatus);
   ipcMain.handle('install-update', () => {
     autoUpdater.install();

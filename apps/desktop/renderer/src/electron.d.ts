@@ -31,6 +31,12 @@ declare global {
       getApiPort: () => Promise<number>;
       getPlatform: () => Promise<string>;
       getBackendStatus: () => Promise<DesktopBackendStatus>;
+      getAiSession: () => Promise<{ signedIn: boolean; gatewayBaseUrl: string | null }>;
+      setAiSession: (session: {
+        gatewayBaseUrl: string;
+        authToken: string;
+      }) => Promise<{ signedIn: boolean; gatewayBaseUrl: string }>;
+      clearAiSession: () => Promise<{ signedIn: boolean; gatewayBaseUrl: string | null }>;
       getCamoufoxStatus: () => Promise<CamoufoxDownloadStatus>;
       retryCamoufoxDownload: () => Promise<CamoufoxDownloadStatus>;
       minimizeToTray: () => void;

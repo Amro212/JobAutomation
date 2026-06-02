@@ -18,6 +18,8 @@ function createTestDatabasePath(): string {
 
 describe('application run routes', () => {
   const originalDbPath = process.env.JOB_AUTOMATION_DB_PATH;
+  const originalApplicationBrowserHeaded =
+    process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED;
   const dbPath = createTestDatabasePath();
   const resumePath = fileURLToPath(
     new URL(`../../../data/test/${randomUUID()}-resume.pdf`, import.meta.url)
@@ -27,6 +29,7 @@ describe('application run routes', () => {
   );
 
   process.env.JOB_AUTOMATION_DB_PATH = dbPath;
+  process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED = '0';
 
   const app = buildApp();
 
@@ -57,6 +60,8 @@ describe('application run routes', () => {
   afterAll(async () => {
     await app.close();
     process.env.JOB_AUTOMATION_DB_PATH = originalDbPath;
+    process.env.JOBAUTOMATION_APPLICATION_BROWSER_HEADED =
+      originalApplicationBrowserHeaded;
 
     try {
       rmSync(resumePath, { force: true });

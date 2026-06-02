@@ -11,7 +11,11 @@ import type {
   JobRecord,
   PrefilterReason
 } from '@jobautomation/core';
-import type { OpenRouterConfig } from '@jobautomation/llm';
+import type {
+  GenerateStructuredObjectInput,
+  GenerateStructuredObjectResult,
+  OpenRouterConfig
+} from '@jobautomation/llm';
 import type {
   ApplicationArtifacts,
   ApplicationSessionRuntime,
@@ -100,6 +104,12 @@ export type RunApplicationInput = {
   logEventsRepository: LogEventsRepository;
   siteFlows: SupportedApplicationSite[];
   openRouter?: OpenRouterConfig | null;
+  answerProvider?: {
+    generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown>;
+    generateStructuredObjectWithMetadata?: (
+      input: GenerateStructuredObjectInput
+    ) => Promise<GenerateStructuredObjectResult>;
+  } | null;
   artifactsRootDir?: string;
   // Defaults to leaving headed paused runs open so manual review can continue
   // in the same browser window. Set false only for explicit close-on-pause runs.
@@ -410,6 +420,7 @@ export async function runApplication(input: RunApplicationInput): Promise<Applic
         run: runningRun,
         session,
         openRouter: input.openRouter ?? null,
+        answerProvider: input.answerProvider ?? null,
         logStep: async (step, message, details = {}) => {
         await logRunEvent(input.logEventsRepository, {
           applicationRunId: runningRun.id,

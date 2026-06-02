@@ -34,7 +34,13 @@ function createConfigSchema(resolvePathValue: (pathValue: string) => string) {
     OPENROUTER_API_KEY: z.string().trim().min(1).optional(),
     OPENROUTER_API_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
     OPENROUTER_JOB_SUMMARY_MODEL: z.string().trim().min(1).optional(),
-    OPENROUTER_APPLICATION_FILL_PLAN_MODEL: z.string().trim().min(1).optional()
+    OPENROUTER_APPLICATION_FILL_PLAN_MODEL: z.string().trim().min(1).optional(),
+    JOBAUTOMATION_AI_GATEWAY_BASE_URL: z.string().url().optional(),
+    JOBAUTOMATION_AI_AUTH_TOKEN: z.string().trim().min(1).optional(),
+    JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK: z
+      .enum(['0', '1'])
+      .default('0')
+      .transform((value) => value === '1')
   });
 }
 
@@ -43,7 +49,7 @@ const envSchema = createConfigSchema(resolveProjectPath);
 export type AppEnv = z.infer<typeof envSchema>;
 
 export function readEnv(input: NodeJS.ProcessEnv): AppEnv {
-  return envSchema.parse(input);
+  return envSchema.parse({ ...input });
 }
 
 export function readConfig(configPath: string): AppEnv {

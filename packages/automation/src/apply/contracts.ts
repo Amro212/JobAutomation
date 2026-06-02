@@ -4,7 +4,7 @@ import type { ApplicantProfile } from '@jobautomation/core';
 import type { ApplicationRunRecord } from '@jobautomation/core';
 import type { ArtifactRecord } from '@jobautomation/core';
 import type { JobRecord } from '@jobautomation/core';
-import type { OpenRouterConfig } from '@jobautomation/llm';
+import type { GenerateStructuredObjectInput, GenerateStructuredObjectResult, OpenRouterConfig } from '@jobautomation/llm';
 
 import type { ApplicationBrowserRuntime, BrowserIdentityConfig } from '../playwright/browser';
 import type { SupportedApplicationBoard } from './board-entry';
@@ -65,6 +65,12 @@ export type ApplicationSiteFlowContext = {
   session: ApplicationSession;
   submissionMode?: 'submit' | 'stop_before_submit';
   openRouter?: OpenRouterConfig | null;
+  answerProvider?: {
+    generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown>;
+    generateStructuredObjectWithMetadata?: (
+      input: GenerateStructuredObjectInput
+    ) => Promise<GenerateStructuredObjectResult>;
+  } | null;
   logStep: (step: string, message: string, details?: Record<string, unknown>) => Promise<void>;
   captureScreenshot: (input: {
     step: string;

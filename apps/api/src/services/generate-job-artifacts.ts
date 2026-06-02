@@ -13,7 +13,7 @@ import {
   generateCoverLetterVariant,
   generateResumeVariant
 } from '@jobautomation/documents';
-import { createOpenRouterProvider } from '@jobautomation/llm';
+import { createStructuredAiProvider } from './ai-provider';
 
 export type GenerateArtifactsMode = 'both' | 'resume' | 'cover-letter';
 
@@ -42,18 +42,6 @@ type GenerateJobArtifactsInput = {
   };
   config: AppEnv;
 };
-
-function buildOpenRouterClient(config: AppEnv) {
-  if (!config.OPENROUTER_API_KEY || !config.OPENROUTER_JOB_SUMMARY_MODEL) {
-    return null;
-  }
-
-  return createOpenRouterProvider({
-    apiKey: config.OPENROUTER_API_KEY,
-    baseUrl: config.OPENROUTER_API_BASE_URL,
-    model: config.OPENROUTER_JOB_SUMMARY_MODEL
-  });
-}
 
 function assertReadyForTailoring(
   profile: ApplicantProfile | null
@@ -114,7 +102,16 @@ export async function generateJobArtifactsForJob(
   const profile = await input.repositories.applicantProfile.get();
   assertReadyForTailoring(profile);
 
-  const openRouter = buildOpenRouterClient(input.config);
+  const openRouter = createStructuredAiProvider(input.config, {
+    model: input.config.OPENROUTER_JOB_SUMMARY_MODEL
+  });
+  const allowStaticFallback = input.config.JOBAUTOMATION_ALLOW_STATIC_ARTIFACT_FALLBACK;
+  if (!openRouter && !allowStaticFallback) {
+    throw new JobArtifactGenerationError(
+      'Sign in to enable hosted AI generation before generating artifacts.',
+      409
+    );
+  }
   const outputRoot = resolveArtifactsOutputRoot(input.config);
   const generatedArtifacts: ArtifactRecord[] = [];
   const warnings: string[] = [];
@@ -128,10 +125,10 @@ export async function generateJobArtifactsForJob(
       const resumeArtifacts = await generateResumeVariant({
         job,
         applicantProfile: profile,
-        artifactsRepository: input.repositories.artifacts,
-        openRouter,
-        outputRoot
-      });
+          artifactsRepository: input.repositories.artifacts,
+          openRouter,
+          outputRoot
+        });
       generatedArtifacts.push(...resumeArtifacts);
 
       if (mode === 'both') {
@@ -170,7 +167,8 @@ export async function generateJobArtifactsForJob(
           openRouter,
           outputRoot,
           resumeTexForCoverLetter,
-          coverLetterResumeIsTailoredVariant: coverLetterUsesTailoredResume
+          coverLetterResumeIsTailoredVariant: coverLetterUsesTailoredResume,
+          allowStaticFallback
         }))
       );
     } catch (error) {

@@ -4,7 +4,7 @@ import fastifyCors from '@fastify/cors';
 
 import { registerApplicantProfileRoutes } from './routes/applicant-profile';
 import { registerArtifactsRoutes } from './routes/artifacts';
-import { registerApplicationRunRoutes } from './routes/application-runs.ts';
+import { registerApplicationRunRoutes } from './routes/application-runs';
 import { registerAutopilotRunRoutes } from './routes/autopilot-runs';
 import { registerAutopilotSettingsRoutes } from './routes/autopilot-settings';
 import { registerDiscoveryRunRoutes } from './routes/discovery-runs';

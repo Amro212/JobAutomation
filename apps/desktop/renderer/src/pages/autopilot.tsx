@@ -13,12 +13,21 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import type { AutopilotConfigInput, AutopilotSettingsRecord } from '@jobautomation/core';
+import type {
+  ApplicantProfile,
+  AutopilotApplySiteKey,
+  AutopilotConfigInput,
+  AutopilotSettingsRecord,
+  DiscoverySourceRecord
+} from '@jobautomation/core';
 import {
   cancelAutopilotRun,
   createAutopilotRun,
+  getApplicantProfile,
   getAutopilotRuns,
   getAutopilotSettings,
+  getDiscoverySources,
+  saveApplicantProfile,
   updateAutopilotSettings
 } from '@renderer/lib/api';
 import { useCamoufoxStatus } from '@renderer/lib/use-camoufox-status';
@@ -46,6 +55,10 @@ type AutopilotFormState = {
   discoveryCacheHours: string;
   matchProfile: '' | 'me' | 'all';
   forceFreshDiscovery: boolean;
+  sourceScope: 'all' | 'custom';
+  discoverySourceIds: string[];
+  applySiteKeys: AutopilotApplySiteKey[];
+  preferredCountriesCsv: string;
 };
 
 function formStateFromSettings(settings: AutopilotSettingsRecord): AutopilotFormState {
@@ -55,7 +68,46 @@ function formStateFromSettings(settings: AutopilotSettingsRecord): AutopilotForm
       settings.config.maxJobsPerRun == null ? '' : String(settings.config.maxJobsPerRun),
     discoveryCacheHours: String(settings.config.discoveryCacheHours),
     matchProfile: settings.config.matchProfile ?? '',
-    forceFreshDiscovery: settings.config.forceFreshDiscovery
+    forceFreshDiscovery: settings.config.forceFreshDiscovery,
+    sourceScope: settings.config.discoverySourceIds.length === 0 ? 'all' : 'custom',
+    discoverySourceIds: settings.config.discoverySourceIds,
+    applySiteKeys: settings.config.applySiteKeys,
+    preferredCountriesCsv: settings.config.jobFilters.locationCountries?.join(', ') ?? ''
+  };
+}
+
+function parseCountriesCsv(value: string): string[] {
+  return value
+    .split(',')
+    .map((entry) => entry.trim().toUpperCase())
+    .filter((entry) => /^[A-Z]{2}$/.test(entry));
+}
+
+function sourceIdsForApplySites(
+  sources: DiscoverySourceRecord[],
+  siteKeys: AutopilotApplySiteKey[]
+): string[] {
+  const selectedSites = new Set(siteKeys);
+  return sources
+    .filter((source) => selectedSites.has(source.sourceKind as AutopilotApplySiteKey))
+    .map((source) => source.id);
+}
+
+function payloadFromFormState(formState: AutopilotFormState): AutopilotConfigInput {
+  const preferredCountries = parseCountriesCsv(formState.preferredCountriesCsv);
+  return {
+    artifactMode: formState.artifactMode,
+    discoveryCacheHours: Number(formState.discoveryCacheHours),
+    discoverySourceIds:
+      formState.sourceScope === 'custom' ? formState.discoverySourceIds : [],
+    applySiteKeys: formState.applySiteKeys,
+    maxJobsPerRun:
+      formState.maxJobsPerRun.trim().length === 0 ? null : Number(formState.maxJobsPerRun),
+    matchProfile: formState.matchProfile === '' ? null : formState.matchProfile,
+    forceFreshDiscovery: formState.forceFreshDiscovery,
+    jobFilters: {
+      locationCountries: preferredCountries
+    }
   };
 }
 
@@ -77,12 +129,18 @@ function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 
 export function AutopilotPage() {
   const { status: camoufoxStatus } = useCamoufoxStatus();
   const [settings, setSettings] = useState<AutopilotSettingsRecord | null>(null);
+  const [profile, setProfile] = useState<ApplicantProfile | null>(null);
+  const [enabledSources, setEnabledSources] = useState<DiscoverySourceRecord[]>([]);
   const [formState, setFormState] = useState<AutopilotFormState>({
     artifactMode: 'both',
     maxJobsPerRun: '',
     discoveryCacheHours: '3',
     matchProfile: '',
-    forceFreshDiscovery: false
+    forceFreshDiscovery: false,
+    sourceScope: 'all',
+    discoverySourceIds: [],
+    applySiteKeys: ['greenhouse', 'lever', 'ashby'],
+    preferredCountriesCsv: ''
   });
   const [runs, setRuns] = useState<Array<{ id: string; status: string; step: string }>>([]);
   const [activeRun, setActiveRun] = useState<{
@@ -109,8 +167,25 @@ export function AutopilotPage() {
       getAutopilotSettings(),
       getAutopilotRuns()
     ]);
+    const [sourcesResponse, profileResponse] = await Promise.all([
+      getDiscoverySources(),
+      getApplicantProfile()
+    ]);
+    const enabled = sourcesResponse.filter((source) => source.enabled);
     setSettings(settingsResponse);
-    setFormState(formStateFromSettings(settingsResponse));
+    setEnabledSources(enabled);
+    setProfile(profileResponse.profile);
+    setFormState({
+      ...formStateFromSettings(settingsResponse),
+      discoverySourceIds:
+        settingsResponse.config.discoverySourceIds.length === 0
+          ? enabled.map((source) => source.id)
+          : settingsResponse.config.discoverySourceIds,
+      preferredCountriesCsv:
+        settingsResponse.config.jobFilters.locationCountries?.join(', ') ||
+        profileResponse.profile?.preferredCountries.join(', ') ||
+        ''
+    });
     const nextRuns = runsResponse.slice(0, 8).map((entry) => ({
       id: entry.run.id,
       status: entry.run.status,
@@ -156,7 +231,10 @@ export function AutopilotPage() {
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      await createAutopilotRun();
+      const payload = payloadFromFormState(formState);
+      await syncPreferredCountries(payload);
+      await updateAutopilotSettings(payload);
+      await createAutopilotRun(payload);
       await refresh();
       toast.success('Autopilot run started');
     } catch (err) {
@@ -189,14 +267,8 @@ export function AutopilotPage() {
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const payload: AutopilotConfigInput = {
-        artifactMode: formState.artifactMode,
-        discoveryCacheHours: Number(formState.discoveryCacheHours),
-        maxJobsPerRun:
-          formState.maxJobsPerRun.trim().length === 0 ? null : Number(formState.maxJobsPerRun),
-        matchProfile: formState.matchProfile === '' ? null : formState.matchProfile,
-        forceFreshDiscovery: formState.forceFreshDiscovery
-      };
+      const payload = payloadFromFormState(formState);
+      await syncPreferredCountries(payload);
       const updated = await updateAutopilotSettings(payload);
       setSettings(updated);
       setFormState(formStateFromSettings(updated));
@@ -210,8 +282,54 @@ export function AutopilotPage() {
     }
   };
 
+  const syncPreferredCountries = async (payload: AutopilotConfigInput) => {
+    const preferredCountries = payload.jobFilters?.locationCountries ?? [];
+    if (!profile || preferredCountries.join(',') === profile.preferredCountries.join(',')) {
+      return;
+    }
+
+    const { updatedAt: _updatedAt, ...rest } = profile;
+    const updatedProfile = await saveApplicantProfile({
+      ...rest,
+      preferredCountries
+    });
+    setProfile(updatedProfile);
+  };
+
+  const setApplySites = (applySiteKeys: AutopilotApplySiteKey[]) => {
+    setFormState((current) => ({
+      ...current,
+      applySiteKeys,
+      sourceScope: 'custom',
+      discoverySourceIds: sourceIdsForApplySites(enabledSources, applySiteKeys)
+    }));
+  };
+
+  const toggleApplySite = (siteKey: AutopilotApplySiteKey) => {
+    setApplySites(
+      formState.applySiteKeys.includes(siteKey)
+        ? formState.applySiteKeys.filter((key) => key !== siteKey)
+        : [...formState.applySiteKeys, siteKey]
+    );
+  };
+
+  const toggleSource = (sourceId: string) => {
+    setFormState((current) => ({
+      ...current,
+      sourceScope: 'custom',
+      discoverySourceIds: current.discoverySourceIds.includes(sourceId)
+        ? current.discoverySourceIds.filter((id) => id !== sourceId)
+        : [...current.discoverySourceIds, sourceId]
+    }));
+  };
+
   const camoufoxReady = camoufoxStatus.state === 'ready';
   const startDisabled = submitting || Boolean(activeRun) || !camoufoxReady;
+  const canLaunch =
+    !startDisabled &&
+    enabledSources.length > 0 &&
+    formState.applySiteKeys.length > 0 &&
+    (formState.sourceScope === 'all' || formState.discoverySourceIds.length > 0);
   const totalDone = activeRun ? activeRun.submitted + activeRun.blocked + activeRun.failed : 0;
   const eligibleForProgress = activeRun?.eligible ?? 0;
   const progressPct =
@@ -261,7 +379,7 @@ export function AutopilotPage() {
               <div className="flex flex-wrap gap-3">
                 <Button
                   onClick={() => void handleStart()}
-                  disabled={startDisabled}
+                  disabled={!canLaunch}
                   className="gap-2"
                   id="autopilot-start-btn"
                 >
@@ -343,6 +461,67 @@ export function AutopilotPage() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   {/* Artifact Mode */}
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Discovery Scope</Label>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant={formState.sourceScope === 'all' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() =>
+                          setFormState({
+                            ...formState,
+                            sourceScope: 'all',
+                            discoverySourceIds: enabledSources.map((source) => source.id)
+                          })
+                        }
+                      >
+                        All enabled ({enabledSources.length})
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={formState.sourceScope === 'custom' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setFormState({ ...formState, sourceScope: 'custom' })}
+                      >
+                        Custom ({formState.discoverySourceIds.length})
+                      </Button>
+                    </div>
+                    {formState.sourceScope === 'custom' && (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {enabledSources.map((source) => (
+                          <label key={source.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+                            <Checkbox
+                              checked={formState.discoverySourceIds.includes(source.id)}
+                              onCheckedChange={() => toggleSource(source.id)}
+                            />
+                            <span className="min-w-0 truncate">
+                              {source.label} ({source.sourceKind})
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Apply Sites</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(['greenhouse', 'lever', 'ashby'] as AutopilotApplySiteKey[]).map((site) => (
+                        <Button
+                          key={site}
+                          type="button"
+                          variant={formState.applySiteKeys.includes(site) ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => toggleApplySite(site)}
+                          className="capitalize"
+                        >
+                          {site}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
                     <Label htmlFor="artifact-mode">Artifact Mode</Label>
                     <Select
@@ -415,6 +594,18 @@ export function AutopilotPage() {
                         <SelectItem value="all">All profiles</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="preferred-countries">Preferred Countries</Label>
+                    <Input
+                      id="preferred-countries"
+                      placeholder="US, CA"
+                      value={formState.preferredCountriesCsv}
+                      onChange={(e) =>
+                        setFormState({ ...formState, preferredCountriesCsv: e.target.value })
+                      }
+                    />
                   </div>
 
                   {/* Force Fresh Discovery */}

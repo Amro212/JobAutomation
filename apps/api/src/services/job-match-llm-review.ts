@@ -6,7 +6,11 @@ import {
   type PrefilterAudit,
   type PrefilterReason
 } from '@jobautomation/core';
-import { createOpenRouterProvider, type OpenRouterConfig } from '@jobautomation/llm';
+import {
+  createOpenRouterProvider,
+  type GenerateStructuredObjectInput,
+  type OpenRouterConfig
+} from '@jobautomation/llm';
 
 const llmMatchReviewJsonSchema = {
   type: 'object',
@@ -96,14 +100,21 @@ function buildPrompt(job: JobRecord, profile: ApplicantProfile | null, audit: Pr
 export async function reviewJobMatchWithLlm(input: {
   job: JobRecord;
   applicantProfile: ApplicantProfile | null;
-  openRouter: OpenRouterConfig | null;
+  openRouter?: OpenRouterConfig | null;
+  provider?: {
+    generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown>;
+  } | null;
 }): Promise<JobMatchLlmReviewResult> {
   const deterministic = prefilterJob(
     input.job,
     prefilterContextFromApplicant(input.applicantProfile)
   );
 
-  if (!deterministic.pass || !shouldReview(deterministic.audit) || !input.openRouter?.apiKey) {
+  const provider =
+    input.provider ??
+    (input.openRouter?.apiKey ? createOpenRouterProvider(input.openRouter) : null);
+
+  if (!deterministic.pass || !shouldReview(deterministic.audit) || !provider) {
     return {
       reviewed: false,
       pass: deterministic.pass,
@@ -113,7 +124,6 @@ export async function reviewJobMatchWithLlm(input: {
     };
   }
 
-  const provider = createOpenRouterProvider(input.openRouter);
   const structured = await provider.generateStructuredObject({
     schemaName: 'job_match_review',
     schema: llmMatchReviewJsonSchema as unknown as Record<string, unknown>,

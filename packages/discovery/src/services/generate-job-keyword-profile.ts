@@ -1,6 +1,11 @@
 import type { ApplicantProfile, JobKeywordProfile } from '@jobautomation/core';
 import { jobKeywordProfileSchema } from '@jobautomation/core';
-import { createOpenRouterProvider, jobKeywordProfileJsonSchema, type OpenRouterConfig } from '@jobautomation/llm';
+import {
+  createOpenRouterProvider,
+  jobKeywordProfileJsonSchema,
+  type GenerateStructuredObjectInput,
+  type OpenRouterConfig
+} from '@jobautomation/llm';
 
 export class JobKeywordProfileError extends Error {
   constructor(
@@ -44,16 +49,23 @@ function hasGenerationContext(profile: ApplicantProfile): boolean {
 
 export type GenerateJobKeywordProfileInput = {
   applicantProfile: ApplicantProfile;
-  openRouter: OpenRouterConfig;
+  openRouter?: OpenRouterConfig | null;
+  provider?: {
+    generateStructuredObject(input: GenerateStructuredObjectInput): Promise<unknown>;
+  } | null;
 };
 
 export async function generateJobKeywordProfile(
   input: GenerateJobKeywordProfileInput
 ): Promise<JobKeywordProfile> {
-  if (!input.openRouter?.apiKey?.trim()) {
+  const provider =
+    input.provider ??
+    (input.openRouter?.apiKey?.trim() ? createOpenRouterProvider(input.openRouter) : null);
+
+  if (!provider) {
     throw new JobKeywordProfileError(
       'not_configured',
-      'OpenRouter is not configured, so job keyword profile generation is unavailable.'
+      'Hosted AI generation is not configured, so job keyword profile generation is unavailable.'
     );
   }
 
@@ -89,7 +101,6 @@ export async function generateJobKeywordProfile(
   const prompt = buildPrompt(input.applicantProfile);
 
   try {
-    const provider = createOpenRouterProvider(input.openRouter);
     const structured = await provider.generateStructuredObject({
       schemaName: 'job_keyword_profile',
       schema: jobKeywordProfileJsonSchema as unknown as Record<string, unknown>,

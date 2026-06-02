@@ -18,7 +18,6 @@ interface DashboardMetrics {
   totalJobs: number;
   totalApplications: number;
   totalAutopilotRuns: number;
-  totalAutopilotRuns: number;
   successRate: number;
   blockedRate: number;
   completedApplications: number;
@@ -55,7 +54,7 @@ export function DashboardPage() {
           const successCount = stats.completedCount;
           const blockedCount = stats.failedCount + stats.cancelledCount + stats.skippedCount;
           const totalResolved = successCount + blockedCount;
-          
+
           if (totalResolved > 0) {
             successRate = Math.round((successCount / totalResolved) * 100);
             blockedRate = 100 - successRate;
@@ -83,14 +82,13 @@ export function DashboardPage() {
       <section className="relative rounded-2xl overflow-hidden glass-panel p-8 lg:p-12 min-h-[300px] flex flex-col justify-end">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent pointer-events-none" />
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none" />
-        
+
         <div className="relative z-10 max-w-3xl">
           <div className="flex items-center gap-3 mb-4">
             <span className="px-3 py-1 rounded-full bg-muted border border-border text-xs font-semibold tracking-wider text-secondary uppercase font-label flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
               Autopilot Status: Active
             </span>
-            <span className="text-xs font-label text-muted-foreground bg-muted/50 px-2 py-1 rounded-md">Batch A</span>
           </div>
 
           <h2 className="font-headline text-4xl lg:text-5xl font-bold text-foreground leading-tight mb-4 tracking-tight">
@@ -105,7 +103,7 @@ export function DashboardPage() {
 
       {/* ── Bento Grid ─────────────────────────────────────── */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        
+
         {/* Autopilot Card */}
         <Link to="/autopilot" className="glass-card rounded-xl p-6 flex flex-col h-full group cursor-pointer relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full transition-transform duration-300 group-hover:scale-110" />

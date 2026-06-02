@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ChevronLeft, Sparkles, Download, Building2, MapPin, MoreVertical, FileText, FileUp, FileBadge } from 'lucide-react';
 import type { ArtifactRecord, ApplicantProfile } from '@jobautomation/core';
@@ -81,9 +81,8 @@ export function JobDetailPage() {
   const [profile, setProfile] = useState<ApplicantProfile | null>(null);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
 
-  // Generation state
   const [isGenerating, setIsGenerating] = useState(false);
-  const [polling, setPolling] = useState(false);
+  const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
   
   // Modal Preview State
   const [previewArtifact, setPreviewArtifact] = useState<ArtifactRecord | null>(null);
@@ -107,45 +106,24 @@ export function JobDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const startPolling = () => {
-    setPolling(true);
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    pollIntervalRef.current = setInterval(async () => {
-      try {
-        const res = await getJobArtifacts(jobId);
-        setArtifacts(res.artifacts);
-      } catch (e) {
-      }
-    }, 3000);
-  };
-
-  const stopPolling = () => {
-    setPolling(false);
-    setIsGenerating(false);
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    };
-  }, []);
-
   const handleGenerate = async (mode: 'both' | 'resume' | 'cover-letter') => {
     setIsGenerating(true);
-    startPolling();
+    setGenerationWarnings([]);
     try {
-      await generateJobArtifacts(jobId, { mode });
-      toast.success(`Generation request for ${mode} sent.`);
-      setTimeout(() => stopPolling(), 30000);
+      const result = await generateJobArtifacts(jobId, { mode });
+      const refreshed = await getJobArtifacts(jobId);
+      setArtifacts(refreshed.artifacts);
+      setProfile(refreshed.profile);
+      setGenerationWarnings(result.warnings ?? []);
+      if (result.warnings?.length) {
+        toast.warning(`Generated with warnings: ${result.warnings.join('; ')}`);
+      } else {
+        toast.success(`Generated ${mode === 'both' ? 'resume and cover letter' : mode}.`);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Generation failed');
-      stopPolling();
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -208,6 +186,7 @@ export function JobDetailPage() {
   items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
   const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const canGenerate = Boolean(profile?.baseResumeTex.trim() && profile.reusableContext.trim());
 
   return (
     <div className="flex flex-col gap-8 h-full min-h-[calc(100vh-10rem)] max-w-7xl mx-auto w-full p-4">
@@ -247,9 +226,9 @@ export function JobDetailPage() {
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button disabled={isGenerating || polling} className="bg-primary text-primary-foreground font-semibold shadow-sm w-full sm:w-auto">
-                <Sparkles className={`h-4 w-4 mr-2 ${isGenerating || polling ? 'animate-pulse' : ''}`} />
-                {isGenerating || polling ? 'Generating...' : 'Generate Artifacts'}
+              <Button disabled={isGenerating || !canGenerate} className="bg-primary text-primary-foreground font-semibold shadow-sm w-full sm:w-auto">
+                <Sparkles className={`h-4 w-4 mr-2 ${isGenerating ? 'animate-pulse' : ''}`} />
+                {isGenerating ? 'Generating...' : 'Generate Artifacts'}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
@@ -266,6 +245,18 @@ export function JobDetailPage() {
           </DropdownMenu>
         </div>
       </div>
+
+      {!canGenerate && (
+        <div role="alert" className="rounded-lg border border-amber-600/40 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-300">
+          Save a LaTeX base resume and reusable applicant context in Setup before generating artifacts.
+        </div>
+      )}
+
+      {generationWarnings.length > 0 && (
+        <div role="alert" className="rounded-lg border border-amber-600/40 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-300">
+          {generationWarnings.join('; ')}
+        </div>
+      )}
 
       {/* Artifact Explorer Table */}
       <div className="flex flex-col gap-6">
@@ -288,7 +279,7 @@ export function JobDetailPage() {
                     <div className="flex flex-col items-center justify-center gap-3">
                       <Sparkles className="h-8 w-8 opacity-20" />
                       <p>No artifacts found.</p>
-                      <Button variant="outline" size="sm" onClick={() => handleGenerate('both')}>Generate Now</Button>
+                      <Button variant="outline" size="sm" disabled={!canGenerate || isGenerating} onClick={() => handleGenerate('both')}>Generate Now</Button>
                     </div>
                   </TableCell>
                 </TableRow>

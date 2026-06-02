@@ -10,6 +10,8 @@ export type DesktopConfig = {
   dbPath: string;
   headedMode: boolean;
   camoufoxBinaryPath: string | null;
+  aiGatewayBaseUrl: string | null;
+  aiAuthToken: string | null;
   windowBounds: Rectangle | null;
 };
 
@@ -26,6 +28,8 @@ export function createDesktopConfigStore(): Store<DesktopConfig> {
       dbPath: path.join(app.getPath('userData'), 'jobautomation.sqlite'),
       headedMode: false,
       camoufoxBinaryPath: null,
+      aiGatewayBaseUrl: null,
+      aiAuthToken: null,
       windowBounds: null
     }
   });

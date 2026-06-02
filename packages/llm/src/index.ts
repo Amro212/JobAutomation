@@ -1,4 +1,5 @@
 export * from './models';
+export * from './hosted-provider';
 export * from './open-router-http-error';
 export * from './prompts/tailoring';
 export * from './provider';

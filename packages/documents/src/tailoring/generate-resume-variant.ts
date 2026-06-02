@@ -32,29 +32,6 @@ function normalizeWhitespace(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
 
-/** Counts empty lines between consecutive \\resumeItem rows inside \\resumeItemListStart/End (H1/H4). */
-function countBlankLinesBetweenResumeItems(tex: string): number {
-  let total = 0;
-  const listBlockRe = /\\resumeItemListStart([\s\S]*?)\\resumeItemListEnd/g;
-  let m: RegExpExecArray | null;
-  while ((m = listBlockRe.exec(tex)) !== null) {
-    const inner = m[1] ?? '';
-    const lines = inner.split(/\r?\n/);
-    const itemLineIdx = lines
-      .map((line, i) => (line.includes('\\resumeItem') ? i : -1))
-      .filter((i): i is number => i >= 0);
-    for (let k = 0; k < itemLineIdx.length - 1; k++) {
-      const from = itemLineIdx[k]!;
-      const to = itemLineIdx[k + 1]!;
-      const between = lines.slice(from + 1, to);
-      if (between.some((l) => l.trim() === '')) {
-        total += 1;
-      }
-    }
-  }
-  return total;
-}
-
 function probeReplacementLatexRisk(replacement: string): {
   hasDoubleNewline: boolean;
   hasParMacro: boolean;
@@ -288,58 +265,12 @@ export async function generateResumeVariant(
     applicant_summary: input.applicantProfile.summary,
     applicant_context: input.applicantProfile.reusableContext
   });
-  const blankAfterRender = countBlankLinesBetweenResumeItems(baseRenderedTex);
-
-  const { tex: afterEditsTex, editDiagnostics } = applyTargetedResumeEdits(
+  const { tex: afterEditsTex } = applyTargetedResumeEdits(
     baseRenderedTex,
     llmOutput,
     tailoringInput.jobKeywords
   );
-  let tailoredResumeTex = afterEditsTex;
-  const blankAfterEdits = countBlankLinesBetweenResumeItems(tailoredResumeTex);
-
-  const balanced = balanceResumeSubHeadingLists(tailoredResumeTex);
-  tailoredResumeTex = balanced.tex;
-  const blankAfterBalance = countBlankLinesBetweenResumeItems(tailoredResumeTex);
-
-  // #region agent log
-  fetch('http://127.0.0.1:7523/ingest/f8ff69c0-aa7e-4d26-8e6f-026a796070cc', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b525c0' },
-    body: JSON.stringify({
-      sessionId: 'b525c0',
-      runId: 'pre-fix',
-      hypothesisId: 'H1-H4',
-      location: 'generate-resume-variant.ts:spacing-probe',
-      message: 'resumeItem blank-line counts and balance pass',
-      data: {
-        jobId: input.job.id,
-        blankAfterRender,
-        blankAfterEdits,
-        blankAfterBalance,
-        balanceRepaired: balanced.repaired,
-        balanceAppendedEnds: balanced.appendedEnds
-      },
-      timestamp: Date.now()
-    })
-  }).catch(() => {});
-  // #endregion
-
-  // #region agent log
-  fetch('http://127.0.0.1:7523/ingest/f8ff69c0-aa7e-4d26-8e6f-026a796070cc', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b525c0' },
-    body: JSON.stringify({
-      sessionId: 'b525c0',
-      runId: 'pre-fix',
-      hypothesisId: 'H1-H3-H6',
-      location: 'generate-resume-variant.ts:edit-diagnostics',
-      message: 'per-edit match path and replacement LaTeX risk',
-      data: { jobId: input.job.id, editDiagnostics },
-      timestamp: Date.now()
-    })
-  }).catch(() => {});
-  // #endregion
+  const tailoredResumeTex = balanceResumeSubHeadingLists(afterEditsTex).tex;
 
   await mkdir(jobDir, { recursive: true });
   await writeFile(texPath, tailoredResumeTex, 'utf8');
