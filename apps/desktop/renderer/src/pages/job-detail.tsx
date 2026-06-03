@@ -209,7 +209,7 @@ export function JobDetailPage() {
               <Building2 className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <h2 className="font-headline text-3xl font-bold tracking-tight text-foreground">{job.title}</h2>
+              <h2 className="font-headline text-3xl font-semibold tracking-tight text-foreground">{job.title}</h2>
               <div className="flex items-center gap-4 text-muted-foreground font-medium text-sm mt-1">
                 <span className="flex items-center gap-1.5"><Building2 className="h-4 w-4" /> {job.companyName}</span>
                 <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4" /> {job.location || 'Unspecified'}</span>
@@ -281,16 +281,16 @@ export function JobDetailPage() {
 
       {/* Artifact Explorer Table */}
       <div className="flex flex-col gap-6">
-        <h3 className="font-headline text-2xl font-bold text-foreground">Application Artifacts</h3>
+        <h3 className="font-headline text-2xl font-semibold text-foreground">Application Artifacts</h3>
         
         <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow className="hover:bg-transparent border-border">
-                <TableHead className="font-bold text-xs uppercase tracking-widest h-12">Document Name</TableHead>
-                <TableHead className="font-bold text-xs uppercase tracking-widest h-12">Created</TableHead>
-                <TableHead className="font-bold text-xs uppercase tracking-widest h-12">Last Edited</TableHead>
-                <TableHead className="font-bold text-xs uppercase tracking-widest h-12 text-right">Actions</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-widest h-12">Document Name</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-widest h-12">Created</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-widest h-12">Last Edited</TableHead>
+                <TableHead className="font-semibold text-xs uppercase tracking-widest h-12 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -326,7 +326,7 @@ export function JobDetailPage() {
                           <div className="flex flex-col">
                             <span className="font-semibold text-foreground group-hover:text-primary transition-colors">{item.name}</span>
                             <div className="mt-1 flex gap-2">
-                              <span className={`text-[10px] px-2 py-0.5 rounded uppercase tracking-wider font-bold ${
+                              <span className={`text-[10px] px-2 py-0.5 rounded uppercase tracking-wider font-semibold ${
                                 item.type === 'Cover Letter' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
                                 item.type === 'Tailored Resume' ? 'bg-primary/10 text-primary' :
                                 'bg-muted text-muted-foreground'

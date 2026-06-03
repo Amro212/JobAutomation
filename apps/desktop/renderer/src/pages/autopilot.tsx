@@ -723,7 +723,7 @@ export function AutopilotPage() {
                             )}
                           </div>
                         </div>
-                        <Badge variant={statusVariant(run.status)} className="text-[11px] font-bold py-0.5">
+                        <Badge variant={statusVariant(run.status)} className="text-[11px] font-semibold py-0.5">
                           {run.status}
                         </Badge>
                       </Link>
@@ -764,14 +764,14 @@ function MetricPill({
     <div className="flex flex-col items-center rounded-lg bg-muted/50 p-2.5 text-center">
       <span
         className={cn(
-          'font-headline text-xl font-bold',
+          'font-headline text-xl font-semibold',
           positive && 'text-emerald-800 dark:text-emerald-400',
           negative && 'text-red-800 dark:text-red-400'
         )}
       >
         {value}
       </span>
-      <span className="text-xs font-bold text-muted-foreground/90 mt-0.5">{label}</span>
+      <span className="text-xs font-semibold text-muted-foreground/90 mt-0.5">{label}</span>
     </div>
   );
 }

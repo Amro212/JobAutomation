@@ -43,16 +43,62 @@ export type WorkerLike = Pick<
   'on' | 'once' | 'off' | 'postMessage' | 'terminate' | 'removeAllListeners'
 >;
 
-function resolveWorkerEntry(): URL {
+type AutopilotWorkerData = {
+  config: AppEnv;
+  __tsxWorkerEntry?: string;
+};
+
+type AutopilotWorkerStart = {
+  entry: URL;
+  workerData: AutopilotWorkerData;
+};
+
+function workerEntryUrl(input: string): URL {
+  return input.startsWith('file:')
+    ? new URL(input)
+    : pathToFileURL(path.resolve(input));
+}
+
+function isTypeScriptWorkerEntry(entry: URL): boolean {
+  return entry.protocol === 'file:' && entry.pathname.endsWith('.ts');
+}
+
+function resolveWorkerStart(config: AppEnv): AutopilotWorkerStart {
   const explicitWorkerEntry = process.env.JOB_AUTOMATION_AUTOPILOT_WORKER_ENTRY;
   if (explicitWorkerEntry) {
-    return explicitWorkerEntry.startsWith('file:')
-      ? new URL(explicitWorkerEntry)
-      : pathToFileURL(path.resolve(explicitWorkerEntry));
+    const entry = workerEntryUrl(explicitWorkerEntry);
+    if (isTypeScriptWorkerEntry(entry)) {
+      return {
+        entry: new URL('../workers/autopilot-worker-bootstrap.mjs', import.meta.url),
+        workerData: {
+          config,
+          __tsxWorkerEntry: entry.href
+        }
+      };
+    }
+
+    return {
+      entry,
+      workerData: { config }
+    };
   }
 
   const extension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
-  return new URL(`../workers/autopilot-worker.${extension}`, import.meta.url);
+  const entry = new URL(`../workers/autopilot-worker.${extension}`, import.meta.url);
+  if (extension === 'ts') {
+    return {
+      entry: new URL('../workers/autopilot-worker-bootstrap.mjs', import.meta.url),
+      workerData: {
+        config,
+        __tsxWorkerEntry: entry.href
+      }
+    };
+  }
+
+  return {
+    entry,
+    workerData: { config }
+  };
 }
 
 async function terminateCamoufoxProcessesDefault(): Promise<void> {
@@ -87,7 +133,7 @@ export class AutopilotWorkerThreadClient {
       logger?: {
         error: (error: unknown) => void;
       };
-      workerFactory?: (entry: URL, workerData: { config: AppEnv }) => WorkerLike;
+      workerFactory?: (entry: URL, workerData: AutopilotWorkerData) => WorkerLike;
       terminateCamoufoxImpl?: () => Promise<void>;
       workerStartupTimeoutMs?: number;
     }
@@ -155,12 +201,11 @@ export class AutopilotWorkerThreadClient {
   }
 
   private async startWorker(): Promise<void> {
+    const workerStart = resolveWorkerStart(this.input.config);
     const worker = this.input.workerFactory
-      ? this.input.workerFactory(resolveWorkerEntry(), { config: this.input.config })
-      : new Worker(resolveWorkerEntry(), {
-          workerData: {
-            config: this.input.config
-          }
+      ? this.input.workerFactory(workerStart.entry, workerStart.workerData)
+      : new Worker(workerStart.entry, {
+          workerData: workerStart.workerData
         });
 
     this.worker = worker;

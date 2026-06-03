@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+/* Override Tailwind v4 default media dark mode to use class */
+@custom-variant dark (&:where(.dark, .dark *));
 /* ──────────────────────────────────────────────────────────────
    Sahara Design System — Sun-Drenched Minimalism
    North Star: "Sun-Baked Simplicity"

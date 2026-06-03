@@ -91,7 +91,7 @@ export function DashboardPage() {
             </span>
           </div>
 
-          <h2 className="font-headline text-4xl lg:text-5xl font-bold text-foreground leading-tight mb-4 tracking-tight">
+          <h2 className="font-headline text-4xl lg:text-5xl font-semibold text-foreground leading-tight mb-4 tracking-tight">
             Local-first job hunt automation.
           </h2>
 
@@ -147,7 +147,7 @@ export function DashboardPage() {
           </p>
           <div className="mt-6 flex items-end justify-between relative z-10">
             <div>
-              <span className="block text-3xl font-headline font-bold text-primary">{metrics.completedApplications}</span>
+              <span className="block text-3xl font-headline font-semibold text-primary">{metrics.completedApplications}</span>
               <span className="text-xs text-muted-foreground uppercase tracking-wider">Total</span>
             </div>
             <div className="w-16 h-8 bg-muted rounded-t-sm relative flex items-end gap-1 p-1">

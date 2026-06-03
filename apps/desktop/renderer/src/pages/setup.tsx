@@ -460,7 +460,7 @@ export function SetupPage() {
                 <p className="text-[10px] font-medium text-muted-foreground/75 uppercase tracking-wide font-label">Base Resume</p>
                 <p className="text-xs font-semibold text-foreground mt-1">{baseResumeFileName || 'None uploaded'}</p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${readiness.hasBaseResume ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/20'}`}>
+              <span className={`px-2.5 py-1 rounded-full text-[9px] font-semibold uppercase tracking-wider ${readiness.hasBaseResume ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/20'}`}>
                 {readiness.hasBaseResume ? 'Active' : 'Missing'}
               </span>
             </div>
@@ -470,7 +470,7 @@ export function SetupPage() {
                 <p className="text-[10px] font-medium text-muted-foreground/75 uppercase tracking-wide font-label">Context Block</p>
                 <p className="text-xs font-semibold text-foreground mt-1">{summary.trim() ? 'Stored context' : 'No context'}</p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${readiness.hasReusableContext ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/20'}`}>
+              <span className={`px-2.5 py-1 rounded-full text-[9px] font-semibold uppercase tracking-wider ${readiness.hasReusableContext ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/20'}`}>
                 {readiness.hasReusableContext ? 'Active' : 'Missing'}
               </span>
             </div>
@@ -480,7 +480,7 @@ export function SetupPage() {
                 <p className="text-[10px] font-medium text-muted-foreground/75 uppercase tracking-wide font-label">Automation Readiness</p>
                 <p className="text-xs font-semibold text-foreground mt-1">{readiness.readyForTailoring ? 'Document generator operational' : 'Incomplete context'}</p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider ${readiness.readyForTailoring ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'}`}>
+              <span className={`px-2.5 py-1 rounded-full text-[9px] font-semibold uppercase tracking-wider ${readiness.readyForTailoring ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'}`}>
                 {readiness.readyForTailoring ? 'Operational' : 'Needs Config'}
               </span>
             </div>
@@ -790,7 +790,7 @@ export function SetupPage() {
                 Declare Compensation Target
               </label>
               {salaryEnabled ? (
-                <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">{formattedSalary}</span>
+                <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">{formattedSalary}</span>
               ) : null}
             </div>
 
@@ -818,7 +818,7 @@ export function SetupPage() {
                 <label className="flex flex-col gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide font-label">
                   Expectation Amount
                   <input type="range" min={salaryBounds.min} max={salaryBounds.max} step={salaryBounds.step} value={salaryAmount} onChange={(e) => setSalaryAmount(e.target.value)} className="w-full h-1.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary" />
-                  <div className="flex justify-between text-[10px] text-muted-foreground/75 font-bold font-label">
+                  <div className="flex justify-between text-[10px] text-muted-foreground/75 font-semibold font-label">
                     <span>min</span>
                     <span>max</span>
                   </div>
@@ -832,12 +832,12 @@ export function SetupPage() {
         <section className="space-y-4 rounded-2xl border border-border bg-background/30 p-5 mt-4">
           <div className="space-y-1">
             <h3 className="text-sm font-medium text-foreground font-label">Gmail OAuth Verification Retrieval</h3>
-            <p className="text-muted-foreground/75 text-[10px] font-bold uppercase tracking-wide font-label">
+            <p className="text-muted-foreground/75 text-[10px] font-semibold uppercase tracking-wide font-label">
               Optional. Enable when Greenhouse requires real-time email security codes check.
             </p>
           </div>
 
-          <label className="flex items-center gap-3 text-xs font-bold text-muted-foreground uppercase tracking-wide font-label">
+          <label className="flex items-center gap-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide font-label">
             <input type="checkbox" checked={emailVerificationEnabled} onChange={(e) => setEmailVerificationEnabled(e.target.checked)} className="h-4 w-4 rounded border border-border bg-background text-primary focus:ring-primary" />
             Enable Automated Gmail Sync
           </label>
@@ -889,12 +889,12 @@ export function SetupPage() {
           {/* AI Generator banner */}
           <div className="space-y-3 rounded-2xl border border-dashed border-border bg-background/20 p-5">
             <div>
-              <p className="text-xs font-bold text-foreground uppercase tracking-wide font-label">Extract Keywords with AI</p>
+              <p className="text-xs font-semibold text-foreground uppercase tracking-wide font-label">Extract Keywords with AI</p>
               <p className="text-xs text-muted-foreground/75 mt-1">
                 Reads your bio summary, context blocks, and LaTeX resume to build highly customized match keywords.
               </p>
               {generatedAt ? (
-                <p className="mt-2 text-[10px] text-primary font-bold uppercase tracking-wider font-label">Last Sync: {generatedAt}</p>
+                <p className="mt-2 text-[10px] text-primary font-semibold uppercase tracking-wider font-label">Last Sync: {generatedAt}</p>
               ) : null}
             </div>
             <Button variant="secondary" type="button" onClick={() => void handleGenerateKeywords()} disabled={isGeneratingKeywords}>
@@ -1025,7 +1025,7 @@ function KeywordList({
   return (
     <div className="space-y-3 p-5 rounded-2xl border border-border bg-background/30">
       <div>
-        <p className="text-xs font-bold text-foreground uppercase tracking-wide font-label">{label}</p>
+        <p className="text-xs font-semibold text-foreground uppercase tracking-wide font-label">{label}</p>
         <p className="text-muted-foreground/75 text-[10px] font-medium leading-relaxed mt-0.5">{desc}</p>
       </div>
 
@@ -1041,7 +1041,7 @@ function KeywordList({
           ))}
         </div>
       ) : (
-        <p className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider font-label">No filters active</p>
+        <p className="text-[10px] text-muted-foreground/50 font-semibold uppercase tracking-wider font-label">No filters active</p>
       )}
 
       <div className="flex max-w-md gap-2 mt-2">

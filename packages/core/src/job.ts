@@ -36,6 +36,13 @@ function prefilterPassFromDb(value: unknown): boolean | null {
   return null;
 }
 
+function booleanFromDb(value: unknown): boolean {
+  if (value === true || value === 1) {
+    return true;
+  }
+  return false;
+}
+
 export const jobRecordSchema = z.object({
   id: z.string().min(1),
   sourceKind: z.string().min(1),
@@ -148,7 +155,7 @@ export const jobListItemSchema = z.object({
   remoteType: z.string().default('unknown'),
   status: jobStatusSchema,
   prefilterScore: z.number().int().min(0).max(100).nullable().default(null),
-  hasArtifacts: z.boolean().default(false)
+  hasArtifacts: z.preprocess(booleanFromDb, z.boolean()).default(false)
 });
 
 export type JobRecord = z.infer<typeof jobRecordSchema>;

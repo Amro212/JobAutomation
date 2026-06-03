@@ -1,4 +1,8 @@
 import { EventEmitter } from 'node:events';
+import { mkdirSync, rmSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test, vi } from 'vitest';
 
@@ -80,6 +84,31 @@ async function waitForPostedMessage(
 }
 
 describe('AutopilotWorkerThreadClient', () => {
+  test('starts the TypeScript worker entry in dev mode', async () => {
+    const dbPath = fileURLToPath(
+      new URL(`../../../data/test/${randomUUID()}.sqlite`, import.meta.url)
+    );
+    mkdirSync(dirname(dbPath), { recursive: true });
+
+    const client = new AutopilotWorkerThreadClient({
+      config: readEnv({
+        JOB_AUTOMATION_DB_PATH: dbPath,
+        API_HOST: '127.0.0.1',
+        API_PORT: '1',
+        API_BASE_URL: 'http://127.0.0.1:1'
+      } as NodeJS.ProcessEnv),
+      repositories: createRepositoriesStub(),
+      workerStartupTimeoutMs: 15000
+    });
+
+    try {
+      await expect(client.executeRun(createQueueInput('missing-run'))).resolves.toBeUndefined();
+    } finally {
+      await client.dispose();
+      rmSync(dbPath, { force: true });
+    }
+  }, 20000);
+
   test('starts the worker, posts run commands, and forwards cancel requests', async () => {
     const fakeWorker = new FakeWorker();
     const client = new AutopilotWorkerThreadClient({

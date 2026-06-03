@@ -191,7 +191,7 @@ function SaharaLoadingScreen() {
         {/* Progress Container */}
         <div className="w-full flex flex-col items-center gap-4">
           {/* Quirky Message */}
-          <div className="flex flex-nowrap justify-center items-center min-h-8 md:min-h-10 w-full mb-1 whitespace-nowrap text-sm md:text-base font-bold uppercase tracking-[0.15em] text-muted-foreground">
+          <div className="flex flex-nowrap justify-center items-center min-h-8 md:min-h-10 w-full mb-1 whitespace-nowrap text-sm md:text-base font-semibold uppercase tracking-[0.15em] text-muted-foreground">
             <span className="mr-2 shrink-0">Preparing the</span>
             <RotatingText
               texts={rotatingWords}
@@ -350,7 +350,7 @@ export function DesktopLayout() {
             />
             {!sidebarCollapsed && (
               <div className="flex flex-col overflow-hidden">
-                <span className="font-headline text-lg font-bold text-foreground tracking-tight truncate">
+                <span className="font-headline text-lg font-semibold text-foreground tracking-tight truncate">
                   Sahara
                 </span>
                 <span className="text-xs text-muted-foreground font-semibold truncate">
@@ -366,7 +366,7 @@ export function DesktopLayout() {
               {navSections.map((section) => (
                 <div key={section.label} className="mb-2">
                   {!sidebarCollapsed && (
-                    <span className="px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/90">
+                    <span className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/90">
                       {section.label}
                     </span>
                   )}
@@ -383,7 +383,7 @@ export function DesktopLayout() {
                               className={cn(
                                 'flex items-center justify-center h-10 w-10 mx-auto rounded-lg transition-colors duration-200',
                                 isActive
-                                  ? 'bg-sidebar-accent text-sidebar-primary font-bold'
+                                  ? 'bg-sidebar-accent text-sidebar-primary font-semibold'
                                   : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
                               )}
                             >
@@ -399,7 +399,7 @@ export function DesktopLayout() {
                           className={cn(
                             'flex items-center gap-3 px-2 py-1.5 rounded-lg text-sm font-semibold transition-colors duration-200',
                             isActive
-                              ? 'bg-sidebar-accent text-sidebar-primary font-bold'
+                              ? 'bg-sidebar-accent text-sidebar-primary font-semibold'
                               : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground'
                           )}
                         >
@@ -480,7 +480,7 @@ export function DesktopLayout() {
             className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/90 backdrop-blur-md pl-6 pr-0"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
-            <h1 className="font-headline text-xl font-bold tracking-tight text-foreground">
+            <h1 className="font-headline text-xl font-semibold tracking-tight text-foreground">
               {currentPageTitle}
             </h1>
 
