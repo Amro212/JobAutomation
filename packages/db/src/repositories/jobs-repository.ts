@@ -17,7 +17,7 @@ import {
 } from '@jobautomation/core';
 
 import type { JobAutomationDatabase } from '../client';
-import { jobsTable } from '../schema';
+import { jobsTable, artifactsTable } from '../schema';
 
 export type UpsertJobInput = Omit<
   JobRecord,
@@ -370,7 +370,8 @@ export class JobsRepository {
       location: jobsTable.location,
       remoteType: jobsTable.remoteType,
       status: jobsTable.status,
-      prefilterScore: jobsTable.prefilterScore
+      prefilterScore: jobsTable.prefilterScore,
+      hasArtifacts: sql<boolean>`exists (select 1 from ${artifactsTable} where ${artifactsTable.jobId} = ${jobsTable.id})`.as('hasArtifacts')
     };
 
     const baseSelect = this.db.select(summaryColumns).from(jobsTable);

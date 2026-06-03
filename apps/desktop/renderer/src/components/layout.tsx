@@ -20,7 +20,8 @@ import {
   LogOut,
   Minus,
   Square,
-  X
+  X,
+  UserCog
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -93,7 +94,7 @@ const navSections = [
   },
   {
     label: 'Configuration',
-    items: [{ to: '/setup', label: 'Setup', icon: Settings }]
+    items: [{ to: '/setup', label: 'Setup', icon: UserCog }]
   }
 ];
 

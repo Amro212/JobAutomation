@@ -73,6 +73,7 @@ export function JobsPage() {
       status: string;
       sourceUrl: string;
       prefilterScore: number | null;
+      hasArtifacts: boolean;
     }>
   >([]);
   const [total, setTotal] = useState(0);
@@ -123,7 +124,8 @@ export function JobsPage() {
           location: job.location,
           status: job.status,
           sourceUrl: job.sourceUrl,
-          prefilterScore: job.prefilterScore
+          prefilterScore: job.prefilterScore,
+          hasArtifacts: job.hasArtifacts
         }))
       );
     } catch (e) {
@@ -338,6 +340,7 @@ export function JobsPage() {
                     <TableHead>Company</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Match</TableHead>
+                    <TableHead>Artifacts</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-[60px]" />
                   </TableRow>
@@ -359,6 +362,13 @@ export function JobsPage() {
                           <Badge variant="outline">{job.prefilterScore}</Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {job.hasArtifacts ? (
+                          <Badge variant="success" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/50">Generated</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-muted-foreground bg-muted/50">Missing</Badge>
                         )}
                       </TableCell>
                       <TableCell>

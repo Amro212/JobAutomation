@@ -147,7 +147,8 @@ export const jobListItemSchema = z.object({
   location: z.string().default(''),
   remoteType: z.string().default('unknown'),
   status: jobStatusSchema,
-  prefilterScore: z.number().int().min(0).max(100).nullable().default(null)
+  prefilterScore: z.number().int().min(0).max(100).nullable().default(null),
+  hasArtifacts: z.boolean().default(false)
 });
 
 export type JobRecord = z.infer<typeof jobRecordSchema>;

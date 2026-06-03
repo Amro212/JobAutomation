@@ -173,18 +173,6 @@ export function JobDetailPage() {
 
   const items: UnifiedItem[] = [];
 
-  // 1. Base Resume (if any)
-  if (profile?.baseResumeFileName) {
-    items.push({
-      id: 'base-resume',
-      name: profile.baseResumeFileName,
-      type: 'Base Resume',
-      createdAt: new Date(profile.updatedAt),
-      updatedAt: new Date(profile.updatedAt),
-      record: null
-    });
-  }
-
   // 2. Generated Artifacts
   artifacts.filter(a => a.format === 'pdf').forEach(a => {
     items.push({

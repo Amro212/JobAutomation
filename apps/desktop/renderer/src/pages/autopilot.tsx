@@ -113,7 +113,7 @@ function payloadFromFormState(formState: AutopilotFormState): AutopilotConfigInp
   };
 }
 
-function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 'outline' {
+function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 'info' | 'outline' {
   switch (status) {
     case 'completed':
       return 'success';
@@ -122,7 +122,7 @@ function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 
       return 'destructive';
     case 'running':
     case 'pending':
-      return 'warning';
+      return 'info';
     default:
       return 'outline';
   }
@@ -430,7 +430,7 @@ export function AutopilotPage() {
                       <span className="text-sm font-medium text-foreground">
                         Run in progress
                       </span>
-                      <Badge variant="warning" className="animate-pulse">
+                      <Badge variant="info" className="animate-pulse">
                         {activeRun.status}
                       </Badge>
                     </div>
@@ -444,7 +444,7 @@ export function AutopilotPage() {
                       </div>
                     )}
                     {activeRun.status === 'pending' && (
-                      <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-600/30 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-300">
+                      <div className="mb-3 flex items-start gap-2 rounded-md border border-blue-600/30 bg-blue-50 px-3 py-2 text-xs text-blue-950 dark:bg-blue-950/20 dark:text-blue-300">
                         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         <span>
                           {activeRunOrphaned
@@ -785,7 +785,7 @@ function RunStatusIcon({ status }: { status: string }) {
       return <XCircle className="h-4 w-4 text-red-700 dark:text-red-500 shrink-0" />;
     case 'running':
     case 'pending':
-      return <RefreshCw className="h-4 w-4 text-amber-700 dark:text-amber-500 shrink-0 animate-spin" />;
+      return <RefreshCw className="h-4 w-4 text-blue-700 dark:text-blue-500 shrink-0 animate-spin" />;
     default:
       return <Clock className="h-4 w-4 text-muted-foreground shrink-0" />;
   }

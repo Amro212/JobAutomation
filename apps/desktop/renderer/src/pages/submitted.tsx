@@ -20,7 +20,7 @@ import {
 
 function statusVariant(status: string): 'success' | 'destructive' | 'warning' | 'outline' {
   switch (status) {
-    case 'success':
+    case 'completed':
       return 'success';
     case 'failed':
     case 'blocked':
@@ -128,7 +128,7 @@ export function SubmittedPage() {
                 <TableHead>Company</TableHead>
                 <TableHead>Submitted</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Artifacts</TableHead>
+                <TableHead className="text-center">Artifacts</TableHead>
                 <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
@@ -148,7 +148,7 @@ export function SubmittedPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-center gap-1">
                       {resumeArtifact && (
                         <Button
                           variant="ghost"
