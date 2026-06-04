@@ -1,13 +1,11 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import {
   Menu,
   Tray,
-  nativeImage,
   type BrowserWindow,
   type MenuItemConstructorOptions
 } from 'electron';
+
+import { loadAppIcon } from './app-icon.js';
 
 export type TrayControllerOptions = {
   getWindow: () => BrowserWindow | null;
@@ -17,16 +15,6 @@ export type TrayControllerOptions = {
   onCheckForUpdates: () => Promise<void>;
   onQuit: () => Promise<void>;
 };
-
-function resolveTrayIcon(): Electron.NativeImage {
-  const iconPath = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '../../resources/icon.png'
-  );
-  return nativeImage.createFromPath(iconPath).isEmpty()
-    ? nativeImage.createEmpty()
-    : nativeImage.createFromPath(iconPath);
-}
 
 export class TrayController {
   private tray: Tray | null = null;
@@ -41,7 +29,7 @@ export class TrayController {
       return;
     }
 
-    this.tray = new Tray(resolveTrayIcon());
+    this.tray = new Tray(loadAppIcon());
     this.tray.setToolTip(`JobAutomation - ${this.options.getAutopilotStatus()}`);
     this.tray.on('double-click', () => {
       const window = this.options.getWindow();

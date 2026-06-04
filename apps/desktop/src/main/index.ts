@@ -13,6 +13,7 @@ import {
 import type Store from 'electron-store';
 
 import { DesktopAutoUpdater } from './auto-updater.js';
+import { resolveAppIconPath } from './app-icon.js';
 import { ApiProcessManager } from './api-process.js';
 import {
   CamoufoxManager,
@@ -79,6 +80,7 @@ function getWindowOptions(store: { get: <K extends keyof DesktopConfig>(key: K) 
     show: false,
     frame: false,
     backgroundColor: '#0b1020',
+    icon: resolveAppIconPath(),
     webPreferences: {
       preload: path.resolve(currentDir, '../preload/index.js'),
       contextIsolation: true,
@@ -117,11 +119,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
     return { action: 'deny' };
   });
 
-  if (entry.startsWith('file://')) {
-    await window.loadURL(entry);
-  } else {
-    await window.loadURL(entry);
-  }
+  await window.loadURL(entry);
 
   window.on('close', (event) => {
     if (isQuitting) {

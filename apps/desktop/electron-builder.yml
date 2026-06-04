@@ -9,13 +9,27 @@ files:
   - dist/renderer/**/*
   - node_modules/**/*
   - package.json
+afterPack: scripts/patch-win-icon.cjs
 extraResources:
   - from: dist/api
     to: api
+  # icon.ico is also set in win.icon (embedded into the exe by electron-builder).
+  # The extraResources copy is needed so app-icon.ts can load it at runtime for
+  # BrowserWindow.icon and the system tray.
+  - from: resources/icon.ico
+    to: icon.ico
+  - from: resources/icon.png
+    to: icon.png
 win:
+  icon: resources/icon.ico
   target: nsis
   signAndEditExecutable: false
   verifyUpdateCodeSignature: false
+nsis:
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  oneClick: false
+  allowToChangeInstallationDirectory: true
 mac:
   target:
     - target: dmg
@@ -23,9 +37,6 @@ mac:
         - x64
         - arm64
   category: public.app-category.productivity
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
 publish:
   provider: github
   owner: Amro212
