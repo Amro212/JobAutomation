@@ -29,11 +29,9 @@ const externalPackages = [
   'drizzle-orm/libsql',
   'drizzle-orm/libsql/migrator',
   'fastify',
-  'fastify-plugin',
   'googleapis',
   'node-cron',
   'node-html-parser',
-  'p-queue',
   'playwright',
   'zod'
 ];
@@ -47,11 +45,20 @@ rmSync(distApiDir, { recursive: true, force: true });
 
 await build({
   absWorkingDir: workspaceRoot,
+  banner: {
+    js: "const import_meta_url = require('node:url').pathToFileURL(__filename).href;"
+  },
   bundle: true,
+  define: {
+    'import.meta.url': 'import_meta_url'
+  },
   entryPoints,
   external: externalPackages,
-  format: 'esm',
+  format: 'cjs',
   logLevel: 'info',
+  outExtension: {
+    '.js': '.cjs'
+  },
   outdir: distApiDir,
   platform: 'node',
   sourcemap: true,

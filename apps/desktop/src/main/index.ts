@@ -19,10 +19,13 @@ import {
   type CamoufoxDownloadStatus
 } from './camoufox-manager.js';
 import {
+  configureDesktopUserDataPath,
   createDesktopConfigStore,
   findAvailableApiPort,
   type DesktopConfig
 } from './config-store.js';
+
+configureDesktopUserDataPath();
 import { TrayController } from './tray.js';
 
 let mainWindow: BrowserWindow | null = null;

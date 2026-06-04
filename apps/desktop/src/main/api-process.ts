@@ -15,6 +15,8 @@ type ChildProcessLike = Pick<
   'send' | 'kill' | 'on' | 'once' | 'off' | 'stdout' | 'stderr'
 >;
 
+const MAX_CHILD_OUTPUT_CHARS = 4000;
+
 export type ApiProcessState =
   | { status: 'stopped' }
   | { status: 'starting' }
@@ -43,13 +45,17 @@ export type ApiProcessOptions = {
 
 function resolveApiEntry(options: Pick<ApiProcessOptions, 'desktopRoot' | 'packaged' | 'workspaceRoot'>): string {
   if (options.packaged) {
-    return path.join(process.resourcesPath, 'api', 'index.js');
+    return path.join(process.resourcesPath, 'api', 'index.cjs');
   }
 
   // In dev the API source lives at <workspaceRoot>/apps/api/src/index.ts.
   // If workspaceRoot is not provided, fall back to navigating from desktopRoot.
   const base = options.workspaceRoot ?? path.resolve(options.desktopRoot, '..', '..');
   return path.join(base, 'apps', 'api', 'src', 'index.ts');
+}
+
+function resolveApiCwd(options: Pick<ApiProcessOptions, 'desktopRoot' | 'packaged'>): string {
+  return options.packaged ? path.dirname(process.execPath) : options.desktopRoot;
 }
 
 function parseDotEnvValue(value: string): string {
@@ -98,6 +104,34 @@ function readDevDotEnv(workspaceRoot?: string): NodeJS.ProcessEnv {
   }
 
   return output;
+}
+
+function appendRecentOutput(current: string, next: string): string {
+  const combined = `${current}${next}`;
+  if (combined.length <= MAX_CHILD_OUTPUT_CHARS) {
+    return combined;
+  }
+
+  return combined.slice(combined.length - MAX_CHILD_OUTPUT_CHARS);
+}
+
+function formatStartupError(message: string, childOutput: string): string {
+  const output = childOutput.trim();
+  if (!output) {
+    return message;
+  }
+
+  return `${message}\n\nRecent API process output:\n${output}`;
+}
+
+function packagedNodePath(): string {
+  return [
+    path.join(process.resourcesPath, 'app.asar', 'node_modules'),
+    path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules'),
+    process.env.NODE_PATH
+  ]
+    .filter((entry): entry is string => Boolean(entry))
+    .join(path.delimiter);
 }
 
 async function waitForHealth(apiBaseUrl: string, timeoutMs = 15000): Promise<void> {
@@ -153,14 +187,15 @@ export class ApiProcessManager {
     this.stopping = false;
     this.setState({ status: 'starting' });
     const entry = resolveApiEntry(this.options);
+    const cwd = resolveApiCwd(this.options);
     console.error(`[api-process] Forking API from: ${entry}`);
-    console.error(`[api-process] CWD: ${this.options.desktopRoot}`);
+    console.error(`[api-process] CWD: ${cwd}`);
     console.error(`[api-process] Packaged: ${String(this.options.packaged)}`);
     const devDotEnv = this.options.packaged ? {} : readDevDotEnv(this.options.workspaceRoot);
     const childFactory = this.options.childFactory ?? ((childEntry, childOptions) =>
       fork(childEntry, childOptions));
     const child = childFactory(entry, {
-      cwd: this.options.desktopRoot,
+      cwd,
       env: {
         ...devDotEnv,
         ...process.env,
@@ -185,11 +220,12 @@ export class ApiProcessManager {
         ...(this.options.packaged
           ? {
               ELECTRON_RUN_AS_NODE: '1',
+              NODE_PATH: packagedNodePath(),
               JOB_AUTOMATION_AUTOPILOT_WORKER_ENTRY: path.join(
                 process.resourcesPath,
                 'api',
                 'workers',
-                'autopilot-worker.js'
+                'autopilot-worker.cjs'
               ),
               JOB_AUTOMATION_DB_MIGRATIONS_DIR: path.join(
                 process.resourcesPath,
@@ -208,13 +244,18 @@ export class ApiProcessManager {
       execArgv: this.options.packaged ? [] : ['--import', 'tsx'],
       stdio: ['pipe', 'pipe', 'pipe', 'ipc']
     });
+    let childOutput = '';
 
     child.stdout?.on('data', (chunk) => {
-      console.error(`[api-stdout] ${chunk.toString().trimEnd()}`);
+      const text = chunk.toString();
+      childOutput = appendRecentOutput(childOutput, text);
+      console.error(`[api-stdout] ${text.trimEnd()}`);
       process.stdout.write(chunk);
     });
     child.stderr?.on('data', (chunk) => {
-      console.error(`[api-stderr] ${chunk.toString().trimEnd()}`);
+      const text = chunk.toString();
+      childOutput = appendRecentOutput(childOutput, text);
+      console.error(`[api-stderr] ${text.trimEnd()}`);
       process.stderr.write(chunk);
     });
     child.on('error', (error) => {
@@ -239,7 +280,7 @@ export class ApiProcessManager {
       const ipcReadyPromise = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           cleanup();
-          reject(new Error('API process did not report ready in time.'));
+          reject(new Error(formatStartupError('API process did not report ready in time.', childOutput)));
         }, 15000);
 
         const messageHandler = (message: ApiProcessMessage | string) => {
@@ -258,18 +299,36 @@ export class ApiProcessManager {
 
         const exitHandler = (code: number | null) => {
           cleanup();
-          reject(new Error(`API process exited before ready (code=${String(code)}).`));
+          reject(
+            new Error(
+              formatStartupError(
+                `API process exited before ready (code=${String(code)}).`,
+                childOutput
+              )
+            )
+          );
+        };
+
+        const errorHandler = (error: Error) => {
+          cleanup();
+          reject(
+            new Error(
+              formatStartupError(`API process failed to start: ${error.message}`, childOutput)
+            )
+          );
         };
 
         const cleanup = () => {
           clearTimeout(timeout);
           child.off('message', messageHandler);
           child.off('exit', exitHandler);
+          child.off('error', errorHandler);
         };
 
         cleanupIpc = cleanup;
         child.on('message', messageHandler);
         child.on('exit', exitHandler);
+        child.on('error', errorHandler);
       });
 
       const healthPromise = (this.options.healthCheck ?? waitForHealth)(this.apiBaseUrl);

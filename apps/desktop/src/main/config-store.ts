@@ -1,8 +1,13 @@
-import path from 'node:path';
 import net from 'node:net';
 
 import Store from 'electron-store';
 import { app, type Rectangle } from 'electron';
+
+import {
+  resolveDefaultDbPath,
+  resolveDesktopUserDataPath,
+  shouldResetProductionDbPath
+} from './config-paths.js';
 
 export type DesktopConfig = {
   apiHost: string;
@@ -18,14 +23,40 @@ export type DesktopConfig = {
 const DEFAULT_API_HOST = '127.0.0.1';
 const DEFAULT_API_PORT = 3001;
 
+export function configureDesktopUserDataPath(): void {
+  app.setPath(
+    'userData',
+    resolveDesktopUserDataPath({
+      appDataPath: app.getPath('appData'),
+      packaged: app.isPackaged
+    })
+  );
+}
+
+function resetExternalProductionDbPath(store: Store<DesktopConfig>, userDataPath: string): void {
+  const dbPath = store.get('dbPath');
+  if (
+    !shouldResetProductionDbPath({
+      packaged: app.isPackaged,
+      userDataPath,
+      dbPath
+    })
+  ) {
+    return;
+  }
+
+  store.set('dbPath', resolveDefaultDbPath(userDataPath));
+}
+
 export function createDesktopConfigStore(): Store<DesktopConfig> {
-  return new Store<DesktopConfig>({
+  const userDataPath = app.getPath('userData');
+  const store = new Store<DesktopConfig>({
     name: 'config',
-    cwd: app.getPath('userData'),
+    cwd: userDataPath,
     defaults: {
       apiHost: DEFAULT_API_HOST,
       apiPort: DEFAULT_API_PORT,
-      dbPath: path.join(app.getPath('userData'), 'jobautomation.sqlite'),
+      dbPath: resolveDefaultDbPath(userDataPath),
       headedMode: false,
       camoufoxBinaryPath: null,
       aiGatewayBaseUrl: null,
@@ -33,6 +64,9 @@ export function createDesktopConfigStore(): Store<DesktopConfig> {
       windowBounds: null
     }
   });
+
+  resetExternalProductionDbPath(store, userDataPath);
+  return store;
 }
 
 async function isPortAvailable(host: string, port: number): Promise<boolean> {
