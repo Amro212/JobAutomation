@@ -6,6 +6,7 @@ import { app, type Rectangle } from 'electron';
 import {
   resolveDefaultDbPath,
   resolveDesktopUserDataPath,
+  shouldResetDevelopmentDbPath,
   shouldResetProductionDbPath
 } from './config-paths.js';
 
@@ -33,22 +34,38 @@ export function configureDesktopUserDataPath(): void {
   );
 }
 
-function resetExternalProductionDbPath(store: Store<DesktopConfig>, userDataPath: string): void {
+function resetDbPath(
+  store: Store<DesktopConfig>,
+  input: { userDataPath: string; workspaceRoot: string }
+): void {
   const dbPath = store.get('dbPath');
-  if (
-    !shouldResetProductionDbPath({
+  const shouldReset =
+    shouldResetProductionDbPath({
       packaged: app.isPackaged,
-      userDataPath,
+      userDataPath: input.userDataPath,
       dbPath
-    })
-  ) {
+    }) ||
+    shouldResetDevelopmentDbPath({
+      packaged: app.isPackaged,
+      userDataPath: input.userDataPath,
+      dbPath
+    });
+
+  if (!shouldReset) {
     return;
   }
 
-  store.set('dbPath', resolveDefaultDbPath(userDataPath));
+  store.set(
+    'dbPath',
+    resolveDefaultDbPath({
+      packaged: app.isPackaged,
+      userDataPath: input.userDataPath,
+      workspaceRoot: input.workspaceRoot
+    })
+  );
 }
 
-export function createDesktopConfigStore(): Store<DesktopConfig> {
+export function createDesktopConfigStore(input: { workspaceRoot: string }): Store<DesktopConfig> {
   const userDataPath = app.getPath('userData');
   const store = new Store<DesktopConfig>({
     name: 'config',
@@ -56,7 +73,11 @@ export function createDesktopConfigStore(): Store<DesktopConfig> {
     defaults: {
       apiHost: DEFAULT_API_HOST,
       apiPort: DEFAULT_API_PORT,
-      dbPath: resolveDefaultDbPath(userDataPath),
+      dbPath: resolveDefaultDbPath({
+        packaged: app.isPackaged,
+        userDataPath,
+        workspaceRoot: input.workspaceRoot
+      }),
       headedMode: false,
       camoufoxBinaryPath: null,
       aiGatewayBaseUrl: null,
@@ -65,7 +86,7 @@ export function createDesktopConfigStore(): Store<DesktopConfig> {
     }
   });
 
-  resetExternalProductionDbPath(store, userDataPath);
+  resetDbPath(store, { userDataPath, workspaceRoot: input.workspaceRoot });
   return store;
 }
 

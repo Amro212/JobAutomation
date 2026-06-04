@@ -13,8 +13,20 @@ export function resolveDesktopUserDataPath(input: {
   );
 }
 
-export function resolveDefaultDbPath(userDataPath: string): string {
+function resolveUserDataDbPath(userDataPath: string): string {
   return path.join(userDataPath, 'jobautomation.sqlite');
+}
+
+export function resolveDefaultDbPath(input: {
+  packaged: boolean;
+  userDataPath: string;
+  workspaceRoot: string;
+}): string {
+  if (input.packaged) {
+    return resolveUserDataDbPath(input.userDataPath);
+  }
+
+  return path.join(input.workspaceRoot, 'data', 'jobautomation.sqlite');
 }
 
 function isPathInside(parentPath: string, candidatePath: string): boolean {
@@ -32,4 +44,16 @@ export function shouldResetProductionDbPath(input: {
   }
 
   return !isPathInside(input.userDataPath, input.dbPath);
+}
+
+export function shouldResetDevelopmentDbPath(input: {
+  packaged: boolean;
+  userDataPath: string;
+  dbPath?: string | null;
+}): boolean {
+  if (input.packaged || !input.dbPath) {
+    return false;
+  }
+
+  return path.resolve(input.dbPath) === path.resolve(resolveUserDataDbPath(input.userDataPath));
 }

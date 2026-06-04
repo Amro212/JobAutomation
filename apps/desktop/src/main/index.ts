@@ -258,7 +258,7 @@ async function bootstrap(): Promise<void> {
   await app.whenReady();
   debugLog('bootstrap:ready');
   autoUpdater.init();
-  configStore = createDesktopConfigStore();
+  configStore = createDesktopConfigStore({ workspaceRoot });
   camoufoxManager = new CamoufoxManager(configStore, {
     onStatusChange: (status) => {
       camoufoxStatus = status;
