@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CountryCombobox } from '@/components/country-combobox';
 import {
   Select,
   SelectContent,
@@ -213,11 +214,11 @@ export function JobsPage() {
               onChange={(e) => setFilters({ ...filters, companyName: e.target.value })}
             />
 
-            <Input
+            <CountryCombobox
               id="jobs-filter-location"
               placeholder="Location..."
               value={filters.location}
-              onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+              onValueChange={(code) => setFilters({ ...filters, location: code })}
             />
 
             <Select

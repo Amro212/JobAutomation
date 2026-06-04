@@ -67,6 +67,56 @@ export type ApplicationRunsStats = {
   skippedCount: number;
 };
 
+export type OverviewRange = '7d' | '30d' | 'ytd';
+
+export type OverviewAgentInsight = {
+  severity: 'positive' | 'neutral' | 'warning';
+  title: string;
+  description: string;
+};
+
+export type OverviewAnalytics = {
+  range: OverviewRange;
+  generatedAt: string;
+  metrics: {
+    totalJobs: number;
+    filteredMatch: number;
+    totalApplications: number;
+    completedApplications: number;
+    blockedApplications: number;
+    failedApplications: number;
+    cancelledApplications: number;
+    skippedApplications: number;
+    successRate: number;
+    applicationTrendPercent: number | null;
+  };
+  applicationsOverTime: Array<{
+    key: string;
+    label: string;
+    count: number;
+  }>;
+  platformSuccessRates: Array<{
+    siteKey: 'greenhouse' | 'lever' | 'ashby' | 'playwright';
+    label: string;
+    attemptedCount: number;
+    completedCount: number;
+    failedCount: number;
+    blockedCount: number;
+    successRate: number;
+  }>;
+  agentInsights: OverviewAgentInsight[];
+  agentEfficiencyScore: {
+    value: number;
+    source: 'computed' | 'ai';
+    rationale: string;
+  };
+  ai: {
+    configured: boolean;
+    source: 'computed' | 'ai';
+    error?: string;
+  };
+};
+
 export type AutopilotRunSummary = {
   run: AutopilotRunRecord;
   discoveryRun: { id: string } | null;
@@ -300,6 +350,10 @@ export async function getApplicationRuns(): Promise<ApplicationRunSummary[]> {
 
 export async function getApplicationRunsStats(): Promise<ApplicationRunsStats> {
   return await fetchFromApi<ApplicationRunsStats>('/application-runs/stats');
+}
+
+export async function getOverviewAnalytics(range: OverviewRange): Promise<OverviewAnalytics> {
+  return await fetchFromApi<OverviewAnalytics>(`/application-runs/overview?range=${range}`);
 }
 
 export async function getApplicationRunsPage(input: {

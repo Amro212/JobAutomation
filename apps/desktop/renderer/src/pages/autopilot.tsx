@@ -42,6 +42,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { CountryMultiCombobox } from '@/components/country-combobox';
 import {
   Select,
   SelectContent,
@@ -636,12 +637,12 @@ export function AutopilotPage() {
 
                   <div className="space-y-1.5 sm:col-span-2">
                     <Label htmlFor="preferred-countries">Preferred Countries</Label>
-                    <Input
+                    <CountryMultiCombobox
                       id="preferred-countries"
-                      placeholder="US, CA"
-                      value={formState.preferredCountriesCsv}
-                      onChange={(e) =>
-                        setFormState({ ...formState, preferredCountriesCsv: e.target.value })
+                      placeholder="Select countries..."
+                      value={parseCountriesCsv(formState.preferredCountriesCsv)}
+                      onValueChange={(codes) =>
+                        setFormState({ ...formState, preferredCountriesCsv: codes.join(', ') })
                       }
                     />
                   </div>

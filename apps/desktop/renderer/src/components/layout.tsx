@@ -72,7 +72,7 @@ const navSections = [
   {
     label: 'Overview',
     items: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/overview', label: 'Overview', icon: LayoutDashboard },
       { to: '/autopilot', label: 'Autopilot', icon: Zap }
     ]
   },
@@ -99,7 +99,7 @@ const navSections = [
 ];
 
 const pageTitles: Record<string, string> = {
-  '/dashboard': 'Dashboard',
+  '/overview': 'Overview',
   '/autopilot': 'Autopilot',
   '/jobs': 'Jobs',
   '/shortlist': 'Shortlist',

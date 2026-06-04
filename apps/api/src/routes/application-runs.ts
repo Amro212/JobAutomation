@@ -16,6 +16,11 @@ import {
 import type { FastifyPluginAsync } from 'fastify';
 
 import { createStructuredAiProvider } from '../services/ai-provider';
+import {
+  buildOverviewAnalytics,
+  generateOverviewAiInsights,
+  parseOverviewRange
+} from '../services/overview-analytics';
 
 type CreateApplicationRunPayload = {
   jobId: string;
@@ -25,6 +30,10 @@ type ApplicationRunsQuery = {
   page?: string;
   pageSize?: string;
   status?: string;
+};
+
+type OverviewQuery = {
+  range?: string;
 };
 
 function parseCreatePayload(body: unknown): CreateApplicationRunPayload {
@@ -168,6 +177,29 @@ export const registerApplicationRunRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/application-runs/stats', async () => {
     return await app.repositories.applicationRuns.getStats();
+  });
+
+  app.get('/application-runs/overview', async (request) => {
+    const query = (request.query ?? {}) as OverviewQuery;
+    const range = parseOverviewRange(query.range);
+    const [allJobs, filteredJobs, applicationRuns] = await Promise.all([
+      app.repositories.jobs.listSummary({}, { page: 1, pageSize: 1 }),
+      app.repositories.jobs.listSummary({ matchProfile: 'me' }, { page: 1, pageSize: 1 }),
+      app.repositories.applicationRuns.list()
+    ]);
+    const analytics = buildOverviewAnalytics({
+      now: new Date(),
+      range,
+      totalJobs: allJobs.total,
+      filteredMatch: filteredJobs.total,
+      applicationRuns
+    });
+    const provider = createStructuredAiProvider(app.config);
+
+    return await generateOverviewAiInsights({
+      analytics,
+      provider
+    });
   });
 
   app.get('/application-runs/:runId', async (request, reply) => {

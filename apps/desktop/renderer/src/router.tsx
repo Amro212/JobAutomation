@@ -6,7 +6,7 @@ import { ApplicationsPage } from '@renderer/pages/applications';
 import { AutopilotRunDetailPage } from '@renderer/pages/autopilot-run-detail';
 import { AutopilotRunsPage } from '@renderer/pages/autopilot-runs';
 import { AutopilotPage } from '@renderer/pages/autopilot';
-import { DashboardPage } from '@renderer/pages/dashboard';
+import { OverviewPage } from '@renderer/pages/overview';
 import { DiscoveryRunDetailPage } from '@renderer/pages/discovery-run-detail';
 import { JobDetailPage } from '@renderer/pages/job-detail';
 import { JobsPage } from '@renderer/pages/jobs';
@@ -22,11 +22,11 @@ export const router = createHashRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/dashboard" replace />
+        element: <Navigate to="/overview" replace />
       },
       {
-        path: 'dashboard',
-        element: <DashboardPage />
+        path: 'overview',
+        element: <OverviewPage />
       },
       {
         path: 'autopilot',

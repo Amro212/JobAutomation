@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { X, Sparkles, User, FileText, Check, AlertCircle } from 'lucide-react';
+import { CountryCombobox, CountryMultiCombobox } from '@/components/country-combobox';
 import {
   FILTER_COUNTRIES,
   defaultEmailVerificationConfig,
@@ -19,6 +20,14 @@ import { Button } from '@renderer/components/ui/button';
 import { Input } from '@renderer/components/ui/input';
 
 const salaryCurrencies = ['USD', 'CAD', 'EUR', 'GBP', 'AUD'];
+
+/** Split a comma-separated string of ISO country codes into a trimmed array. */
+function parseCountriesCsv(csv: string): string[] {
+  return csv
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 const defaultProfile: Omit<ApplicantProfile, 'updatedAt'> = {
   id: 'default',
@@ -588,22 +597,20 @@ export function SetupPage() {
           <div className="grid gap-6 md:grid-cols-2">
             <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Current Residence Country
-              <select value={currentCountryCode} onChange={(e) => setCurrentCountryCode(e.target.value)} className={selectClassName}>
-                <option value="">Not set</option>
-                {FILTER_COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
-                ))}
-              </select>
+              <CountryCombobox
+                value={currentCountryCode}
+                onValueChange={setCurrentCountryCode}
+                triggerClassName="h-10 text-xs bg-background/50 rounded-xl border-border"
+              />
             </label>
 
             <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
               Citizenship Country
-              <select value={primaryCitizenshipCountryCode} onChange={(e) => setPrimaryCitizenshipCountryCode(e.target.value)} className={selectClassName}>
-                <option value="">Not set</option>
-                {FILTER_COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
-                ))}
-              </select>
+              <CountryCombobox
+                value={primaryCitizenshipCountryCode}
+                onValueChange={setPrimaryCitizenshipCountryCode}
+                triggerClassName="h-10 text-xs bg-background/50 rounded-xl border-border"
+              />
             </label>
 
             <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
@@ -656,8 +663,12 @@ export function SetupPage() {
 
             {requiresSponsorship === 'yes' ? (
               <label className="flex flex-col gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide font-label">
-                Target Countries for Sponsorship (CSV)
-                <Input value={requiresSponsorshipCountriesCsv} onChange={(e) => setRequiresSponsorshipCountriesCsv(e.target.value)} placeholder="US, CA, GB" className="h-10 text-xs text-foreground bg-background/50 rounded-xl border-border" />
+                Target Countries for Sponsorship
+                <CountryMultiCombobox
+                  value={parseCountriesCsv(requiresSponsorshipCountriesCsv)}
+                  onValueChange={(codes) => setRequiresSponsorshipCountriesCsv(codes.join(', '))}
+                  triggerClassName="h-10 text-xs bg-background/50 rounded-xl border-border"
+                />
               </label>
             ) : null}
 
