@@ -12,6 +12,27 @@ import {
 } from 'electron';
 import type Store from 'electron-store';
 
+/* ── Main-process crash handlers (Electron best practice) ──── */
+
+process.on('uncaughtException', (error) => {
+  console.error('[main:uncaughtException]', error);
+  try {
+    dialog.showErrorBox(
+      'Unexpected Error',
+      `An unexpected error occurred in the application.\n\n${error.message}\n\nThe application will attempt to continue running.`
+    );
+  } catch {
+    // dialog may not be available if the error fires before app is ready
+  }
+});
+
+process.on('unhandledRejection', (reason) => {
+  const message =
+    reason instanceof Error ? reason.message : String(reason);
+  console.error('[main:unhandledRejection]', message);
+});
+
+
 import { DesktopAutoUpdater } from './auto-updater.js';
 import { resolveAppIconPath } from './app-icon.js';
 import { ApiProcessManager } from './api-process.js';

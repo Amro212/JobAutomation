@@ -1,6 +1,7 @@
 import { createHashRouter, Navigate } from 'react-router';
 
 import { DesktopLayout } from '@renderer/components/layout';
+import { RouteErrorBoundary } from '@renderer/components/error-boundary';
 import { ApplicationDetailPage } from '@renderer/pages/application-detail';
 import { ApplicationsPage } from '@renderer/pages/applications';
 import { AutopilotRunDetailPage } from '@renderer/pages/autopilot-run-detail';
@@ -19,6 +20,7 @@ export const router = createHashRouter([
   {
     path: '/',
     element: <DesktopLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       {
         index: true,
